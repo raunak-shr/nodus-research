@@ -1,0 +1,16 @@
+[project]
+name = "nodus-research"
+version = "0.1.0"
+description = "Research agent that seraches web, extracts informations, summarizes, cites sources to generate trustworthy answers."
+authors = [
+    {name = "shrdas",email = "shrdas@clarixdata.com"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
