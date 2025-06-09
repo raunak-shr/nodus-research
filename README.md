@@ -7,6 +7,7 @@
 ## 🚀 Features
 
 - 🔍 Multi-agent system: planner, searcher, summarizer, fact-checker
+- ➡️ Follow up Query Response with Conditional Recursive Search
 - 🌐 Web search + clean content extraction
 - 🧠 Local LLM summarization (via Ollama)
 - 📎 Source attribution and citation formatting
@@ -68,23 +69,20 @@ nodus-research-agent/
 ├── pyproject.toml                   # All dependencies
 ├── README.md                        # Usage & setup docs
 │
-├── agents/                          # Modular agents (LangChain/ LangGraph)
-│   ├── planner.py                   # Task planner agent
-│   ├── search_agent.py              # Web search agent
-│   ├── scraper_agent.py             # URL content scraper
+├── agents/                         # Modular agents (LangChain/ LangGraph)
+│   ├── planner.py                  # Task planner agent
+│   ├── search_agent.py             # Web search agent
 │   ├── summarizer_agent.py         # Per-source summarizer
 │   ├── aggregator_agent.py         # Combines summaries + source mapping
 │   ├── fact_checker_agent.py       # Cross-article fact validation
 │   ├── citation_agent.py           # Citation formatter
 │
 ├── tools/                           # LangChain tools or utility classes
-│   ├── search.py                    # DuckDuckGo / Serper API wrapper
-│   ├── scraper.py                   # Readability, newspaper3k, etc.
+│   ├── search.py                    # Tavily API wrapper
 │   ├── summarizer.py                # Local LLM summarization calls
 │   ├── fact_check.py                # Source consistency checker
 │   ├── citation.py                  # Format and assign reference numbers
 │   ├── exporter.py                  # Markdown/PDF report export
-│   ├── scheduler.py                 # Auto-refresh + diff detector
 │
 ├── utils/                           # Helper functions, shared logic
 │   ├── logger.py                    # Logging utility
