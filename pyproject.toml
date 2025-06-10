@@ -1,16 +1,15 @@
 [project]
-name = "nodus-research"
+name = "nodus"
 version = "0.1.0"
 description = "Research agent that seraches web, extracts informations, summarizes, cites sources to generate trustworthy answers."
-authors = [
-    {name = "shrdas",email = "shrdas@clarixdata.com"}
-]
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "langchain>=0.3.25",
+    "langchain-community>=0.3.24",
+    "langchain-ollama>=0.3.3",
+    "pydantic>=2.11.5",
+    "python-dotenv>=1.1.0",
+    "regex>=2024.11.6",
+    "tavily-python>=0.7.5",
 ]
-
-
-[build-system]
-requires = ["poetry-core>=2.0.0,<3.0.0"]
-build-backend = "poetry.core.masonry.api"

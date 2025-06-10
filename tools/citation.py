@@ -2,7 +2,8 @@ import logging
 from pydantic import PrivateAttr
 from typing import List, Dict, Any, Optional
 from langchain_core.tools import BaseTool, ArgsSchema
-from schemas.search_models import ExtractionResult, ExtractionItem, CitationInput
+from schemas.cite_summarize_schema import CitationInput
+from schemas.search_schema import ExtractionResult, ExtractionItem
 from langchain_core.callbacks import CallbackManagerForToolRun, AsyncCallbackManagerForToolRun
 
 logging.basicConfig(
