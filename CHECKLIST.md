@@ -1,112 +1,190 @@
-
-## ✅ **Comprehensive Checklist**
-
----
-
-### 🏗️ 1. Architecture & Design
-
-* [ ] Use **modular structure**: `agents/`, `tools/`, `utils/`, `ui/`, `data/`
-* [ ] Implement a **central task planner agent**
-* [ ] Use **agent graphs or workflows** (e.g., LangGraph, CrewAI)
-* [ ] Decouple tools via a **tool registry or dispatcher**
-* [ ] Add **LLM abstraction layer** (support both local and cloud models)
-* [ ] Maintain **prompt templates** (Jinja/YAML) separately from logic
-* [ ] Support **multi-modal input/output** (text, file, URL, voice)
+# ✅ **Nodus Academic Research System Checklist**
 
 ---
 
-### 🔐 2. Security & Governance
+# 🏗️ 1. Research-Oriented Architecture
 
-* [ ] Sanitize all user inputs (prevent prompt injection, XSS from scraped HTML)
-* [ ] Handle URL/domain whitelisting or trust scoring
-* [ ] Store secrets using `.env`, `Vault`, or cloud secrets manager
-* [ ] Create **tool permissions** and scopes
-* [ ] Add **role-based access control** if user profiles exist
-* [ ] Enable red teaming: simulate prompt misuse or unsafe actions
-* [ ] Avoid storing raw user queries/logs with PII (or anonymize them)
+### Core Design
+
+* [ ] Modular structure:
+
+  ```
+  agents/
+  orchestrator/
+  tools/
+  schemas/
+  templates/
+  reports/
+  validation/
+  ```
+* [ ] LangGraph-based deterministic workflow
+* [ ] Explicit **agent boundaries**:
+
+  * Discovery
+  * Validation
+  * Summarization
+  * Analysis
+  * Citation
+  * Report
+* [ ] Separate:
+
+  * Retrieval logic
+  * Claim extraction
+  * Cross-paper analysis
+* [ ] All intermediate outputs stored as structured JSON
+* [ ] Versioned report templates (survey, related-work, annotated bibliography)
 
 ---
 
-### 🧪 3. Testing & Evaluation
+# 📚 2. Scholarly Rigor & Methodological Integrity
 
-* [ ] Unit tests for every tool (`search.py`, `scraper.py`, etc.)
-* [ ] Mock external calls (web search, LLMs) for isolated testing
-* [ ] Create golden prompts with expected outputs
+* [ ] Explicit literature selection strategy
+* [ ] Inclusion / exclusion criteria documented
+* [ ] Minimum source threshold enforced (e.g., ≥ 5 peer-reviewed papers)
+* [ ] Venue credibility scoring (ACL / NeurIPS / ICML tiers)
+* [ ] DOI validation via CrossRef
+* [ ] Deduplicate papers via title/DOI hash
+* [ ] Preserve:
+
+  * Methodology
+  * Dataset
+  * Evaluation metrics
+  * Limitations per paper
+* [ ] Prevent unsupported synthesis (no uncited claims)
+* [ ] Ensure every claim in report links to ≥1 validated paper
+
+---
+
+# 🔬 3. Validation & Academic Quality Gates
+
+* [ ] Reject non-academic sources by default
+* [ ] Flag preprints vs peer-reviewed
+* [ ] Citation count threshold (configurable)
+* [ ] Detect contradictory findings across papers
+* [ ] Track confidence level per thematic claim
+* [ ] Track evidence density (claims per source)
+* [ ] Store validation trace for reproducibility
+
+---
+
+# 🧪 4. Testing & Evaluation (Research-Focused)
+
+* [ ] Unit tests for:
+
+  * arXiv API wrapper
+  * Semantic Scholar API
+  * CrossRef validation
+* [ ] Golden dataset of known survey topics
 * [ ] Measure:
 
-  * [ ] Latency
-  * [ ] Hallucination rate
-  * [ ] Relevancy and citation accuracy
-* [ ] Regression tests to detect prompt drift or tool breakage
-* [ ] Use LLM-as-a-judge or human review for factuality scoring
+  * Citation correctness
+  * Coverage depth
+  * Missing key-paper rate
+* [ ] Factual consistency evaluation
+* [ ] Re-run reproducibility test (same query → stable taxonomy)
+* [ ] Human academic review scoring rubric
 
 ---
 
-### 📊 4. Observability & Tracing
+# 📊 5. Observability & Reproducibility
 
-* [ ] Integrate **prompt-level tracing** (e.g., LangSmith or OpenTelemetry)
-* [ ] Log:
+* [ ] UUID per research session
+* [ ] Store:
 
-  * [ ] Tool invocations and durations
-  * [ ] Search queries and results
-  * [ ] Agent plans and step outcomes
-* [ ] Build a basic dashboard (Streamlit/Plotly) showing:
+  * Search queries
+  * Retrieved papers
+  * Rejected papers + reason
+* [ ] Persist:
 
-  * [ ] Usage by tool
-  * [ ] Failure rates
-  * [ ] Popular query topics
-* [ ] Alert on scraping failures, tool timeouts, or rate limits
-* [ ] Assign UUIDs to queries and agent sessions for tracking
+  * Agent outputs
+  * Taxonomy decisions
+* [ ] Generate reproducibility artifact:
 
----
-
-### 📦 5. Packaging & Deployment
-
-* [ ] Pinned `requirements.txt` or use `poetry/pyproject.toml`
-* [ ] Create a `Makefile` or `tasks.py` for dev commands:
-
-  * [ ] `make run`
-  * [ ] `make test`
-  * [ ] `make format`
-* [ ] Dockerize the project with environment variables passed safely
-* [ ] Optionally create a Kubernetes `helm chart` for orchestration
-* [ ] Provide a `README.md` and example `.env` file
-* [ ] Create setup automation script (`setup.sh` or Ansible)
+  ```
+  /reports/<query_hash>/
+      papers.json
+      taxonomy.json
+      report.md
+      references.bib
+  ```
+* [ ] Log model versions used
+* [ ] Track changes across runs (differential analysis)
 
 ---
 
-### 🔁 6. Extensibility & Workflow Management
+# 🧠 6. Analysis & Synthesis Integrity
 
-* [ ] All tools should be **pluggable** (with registration mechanism)
-* [ ] Vector store interface with plug-ins for Chroma/FAISS/Qdrant
-* [ ] Use memory abstraction to allow JSON, SQLite, or Redis
-* [ ] Enable **query scheduling** (daily, weekly) with `apscheduler`
-* [ ] Support **differential runs** (highlight changes across runs)
-* [ ] Add **agent memory** (recent context, citations, prior answers)
-* [ ] Add **user profiles/preferences** for adaptive behavior
-
----
-
-### 🧠 7. Real-World Capabilities (Optional but Valuable)
-
-* [ ] RAG from internal documents + web results
-* [ ] Source clustering via embeddings + KMeans or TopicRank
-* [ ] Multi-language scraping and translation support
-* [ ] Feedback system: thumbs-up/down + notes
-* [ ] Exportable formats: Markdown, PDF, Slack-friendly
-* [ ] Reliability scoring per source (bias, domain authority, etc.)
-* [ ] API wrapper for external integration (e.g., `/query`, `/report`)
-* [ ] Compare reports over time (version diff)
+* [ ] Enforce taxonomy generation before synthesis
+* [ ] Minimum papers per category
+* [ ] Cross-category comparison matrix
+* [ ] Open-problem extraction logic
+* [ ] No hallucinated citations
+* [ ] Claim-evidence traceability map
 
 ---
 
-## 📁 Bonus Files You Should Include
+# 📎 7. Citation & Export Quality
 
-| File                     | Purpose                               |
-| ------------------------ | ------------------------------------- |
-| `.env.example`           | Sample environment variable template  |
-| `Makefile` or `tasks.py` | Developer productivity                |
-| `Dockerfile`             | Containerized runtime                 |
-| `README.md`              | Setup, usage, and architecture        |
-| `CONTRIBUTING.md`        | Guidelines for collaborators          |
-| `LICENSE`                | Open-source license (MIT recommended) |
+* [ ] Automatic BibTeX generation
+* [ ] DOI resolution
+* [ ] LaTeX-ready output
+* [ ] Markdown export
+* [ ] DOCX / PDF via Pandoc
+* [ ] Zotero-compatible export
+* [ ] Reference consistency check (in-text vs bibliography)
+
+---
+
+# 🔐 8. Security & Governance (Academic Context)
+
+* [ ] Prevent prompt injection from PDFs or scraped text
+* [ ] Sanitize LaTeX output
+* [ ] Secure API keys via `.env` or secrets manager
+* [ ] Role-based access (student / researcher / reviewer)
+* [ ] Avoid storing full PDFs unless user-approved
+
+---
+
+# 🔁 9. Extensibility
+
+* [ ] Pluggable source adapters:
+
+  * arXiv
+  * PubMed
+  * IEEE
+  * Google Scholar (if API available)
+* [ ] Modular taxonomy strategies
+* [ ] Custom report templates
+* [ ] Configurable depth levels:
+
+  * Quick review
+  * Standard survey
+  * Deep meta-analysis
+* [ ] Multi-domain support (NLP, Systems, Bio, Policy)
+
+---
+
+# 📈 10. Advanced Research Capabilities
+
+* [ ] Trend detection over time
+* [ ] Citation network graph generation
+* [ ] Methodology clustering via embeddings
+* [ ] Contradiction detection across papers
+* [ ] Research gap scoring
+* [ ] Benchmark usage frequency analysis
+* [ ] Identify most influential datasets
+
+---
+
+# 📁 Required Repository Files
+
+| File                 | Purpose                        |
+|----------------------|--------------------------------|
+| `.env.example`       | API key template               |
+| `pyproject.toml`     | Dependency locking             |
+| `Dockerfile`         | Reproducible environment       |
+| `README.md`          | Architecture + usage           |
+| `REPRODUCIBILITY.md` | Research trace documentation   |
+| `templates/`         | Survey & report templates      |
+| `schemas/`           | JSON schemas for agent outputs |
+
