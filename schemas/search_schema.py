@@ -14,10 +14,6 @@ class ExtractionResult(BaseModel):
     results: List[ExtractionItem]
 
 
-class CitationInput(BaseModel):
-    extraction_response: ExtractionResult
-
-
 class SearchItem(BaseModel):
     results: List[ExtractionItem]
 

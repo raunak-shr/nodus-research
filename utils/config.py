@@ -16,12 +16,14 @@ class Config:
         # 'ollama_url': os.getenv('OLLAMA_URL'),
         # 'qdrant_collection': os.getenv('QDRANT_COLLECTION'),
         # 'embedding_model': os.getenv('EMBEDDING_MODEL'),
-        # 'max_tokens': int(os.getenv('MAX_TOKENS')),
-        # 'top_p': float(os.getenv('TOP_P')),
-        # 'temperature': float(os.getenv('TEMPERATURE')),
-        # 'top_k': int(os.getenv('TOP_K')),
-        # 'model_id': os.getenv('OLLAMA_MODEL'),
-        'tavily_key': os.getenv('TAVILY_KEY')
+        'tavily_key': os.getenv('TAVILY_KEY'),
+    }
+    summarizer_settings = {
+        'model': os.getenv('SUMM_MODEL'),
+        'temperature': float(os.getenv('SUMM_TEMPERATURE')),
+        'max_tokens': int(os.getenv('SUMM_MAX_TOKENS')),
+        'top_p': float(os.getenv('SUMM_TOP_P')),
+        'top_k': int(os.getenv('SUMM_TOP_K')),
     }
 
     @classmethod

@@ -9,7 +9,7 @@ from langchain.tools import BaseTool
 from utils.patterns import singleton
 from typing import Literal, Any, Optional
 from langchain_core.tools import ToolException
-from schemas.search_models import SearchResult, ExtractionResult
+from schemas.search_schema import SearchResult, ExtractionResult
 from langchain_core.callbacks import CallbackManagerForToolRun, AsyncCallbackManagerForToolRun
 
 load_dotenv()

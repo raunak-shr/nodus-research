@@ -28,16 +28,16 @@
 ---
 
 ## 📦 Setup
-
+Make sure `uv` is already installed
 ```bash
 git clone https://github.com/your-username/scope-research-agent
 cd nodus-research-agent
-poetry install
+uv install
 ````
 Launch the UI:
 
 ```bash
-streamlit run main.py
+uv run
 ```
 
 ---
