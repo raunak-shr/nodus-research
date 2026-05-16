@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     ollama_synthesis_model: str = "qwen2.5:32b"
     ollama_embedding_model: str = "nomic-embed-text"
 
+    # Semantic Scholar
+    semantic_scholar_api_key: str = ""
+
     # App
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8000"]
     max_concurrent_papers: int = 10

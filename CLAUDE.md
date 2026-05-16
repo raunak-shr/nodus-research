@@ -44,11 +44,16 @@ nodus/
 │   │   └── llm_provider.py     # Swappable Anthropic ↔ Ollama client
 │   ├── models/                 # SQLAlchemy ORM models
 │   ├── schemas/                # Pydantic request/response schemas
-│   ├── services/               # Business logic (retriever, agents)
+│   ├── services/
+│   │   ├── query_structurer.py # LLM structured-output agent (StructuredQuery)
+│   │   ├── retriever.py        # Semantic Scholar bulk search (httpx, backoff)
+│   │   ├── ranking.py          # Composite scoring + top-20 selection
+│   │   └── pipeline.py         # LangGraph StateGraph orchestrating Phase 1
 │   └── db/
 │       ├── session.py          # async engine + session factory (asyncpg)
 │       └── migrations/         # Alembic migrations
 ├── tests/
+│   └── services/               # Unit tests mirroring services/
 ├── pyproject.toml
 ├── alembic.ini
 └── .env.example
@@ -58,7 +63,8 @@ nodus/
 
 - **Papers are global, not per-query.** Deduplicated on semantic_scholar_id. The query_papers junction table links them to queries with per-query ranking.
 - **Claims are per-paper, clusters are per-query.** A paper's extracted claims don't change per query, but clustering depends on research context.
-- **LLM provider is swappable.** `llm_provider.py` returns either ChatAnthropic or ChatOllama based on the LLM_PROVIDER env var. Every agent calls this, never instantiates a client directly.
+- **LLM provider is swappable.** `llm_provider.py` returns either ChatAnthropic or ChatOllama based on the LLM_PROVIDER env var. Every agent calls `get_llm()`, never instantiates a client directly. Use `llm.with_structured_output(PydanticModel)` for structured extraction.
+- **`SEMANTIC_SCHOLAR_API_KEY` is optional.** When set, the retriever attaches it as `x-api-key` for higher rate limits. Without it, the public tier applies (100 req/5 min).
 - **Cache aggressively.** If a paper has already been normalized and extracted, skip re-processing on cache hit.
 - **Async everywhere.** The bottleneck is I/O wait on LLM calls. Use asyncio.Semaphore to cap concurrent processing (default 10).
 - **JSONB for semi-structured fields.** structured_query, methodology, effect_size, lineage_tree, disagreement_drivers — these vary across papers and domains.
@@ -72,8 +78,8 @@ See `001_initial_schema.sql` for the full schema with enums, indexes, and sample
 
 ## MVP Scope (Phases 0-5)
 
-- **Phase 0:** Project scaffolding, DB schema, Pydantic models, env config, CI
-- **Phase 1:** Query structuring agent + paper retrieval (Semantic Scholar)
+- **Phase 0:** ✅ Project scaffolding, DB schema, Pydantic models, env config, CI
+- **Phase 1:** ✅ Query structuring agent + paper retrieval (Semantic Scholar)
 - **Phase 2:** Paper normalization + evidence extraction
 - **Phase 3:** Cross-paper analysis + claim clustering (Axis 1: lineage)
 - **Phase 4:** API hardening, WebSocket progress streaming, auth

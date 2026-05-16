@@ -4,11 +4,23 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.models.paper import StudyType
 from app.models.query import QueryStatus
 
 
+class StructuredQuery(BaseModel):
+    topic: str
+    outcome_measure: str | None = None
+    study_type_preferences: list[StudyType] = []
+    date_range_start: int | None = None
+    date_range_end: int | None = None
+    search_keywords: list[str]
+    clarification_needed: bool = False
+    clarification_message: str | None = None
+
+
 class QueryCreate(BaseModel):
-    raw_query: str
+    query: str
 
 
 class QueryRead(BaseModel):
@@ -22,6 +34,10 @@ class QueryRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class QueryWithPapersRead(QueryRead):
+    papers: list[Any] = []
 
 
 class QueryStatusUpdate(BaseModel):
