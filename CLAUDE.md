@@ -29,6 +29,8 @@ Three-stage pipeline:
 2. **Stage 2 — Paper Processing:** paper_normalizer_agent → evidence_extractor_agent (parallel across papers)
 3. **Stage 3 — Synthesis:** cross_paper_analysis_agent → claim clustering → three-axis output → report
 
+**Retrieval details:** Uses Semantic Scholar bulk search API exclusively for MVP. Papers sorted by `citationCount:desc`, then re-ranked using composite score: `0.4 × normalized_citations + 0.3 × influential_citations + 0.2 × recency + 0.1 × relevance_rank`. Fields requested: `title`, `abstract`, `citationCount`, `influentialCitationCount`, `year`, `authors`, `openAccessPdf`, `tldr`. Top 20 kept per query.
+
 ## Project Structure
 
 ```
@@ -86,6 +88,14 @@ See `001_initial_schema.sql` for the full schema with enums, indexes, and sample
 - **Phase 5:** Evaluation harness, prompt tuning, LLM provider swap test
 
 Top 15-20 papers per query, ranked by composite score (citation count, influential citations, recency, relevance).
+
+## Post-MVP Scope (Phases 6–10)
+
+- **Phase 6 — Axis 2: Disagreement Modeling:** LLM inference step per cluster to classify agreement/conflict and root causes; stored in `disagreement_drivers` and support/contradiction counts.
+- **Phase 7 — Axis 3: Quality Weighting:** Tier evidence into high/medium/low based on study type, sample size, and methodology rigor; uses `quality_tier` on `claim_clusters`; user-overridable.
+- **Phase 8 — Synthesizer + Final Report:** `synthesizer_agent` produces structured report with narrative + three-axis metadata per claim section; exports to markdown, PDF, JSON.
+- **Phase 9 — Human-in-the-Loop Editing:** Make every level of synthesizer output editable — clustering, quality ratings, paper selection, narrative.
+- **Phase 10 — Follow-up Queries:** Follow-up questions trigger targeted re-retrieval and re-analysis; supports iterative scope narrowing.
 
 ## Conventions
 

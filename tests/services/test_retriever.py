@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 @pytest.mark.asyncio
@@ -57,7 +58,6 @@ async def test_fetch_papers_empty_response():
 
 @pytest.mark.asyncio
 async def test_fetch_papers_retries_on_429():
-    import asyncio
 
     mock_429 = MagicMock()
     mock_429.status_code = 429

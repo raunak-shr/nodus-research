@@ -8,6 +8,27 @@ Unlike tools like Elicit or Scite that focus on finding and summarizing papers, 
 - **Disagreement** — where papers conflict and why
 - **Quality weighting** — how reliable the evidence is
 
+## Three Axes
+
+| Axis | What it answers | Key fields |
+|---|---|---|
+| **Lineage** | Where does each claim originate? Which papers cite which, and how far back does the evidence chain go? | `lineage_tree` JSONB on `normalized_papers` |
+| **Disagreement** | Where do papers conflict, and why? Identifies methodology differences, population differences, metric definitions, and temporal context. | `disagreement_drivers` JSONB, `support_count` / `contradiction_count` on `claim_clusters` |
+| **Quality weighting** | How reliable is the evidence? Buckets claims into high / medium / low tiers based on study type (RCT > observational > case study), sample size, and methodology rigor. User-overridable. | `quality_tier` on `claim_clusters` |
+
+## Retrieval Strategy
+
+Papers are retrieved exclusively from the **Semantic Scholar bulk search API** for MVP. The retriever requests these fields per paper: `title`, `abstract`, `citationCount`, `influentialCitationCount`, `year`, `authors`, `openAccessPdf`, `tldr`. Results are initially sorted by `citationCount:desc`, then re-ranked using a composite score:
+
+```
+score = 0.4 × normalized_citations
+      + 0.3 × normalized_influential_citations
+      + 0.2 × recency_score
+      + 0.1 × relevance_rank
+```
+
+The top 20 papers per query are kept for downstream processing.
+
 ## Architecture
 
 Three-stage pipeline:
@@ -174,6 +195,8 @@ uv run pytest
 
 ## Roadmap
 
+### MVP (Phases 0–5)
+
 | Phase | Status | Description |
 |---|---|---|
 | 0 | Done | Project scaffolding, DB schema, env config, CI |
@@ -182,3 +205,13 @@ uv run pytest
 | 3 | Planned | Cross-paper analysis + claim clustering (Axis 1: lineage) |
 | 4 | Planned | API hardening, WebSocket progress streaming, auth |
 | 5 | Planned | Evaluation harness, prompt tuning, LLM provider swap test |
+
+### Post-MVP (Phases 6–10)
+
+| Phase | Description |
+|---|---|
+| 6 — Axis 2: Disagreement Modeling | For each claim cluster, run an LLM inference step to identify whether papers agree or conflict and classify why: methodology differences, population differences, metric definitions, or temporal context. Results stored in `disagreement_drivers` JSONB and `support_count` / `contradiction_count` on `claim_clusters`. Requires solid clustering from Phase 3. |
+| 7 — Axis 3: Quality Weighting | Bucket evidence in each cluster into high / medium / low quality tiers based on study type (RCT > observational > case study), sample size, and methodology rigor. Uses the `quality_tier` field on `claim_clusters`. Ratings are transparent and user-overridable. |
+| 8 — Synthesizer + Final Report | Build `synthesizer_agent` that takes clustered claims with all three axes and produces a structured report. Each claim section contains narrative text plus expandable three-axis metadata. Export formats: markdown, PDF, structured JSON. |
+| 9 — Human-in-the-Loop Editing | Make synthesizer output editable at every level — override claim clustering, adjust quality ratings, add/remove papers, edit narrative. Nodus provides a defensible starting point, not a final product. |
+| 10 — Follow-up Queries + Iterative Refinement | Allow users to ask follow-up questions that trigger targeted re-retrieval and re-analysis. Supports iterative narrowing of the research scope. |
