@@ -114,3 +114,8 @@ class NormalizedPaper(Base):
     )
 
     paper: Mapped["Paper"] = relationship("Paper", back_populates="normalized_paper")
+
+    @property
+    def has_full_text(self) -> bool:
+        """Whether an open-access PDF was parsed, as opposed to abstract-only."""
+        return bool(self.full_text)

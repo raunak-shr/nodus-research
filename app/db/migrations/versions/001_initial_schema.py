@@ -9,6 +9,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
+from app.db.sql_split import split_statements
+
 revision: str = "001"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
@@ -192,8 +194,11 @@ DROP TYPE IF EXISTS query_status;
 
 
 def upgrade() -> None:
-    op.execute(_UPGRADE_SQL)
+    # asyncpg rejects multi-statement strings, so run one statement at a time.
+    for statement in split_statements(_UPGRADE_SQL):
+        op.execute(statement)
 
 
 def downgrade() -> None:
-    op.execute(_DOWNGRADE_SQL)
+    for statement in split_statements(_DOWNGRADE_SQL):
+        op.execute(statement)

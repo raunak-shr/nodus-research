@@ -30,6 +30,9 @@ class NormalizedPaperRead(BaseModel):
     id: UUID
     paper_id: UUID
     study_type: StudyType
+    methodology: dict[str, Any] | None = None
+    sections: dict[str, Any] | None = None
+    has_full_text: bool = False
     processing_status: ProcessingStatus
     llm_model_used: str | None
     processed_at: datetime | None

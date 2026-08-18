@@ -13,6 +13,7 @@ import app.models.paper  # noqa: F401
 # import all models so their tables are registered in Base.metadata
 import app.models.query  # noqa: F401
 from app.core.config import settings
+from app.db.session import build_connect_args
 from app.models.base import Base
 
 config = context.config
@@ -47,6 +48,7 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=build_connect_args(settings.database_url, settings.database_ssl),
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

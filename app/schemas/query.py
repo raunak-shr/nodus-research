@@ -14,6 +14,10 @@ class StructuredQuery(BaseModel):
     study_type_preferences: list[StudyType] = []
     date_range_start: int | None = None
     date_range_end: int | None = None
+    # 2-4 orthogonal concepts (never synonyms of each other). Retrieval ANDs
+    # these: bulk search requires every term to match, so ANDing synonyms —
+    # "aerobic exercise" + "aerobic training" — returns almost nothing.
+    core_concepts: list[str] = []
     search_keywords: list[str]
     clarification_needed: bool = False
     clarification_message: str | None = None
@@ -30,6 +34,7 @@ class QueryRead(BaseModel):
     status: QueryStatus
     paper_count: int
     error_message: str | None
+    parent_query_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 

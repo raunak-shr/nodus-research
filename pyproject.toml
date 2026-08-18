@@ -1,7 +1,7 @@
 [project]
 name = "nodus"
-version = "0.1.0"
-description = "Research paper analysis tool with evidence lineage tracking"
+version = "1.0.0"
+description = "Research paper analysis with evidence lineage, disagreement modelling and quality weighting"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
@@ -17,6 +17,12 @@ dependencies = [
     "langchain-ollama>=0.2.0",
     "langgraph>=0.2.0",
     "python-dotenv>=1.0.0",
+    "langchain-openai>=1.5.1",
+    "pypdf>=6.16.1",
+    "truststore>=0.10.4",
+    # PDF export renders the report in headless Chromium. The browser itself is
+    # a separate download: `playwright install chromium`.
+    "playwright>=1.49.0",
 ]
 
 [project.optional-dependencies]

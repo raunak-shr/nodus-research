@@ -1,29 +1,33 @@
+"""query_structurer_agent — Phase 1."""
+
+from __future__ import annotations
+
+import logging
+
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.core.llm_provider import get_llm
+from app.core.llm_provider import get_structured_llm
 from app.schemas.query import StructuredQuery
+from app.services.prompts import QUERY_STRUCTURER_SYSTEM
 
-SYSTEM_PROMPT = (
-    "You are a research query analyst. Given a natural language research question, "
-    "decompose it into structured components and generate effective academic search keywords.\n\n"
-    "Identify:\n"
-    "- The core research topic\n"
-    "- The outcome measure being studied (if any)\n"
-    "- Preferred study types (RCT, meta-analysis, systematic review, observational, etc.)\n"
-    "- Relevant date range (if the question implies one)\n"
-    "- A comprehensive list of search keywords covering synonyms, related terms, "
-    "and MeSH-style terms\n\n"
-    "If the question is ambiguous or too broad to meaningfully structure, set "
-    "clarification_needed=true and explain what additional information would help.\n\n"
-    "Be precise and academically rigorous. "
-    "Search keywords should maximize recall on Semantic Scholar."
-)
+logger = logging.getLogger(__name__)
+
+# Re-exported for backwards compatibility with Phase 1 tests and imports.
+SYSTEM_PROMPT = QUERY_STRUCTURER_SYSTEM
 
 
-async def structure_query(raw_query: str) -> StructuredQuery:
-    llm = get_llm(task="extraction")
-    structured_llm = llm.with_structured_output(StructuredQuery)
-    result = await structured_llm.ainvoke(
-        [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=raw_query)]
-    )
-    return result
+async def structure_query(raw_query: str, context: str | None = None) -> StructuredQuery:
+    """Decompose a research question into search-ready structure.
+
+    `context` carries the parent question when this is a follow-up query, so
+    the agent can narrow rather than restart (Phase 10).
+    """
+    prompt = raw_query if not context else f"{context}\n\nFOLLOW-UP QUESTION: {raw_query}"
+    agent = get_structured_llm(StructuredQuery, task="extraction")
+    try:
+        return await agent.ainvoke(
+            [SystemMessage(content=QUERY_STRUCTURER_SYSTEM), HumanMessage(content=prompt)]
+        )
+    except Exception as exc:  # noqa: BLE001 - retrieval can still proceed
+        logger.warning("Query structuring failed, falling back to raw query: %s", exc)
+        return StructuredQuery(topic=raw_query, search_keywords=[raw_query])

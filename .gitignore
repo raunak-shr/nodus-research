@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Nodus run artifacts
+eval-report.json
+eval-*.json
+report-*.md
+report-*.html
+report-*.json
+report-*.pdf

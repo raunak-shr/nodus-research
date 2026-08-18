@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +26,7 @@ class ClaimCluster(Base):
         UUID(as_uuid=True), ForeignKey("queries.id", ondelete="CASCADE"), nullable=False
     )
     central_theme: Mapped[str] = mapped_column(Text, nullable=False)
+    consensus_summary: Mapped[str | None] = mapped_column(Text)
     lineage_tree: Mapped[dict | None] = mapped_column(JSONB)
     support_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     neutral_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -34,6 +35,11 @@ class ClaimCluster(Base):
     quality_tier: Mapped[QualityTier] = mapped_column(
         Enum(QualityTier, name="quality_tier"), nullable=False, default=QualityTier.unrated
     )
+    quality_score: Mapped[float | None] = mapped_column(Float)
+    quality_rationale: Mapped[dict | None] = mapped_column(JSONB)
+    # Set when a user overrides the generated theme or quality tier, so
+    # re-running analysis never silently discards a human decision.
+    user_edited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
