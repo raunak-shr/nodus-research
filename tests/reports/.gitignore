@@ -1,0 +1,5 @@
+# Generated report output — markdown, JSON, HTML, PDF, screenshots.
+# Regenerate with scripts/run_query.py --export or tests/integration/*.
+*
+!.gitignore
+!README.md
