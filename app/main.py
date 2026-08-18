@@ -11,8 +11,8 @@ from app.api.v2.routes import ws as v2_ws
 from app.core.config import settings
 from app.core.llm_provider import get_embedder_name, get_llm_name
 from app.db.session import engine
-from app.services import pdf_export
-from app.services.errors import NodusError
+from app.services import limits, pdf_export
+from app.services.errors import NodusError, TooManyRequests
 
 logging.basicConfig(
     level=getattr(logging, settings.log_level.upper(), logging.INFO),
@@ -24,10 +24,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(
-        "Nodus starting — llm=%s embeddings=%s auth=%s",
+        "Nodus starting — llm=%s embeddings=%s auth=%s admin=%s "
+        "max_active_queries=%s daily_runs=%s rate_limit=%s",
         get_llm_name(),
         get_embedder_name(),
+        # Never the values themselves: this line goes to stdout and log shipping.
         "on" if settings.api_key else "off",
+        "on" if settings.admin_api_key else "off",
+        settings.max_active_queries,
+        settings.max_daily_runs or "unlimited",
+        "on" if settings.rate_limit_enabled else "off",
     )
     yield
     await queries.cancel_background_tasks()
@@ -61,9 +67,15 @@ async def domain_error_handler(request: Request, exc: NodusError) -> JSONRespons
     Services raise these so the same call works over HTTP and over the v2
     socket, which translates them to error frames instead.
     """
+    headers = None
+    if isinstance(exc, TooManyRequests) and exc.retry_after is not None:
+        # A 429 without Retry-After tells a client to guess, and clients guess
+        # by retrying immediately.
+        headers = {"Retry-After": str(max(1, int(exc.retry_after)))}
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.message, **({"context": exc.detail} if exc.detail else {})},
+        headers=headers,
     )
 
 
@@ -104,8 +116,11 @@ async def health_config() -> dict:
         "embedding_model": get_embedder_name(),
         "embedding_dim": settings.embedding_dim,
         "auth_enabled": bool(settings.api_key),
+        "admin_enabled": bool(settings.admin_api_key),
         "max_concurrent_papers": settings.max_concurrent_papers,
         "top_k_papers": settings.top_k_papers,
         "cluster_similarity_threshold": settings.active_cluster_threshold,
         "retrieval_mode": settings.retrieval_mode,
+        "rate_limit_enabled": settings.rate_limit_enabled,
+        "runs": limits.run_gate.snapshot(),
     }

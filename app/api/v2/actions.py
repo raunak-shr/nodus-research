@@ -39,13 +39,14 @@ from app.schemas.report import ReportRead
 from app.services import (
     cluster_edit,
     export,
+    limits,
     pdf_export,
     report_edit,
     report_render,
     runner,
     synthesizer,
 )
-from app.services.errors import BadRequest, NotFound
+from app.services.errors import BadRequest, Forbidden, NotFound
 
 
 class Subscriber(Protocol):
@@ -61,6 +62,9 @@ class Subscriber(Protocol):
 @dataclass
 class ActionContext:
     connection: Subscriber
+    #: Whether the handshake presented ADMIN_API_KEY. Gates the inline `wait`
+    #: path, which is otherwise a cheap way to pin a database session.
+    is_admin: bool = False
 
 
 Handler = Callable[[ActionContext, Any], Awaitable[Any]]
@@ -72,6 +76,10 @@ class Action:
     handler: Handler
     params: type[BaseModel]
     summary: str
+    #: What this action costs, which decides how it is rate limited: "run" (a
+    #: pipeline or a resynthesis), "edit" (a database write) or "read". Reads
+    #: are not limited — see `app/services/limits.py`.
+    cost: str = "read"
 
 
 REGISTRY: dict[str, Action] = {}
@@ -81,12 +89,27 @@ REGISTRY: dict[str, Action] = {}
 _MAX_PDF_FRAME_BYTES = 32 * 1024 * 1024
 
 
-def action(name: str, params: type[BaseModel], summary: str):
+def action(name: str, params: type[BaseModel], summary: str, cost: str = "read"):
     def register(fn: Handler) -> Handler:
-        REGISTRY[name] = Action(name=name, handler=fn, params=params, summary=summary)
+        REGISTRY[name] = Action(
+            name=name, handler=fn, params=params, summary=summary, cost=cost
+        )
         return fn
 
     return register
+
+
+def _require_admin_for_wait(wait: bool, is_admin: bool) -> None:
+    """`wait` runs the pipeline inline, holding this request open for minutes.
+
+    Admin-only for the same reason as on the REST surface: it pins resources for
+    the length of a whole run, and subscribing to the stream is strictly better.
+    """
+    if wait and not is_admin:
+        raise Forbidden(
+            "wait is admin-only — subscribe to this query's progress instead",
+            hint="queries.subscribe",
+        )
 
 
 def _dump(model: BaseModel) -> dict[str, Any]:
@@ -114,6 +137,7 @@ async def meta_describe(ctx: ActionContext, params: frames.Empty) -> dict[str, A
             {
                 "name": item.name,
                 "summary": item.summary,
+                "cost": item.cost,
                 "params": item.params.model_json_schema(),
             }
             for item in sorted(REGISTRY.values(), key=lambda a: a.name)
@@ -140,36 +164,49 @@ async def meta_config(ctx: ActionContext, params: frames.Empty) -> dict[str, Any
         "cluster_similarity_threshold": settings.active_cluster_threshold,
         "retrieval_mode": settings.retrieval_mode,
         "pdf_enabled": settings.pdf_enabled,
+        "admin_enabled": bool(settings.admin_api_key),
+        "rate_limit_enabled": settings.rate_limit_enabled,
+        "runs": limits.run_gate.snapshot(),
     }
 
 
 # ---------------------------------------------------------------- queries
 
 
-@action("queries.create", frames.CreateQuery, "Submit a research question and start the pipeline")
+@action(
+    "queries.create",
+    frames.CreateQuery,
+    "Submit a research question and start the pipeline",
+    cost="run",
+)
 async def queries_create(ctx: ActionContext, params: frames.CreateQuery) -> dict[str, Any]:
-    async with AsyncSessionLocal() as db:
-        query = Query(raw_query=params.query, status=QueryStatus.pending)
-        db.add(query)
-        await db.commit()
-        await db.refresh(query)
-        payload = _dump(QueryRead.model_validate(query))
-        query_id = query.id
+    _require_admin_for_wait(params.wait, ctx.is_admin)
 
-    # Subscribe before launching so no event can land in the gap.
-    subscription = None
-    if params.subscribe:
-        subscription = await ctx.connection.subscribe(query_id)
-
-    if params.wait:
-        from app.services.pipeline import run_pipeline_safe
-
-        await run_pipeline_safe(query_id, params.query)
+    # The slot is reserved before the row is written, so a run refused for
+    # capacity does not leave a `pending` query nothing will ever pick up.
+    async with runner.admission() as reserved:
         async with AsyncSessionLocal() as db:
-            query = await _require_query(query_id, db)
+            query = Query(raw_query=params.query, status=QueryStatus.pending)
+            db.add(query)
+            await db.commit()
+            await db.refresh(query)
             payload = _dump(QueryRead.model_validate(query))
-    else:
-        runner.launch(query_id, params.query)
+            query_id = query.id
+
+        # Subscribe before launching so no event can land in the gap.
+        subscription = None
+        if params.subscribe:
+            subscription = await ctx.connection.subscribe(query_id)
+
+        if params.wait:
+            from app.services.pipeline import run_pipeline_safe
+
+            await run_pipeline_safe(query_id, params.query)
+            async with AsyncSessionLocal() as db:
+                query = await _require_query(query_id, db)
+                payload = _dump(QueryRead.model_validate(query))
+        else:
+            reserved.launch(query_id, params.query)
 
     return {"query": payload, "subscription": subscription}
 
@@ -252,7 +289,12 @@ async def queries_stats(ctx: ActionContext, params: frames.QueryRef) -> dict[str
         }
 
 
-@action("queries.delete", frames.QueryRef, "Delete a query and everything derived from it")
+@action(
+    "queries.delete",
+    frames.QueryRef,
+    "Delete a query and everything derived from it",
+    cost="edit",
+)
 async def queries_delete(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     runner.cancel(params.query_id)
     async with AsyncSessionLocal() as db:
@@ -297,35 +339,43 @@ async def queries_events(ctx: ActionContext, params: frames.Events) -> dict[str,
         }
 
 
-@action("queries.followup", frames.FollowUp, "Ask a follow-up scoped to a previous query")
+@action(
+    "queries.followup",
+    frames.FollowUp,
+    "Ask a follow-up scoped to a previous query",
+    cost="run",
+)
 async def queries_followup(ctx: ActionContext, params: frames.FollowUp) -> dict[str, Any]:
-    async with AsyncSessionLocal() as db:
-        parent = await _require_query(params.query_id, db)
-        combined = f"{parent.raw_query} — follow-up: {params.query}"
-        child = Query(
-            raw_query=params.query,
-            status=QueryStatus.pending,
-            parent_query_id=parent.id,
-        )
-        db.add(child)
-        await db.commit()
-        await db.refresh(child)
-        payload = _dump(QueryRead.model_validate(child))
-        child_id = child.id
+    _require_admin_for_wait(params.wait, ctx.is_admin)
 
-    subscription = None
-    if params.subscribe:
-        subscription = await ctx.connection.subscribe(child_id)
-
-    if params.wait:
-        from app.services.pipeline import run_pipeline_safe
-
-        await run_pipeline_safe(child_id, combined)
+    async with runner.admission() as reserved:
         async with AsyncSessionLocal() as db:
-            child = await _require_query(child_id, db)
+            parent = await _require_query(params.query_id, db)
+            combined = f"{parent.raw_query} — follow-up: {params.query}"
+            child = Query(
+                raw_query=params.query,
+                status=QueryStatus.pending,
+                parent_query_id=parent.id,
+            )
+            db.add(child)
+            await db.commit()
+            await db.refresh(child)
             payload = _dump(QueryRead.model_validate(child))
-    else:
-        runner.launch(child_id, combined)
+            child_id = child.id
+
+        subscription = None
+        if params.subscribe:
+            subscription = await ctx.connection.subscribe(child_id)
+
+        if params.wait:
+            from app.services.pipeline import run_pipeline_safe
+
+            await run_pipeline_safe(child_id, combined)
+            async with AsyncSessionLocal() as db:
+                child = await _require_query(child_id, db)
+                payload = _dump(QueryRead.model_validate(child))
+        else:
+            reserved.launch(child_id, combined)
 
     return {"query": payload, "subscription": subscription}
 
@@ -418,13 +468,23 @@ async def clusters_get(ctx: ActionContext, params: frames.ClusterRef) -> dict[st
         return _dump(await cluster_edit.get_detail(params.cluster_id, db))
 
 
-@action("clusters.update", frames.ClusterPatch, "Override theme, summary, tier or drivers")
+@action(
+    "clusters.update",
+    frames.ClusterPatch,
+    "Override theme, summary, tier or drivers",
+    cost="edit",
+)
 async def clusters_update(ctx: ActionContext, params: frames.ClusterPatch) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
         return _dump(await cluster_edit.update_cluster(params.cluster_id, params.patch, db))
 
 
-@action("clusters.set_stance", frames.ClusterStance, "Correct a claim's stance in a cluster")
+@action(
+    "clusters.set_stance",
+    frames.ClusterStance,
+    "Correct a claim's stance in a cluster",
+    cost="edit",
+)
 async def clusters_set_stance(ctx: ActionContext, params: frames.ClusterStance) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
         return _dump(
@@ -432,7 +492,7 @@ async def clusters_set_stance(ctx: ActionContext, params: frames.ClusterStance) 
         )
 
 
-@action("clusters.add_claim", frames.ClusterStance, "Move a claim into a cluster")
+@action("clusters.add_claim", frames.ClusterStance, "Move a claim into a cluster", cost="edit")
 async def clusters_add_claim(ctx: ActionContext, params: frames.ClusterStance) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
         return _dump(
@@ -440,7 +500,7 @@ async def clusters_add_claim(ctx: ActionContext, params: frames.ClusterStance) -
         )
 
 
-@action("clusters.remove_claim", frames.ClusterClaimRef, "Drop a claim from a cluster")
+@action("clusters.remove_claim", frames.ClusterClaimRef, "Drop a claim from a cluster", cost="edit")
 async def clusters_remove_claim(
     ctx: ActionContext, params: frames.ClusterClaimRef
 ) -> dict[str, Any]:
@@ -460,7 +520,12 @@ async def report_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, A
         return _dump(ReportRead.model_validate(report))
 
 
-@action("report.regenerate", frames.QueryRef, "Rebuild the report from current clusters")
+@action(
+    "report.regenerate",
+    frames.QueryRef,
+    "Rebuild the report from current clusters",
+    cost="run",
+)
 async def report_regenerate(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
         query = await _require_query(params.query_id, db)
@@ -468,14 +533,19 @@ async def report_regenerate(ctx: ActionContext, params: frames.QueryRef) -> dict
         return _dump(ReportRead.model_validate(report))
 
 
-@action("report.update", frames.ReportPatch, "Edit report front matter or sections")
+@action("report.update", frames.ReportPatch, "Edit report front matter or sections", cost="edit")
 async def report_update(ctx: ActionContext, params: frames.ReportPatch) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
         report = await report_edit.update(params.query_id, params.patch, db)
         return _dump(ReportRead.model_validate(report))
 
 
-@action("report.section.update", frames.SectionPatch, "Edit one section's prose in place")
+@action(
+    "report.section.update",
+    frames.SectionPatch,
+    "Edit one section's prose in place",
+    cost="edit",
+)
 async def report_section_update(ctx: ActionContext, params: frames.SectionPatch) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
         report = await report_edit.update_section(

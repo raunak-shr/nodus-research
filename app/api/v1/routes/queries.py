@@ -10,7 +10,7 @@ from fastapi import Query as QueryParam
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.v1.deps import DBSession, PageParams
+from app.api.v1.deps import AdminCaller, DBSession, EditRateLimit, PageParams, RunRateLimit
 from app.core.events import hub
 from app.models.paper import QueryPaper
 from app.models.query import Query, QueryStatus
@@ -18,14 +18,26 @@ from app.schemas.paper import QueryPaperRead
 from app.schemas.query import QueryCreate, QueryRead, QueryWithPapersRead
 from app.schemas.report import FollowUpCreate, ReportRead, ReportUpdate, SectionNarrativeUpdate
 from app.services import export, runner, synthesizer
+from app.services.errors import Forbidden
 from app.services.pipeline import run_pipeline_safe
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/queries", tags=["queries"])
 
-def _launch(query_id: UUID, raw_query: str) -> None:
-    runner.launch(query_id, raw_query)
+def _require_admin_for_wait(wait: bool, admin: bool) -> None:
+    """`wait=true` runs the pipeline inside the request.
+
+    That holds the request-scoped database session for the whole run, so a
+    handful of concurrent callers can exhaust the connection pool and stall
+    every other endpoint. It stays admin-only; everyone else subscribes to the
+    progress stream, which is what the flag is a poor substitute for anyway.
+    """
+    if wait and not admin:
+        raise Forbidden(
+            "wait=true is admin-only — subscribe to the progress stream instead",
+            hint="GET /api/v1/queries/{query_id}/stream",
+        )
 
 
 async def cancel_background_tasks() -> None:
@@ -33,27 +45,36 @@ async def cancel_background_tasks() -> None:
     await runner.cancel_all()
 
 
-@router.post("/", response_model=QueryRead, status_code=201)
+@router.post("/", response_model=QueryRead, status_code=201, dependencies=[RunRateLimit])
 async def create_query(
     body: QueryCreate,
     db: DBSession,
+    admin: AdminCaller,
     wait: bool = QueryParam(
         False,
-        description="Run the pipeline inline and return only when it finishes. "
-        "Off by default: a full run takes minutes.",
+        description="Admin only. Run the pipeline inline and return only when it "
+        "finishes. Off by default: a full run takes minutes.",
     ),
 ) -> QueryRead:
-    """Submit a research query and start the pipeline."""
-    query = Query(raw_query=body.query, status=QueryStatus.pending)
-    db.add(query)
-    await db.commit()
-    await db.refresh(query)
+    """Submit a research query and start the pipeline.
 
-    if wait:
-        await run_pipeline_safe(query.id, body.query)
+    Refused with 429 when MAX_ACTIVE_QUERIES runs are already in flight — the
+    slot is reserved before the row is written, so a refusal leaves nothing
+    behind.
+    """
+    _require_admin_for_wait(wait, admin)
+
+    async with runner.admission() as reserved:
+        query = Query(raw_query=body.query, status=QueryStatus.pending)
+        db.add(query)
+        await db.commit()
         await db.refresh(query)
-    else:
-        _launch(query.id, body.query)
+
+        if wait:
+            await run_pipeline_safe(query.id, body.query)
+            await db.refresh(query)
+        else:
+            reserved.launch(query.id, body.query)
 
     return QueryRead.model_validate(query)
 
@@ -116,7 +137,12 @@ async def get_report(query_id: UUID, db: DBSession) -> ReportRead:
     return ReportRead.model_validate(report)
 
 
-@router.post("/{query_id}/report", response_model=ReportRead, status_code=201)
+@router.post(
+    "/{query_id}/report",
+    response_model=ReportRead,
+    status_code=201,
+    dependencies=[RunRateLimit],
+)
 async def regenerate_report(query_id: UUID, db: DBSession) -> ReportRead:
     """Regenerate the report from current clusters (after user edits)."""
     query = await _get_query_or_404(query_id, db)
@@ -126,7 +152,7 @@ async def regenerate_report(query_id: UUID, db: DBSession) -> ReportRead:
     return ReportRead.model_validate(report)
 
 
-@router.patch("/{query_id}/report", response_model=ReportRead)
+@router.patch("/{query_id}/report", response_model=ReportRead, dependencies=[EditRateLimit])
 async def update_report(query_id: UUID, body: ReportUpdate, db: DBSession) -> ReportRead:
     """Phase 9 — edit report front matter or replace sections wholesale."""
     await _get_query_or_404(query_id, db)
@@ -145,7 +171,11 @@ async def update_report(query_id: UUID, body: ReportUpdate, db: DBSession) -> Re
     return ReportRead.model_validate(report)
 
 
-@router.patch("/{query_id}/report/sections/{cluster_id}", response_model=ReportRead)
+@router.patch(
+    "/{query_id}/report/sections/{cluster_id}",
+    response_model=ReportRead,
+    dependencies=[EditRateLimit],
+)
 async def update_report_section(
     query_id: UUID,
     cluster_id: UUID,
@@ -202,35 +232,48 @@ async def export_report(
     )
 
 
-@router.post("/{query_id}/followup", response_model=QueryRead, status_code=201)
+@router.post(
+    "/{query_id}/followup",
+    response_model=QueryRead,
+    status_code=201,
+    dependencies=[RunRateLimit],
+)
 async def create_followup(
     query_id: UUID,
     body: FollowUpCreate,
     db: DBSession,
-    wait: bool = QueryParam(False, description="Run inline instead of in the background"),
+    admin: AdminCaller,
+    wait: bool = QueryParam(
+        False, description="Admin only. Run inline instead of in the background"
+    ),
 ) -> QueryRead:
     """Phase 10 — ask a follow-up that narrows a previous query.
 
     The follow-up runs the full pipeline scoped by the parent question, and is
-    linked to its parent so the refinement chain stays inspectable.
+    linked to its parent so the refinement chain stays inspectable. It costs a
+    full run, so it is admitted through the same gate as a new query.
     """
-    parent = await _get_query_or_404(query_id, db)
+    _require_admin_for_wait(wait, admin)
 
-    combined = f"{parent.raw_query} — follow-up: {body.query}"
-    child = Query(
-        raw_query=body.query,
-        status=QueryStatus.pending,
-        parent_query_id=parent.id,
-    )
-    db.add(child)
-    await db.commit()
-    await db.refresh(child)
-
-    if wait:
-        await run_pipeline_safe(child.id, combined)
+    # Admitted before the parent lookup, so a submission refused for capacity
+    # does not cost a database round trip — and so this matches the v2 action.
+    async with runner.admission() as reserved:
+        parent = await _get_query_or_404(query_id, db)
+        combined = f"{parent.raw_query} — follow-up: {body.query}"
+        child = Query(
+            raw_query=body.query,
+            status=QueryStatus.pending,
+            parent_query_id=parent.id,
+        )
+        db.add(child)
+        await db.commit()
         await db.refresh(child)
-    else:
-        _launch(child.id, combined)
+
+        if wait:
+            await run_pipeline_safe(child.id, combined)
+            await db.refresh(child)
+        else:
+            reserved.launch(child.id, combined)
 
     return QueryRead.model_validate(child)
 
@@ -244,7 +287,7 @@ async def list_followups(query_id: UUID, db: DBSession) -> list[QueryRead]:
     return [QueryRead.model_validate(q) for q in result.scalars().all()]
 
 
-@router.delete("/{query_id}", status_code=204)
+@router.delete("/{query_id}", status_code=204, dependencies=[EditRateLimit])
 async def delete_query(query_id: UUID, db: DBSession) -> Response:
     """Delete a query and everything derived from it (papers stay global)."""
     query = await _get_query_or_404(query_id, db)

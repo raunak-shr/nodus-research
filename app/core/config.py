@@ -114,10 +114,34 @@ class Settings(BaseSettings):
     pdf_timeout_seconds: float = 60.0
     pdf_cache_size: int = 8
 
+    # Admission control (see app/services/limits.py) — in-process, so it assumes
+    # the single worker the progress hub already requires.
+    # Concurrent pipeline runs. Each run is tens of LLM calls and holds database
+    # sessions for minutes, so this caps both spend and pool use. Submissions
+    # beyond it are refused with 429 rather than queued.
+    max_active_queries: int = 2
+    # Runs admitted per UTC day, charged on admission. 0 disables the ceiling.
+    max_daily_runs: int = 0
+    rate_limit_enabled: bool = True
+    # Pipeline submissions, follow-ups and report regeneration.
+    rate_limit_runs_per_hour: int = 10
+    rate_limit_runs_burst: int = 3
+    # Cluster and report edits.
+    rate_limit_edits_per_minute: int = 30
+    rate_limit_edits_burst: int = 10
+    # Only enable behind a proxy that rewrites X-Forwarded-For (Cloudflare,
+    # nginx). With nothing in front, the header is caller-controlled and every
+    # request can claim a fresh identity, which defeats per-IP limiting.
+    trust_forwarded_for: bool = False
+
     # App
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:8000"]
     # When set, all /api/v1 routes require this value in the X-API-Key header.
     api_key: str = ""
+    # Grants the inline `wait=true` pipeline path, sent as X-Admin-Key. That path
+    # holds a request and its database session open for the whole run, so it is
+    # closed unless this is set — a public deployment should leave it unset.
+    admin_api_key: str = ""
     # Use the OS certificate store for outbound HTTP (needed behind corporate
     # proxies that re-sign traffic). Requires the `truststore` package.
     # Applies to httpx clients only — see app/core/tls.py.

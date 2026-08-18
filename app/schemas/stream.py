@@ -123,7 +123,8 @@ class CreateQuery(BaseModel):
     )
     wait: bool = Field(
         default=False,
-        description="Reply only when the whole pipeline finishes. Minutes — prefer subscribing.",
+        description="Admin only. Reply only when the whole pipeline finishes. "
+        "Minutes — prefer subscribing.",
     )
 
 
@@ -196,4 +197,4 @@ class FollowUp(BaseModel):
     query_id: UUID
     query: str = Field(min_length=3)
     subscribe: bool = True
-    wait: bool = False
+    wait: bool = Field(default=False, description="Admin only. See CreateQuery.wait.")
