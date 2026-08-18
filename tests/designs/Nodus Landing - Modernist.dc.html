@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="_ds/modernist-46d9b75b-f3f8-4a35-be38-3c894aa658dd/styles.css">
+<script src="_ds/modernist-46d9b75b-f3f8-4a35-be38-3c894aa658dd/_ds_bundle.js"></script>
+<style>
+:root{--mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  --m-dim:color-mix(in srgb,var(--color-text) 74%,transparent);
+  --m-faint:color-mix(in srgb,var(--color-text) 52%,transparent);
+  --m-hair:color-mix(in srgb,var(--color-text) 18%,transparent);
+  --m-rule:var(--color-text);}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);font-size:15px;-webkit-font-smoothing:antialiased;text-wrap:pretty}
+a{color:var(--color-accent-700);text-decoration:none}
+a:hover{color:var(--color-accent-800)}
+</style>
+</helmet>
+
+<div style="background:var(--color-bg);color:var(--color-text);min-height:100vh;overflow-x:hidden">
+
+  <header style="border-bottom:2px solid var(--m-rule)">
+    <div style="display:flex;align-items:center;gap:28px;flex-wrap:wrap;width:100%;max-width:1280px;margin:0 auto;padding:16px clamp(20px,4vw,56px)">
+      <span style="display:flex;align-items:center;gap:12px">
+        <span style="width:34px;height:34px;background:var(--color-accent);position:relative;flex:0 0 34px;display:block">
+          <span style="position:absolute;left:6px;top:6px;width:7px;height:7px;background:var(--color-bg);display:block"></span>
+          <span style="position:absolute;right:6px;bottom:6px;width:7px;height:7px;background:var(--color-bg);display:block"></span>
+          <span style="position:absolute;left:9px;top:9px;width:19px;height:2px;background:var(--color-bg);transform:rotate(45deg);transform-origin:left center;display:block"></span>
+        </span>
+        <span style="font-family:var(--font-heading);font-weight:800;font-size:27px;letter-spacing:-.03em;line-height:1">Nodus</span>
+      </span>
+      <nav style="display:flex;gap:26px;flex-wrap:wrap;font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--m-dim);margin-left:auto">
+        <a href="#axes" style="color:inherit">What it shows</a>
+        <a href="#pipeline" style="color:inherit">How it works</a>
+        <a href="#deploy" style="color:inherit">Deployment</a>
+        <a href="#faq" style="color:inherit">FAQ</a>
+      </nav>
+      <a href="Nodus%20-%20Modernist.dc.html" class="btn btn-secondary" style="justify-content:flex-start">Open the app</a>
+      <a href="#quickstart" class="btn btn-primary" style="justify-content:flex-start">View the source</a>
+    </div>
+  </header>
+
+  <section style="border-bottom:2px solid var(--m-rule)">
+    <div style="width:100%;max-width:1280px;margin:0 auto;padding:clamp(32px,4vw,64px) clamp(20px,4vw,56px) clamp(40px,5vw,72px);display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:0">
+      <div style="padding-right:clamp(0px,3vw,48px);padding-bottom:32px">
+        <p style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent-700);margin:0 0 24px">01 — Self-hosted research analysis</p>
+        <h1 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(38px,5vw,70px);line-height:.98;letter-spacing:-.035em;margin:0 0 24px;max-width:19ch">{{ heroLine1 }}<br>{{ heroLine2 }}</h1>
+        <p style="font-size:17px;line-height:1.58;color:var(--m-dim);max-width:54ch;margin:0 0 28px">Nodus retrieves around twenty papers for a research question, extracts up to twelve claims from each, and clusters equivalent claims into a cited report. Every cluster carries the lineage of the papers behind it, the typed reason they disagree, and a quality tier computed from a published formula you can read.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+          <a href="#quickstart" class="btn btn-primary" style="padding:12px 20px;font-size:15px;justify-content:flex-start">Clone the repository</a>
+          <a href="#quickstart" class="btn btn-secondary" style="padding:12px 18px;font-size:15px;justify-content:flex-start">Read the docs</a>
+        </div>
+        <p style="font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--m-faint);margin:22px 0 0;max-width:48ch">Your own Postgres · Azure OpenAI, Anthropic or Ollama · fully local option</p>
+      </div>
+
+      <figure style="margin:0;border-left:2px solid var(--m-rule);padding-left:clamp(20px,3vw,44px)">
+        <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-bottom:12px;border-bottom:2px solid var(--m-rule)">
+          <span style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Cluster quality</span>
+          <span style="font-family:var(--mono);font-size:11.5px;color:var(--m-faint);margin-left:auto">c2 · 6 papers</span>
+        </div>
+        <p style="font-size:16px;line-height:1.45;margin:18px 0 22px;font-weight:500;max-width:44ch">Aerobic exercise reduces depressive symptoms with a moderate effect size in adults.</p>
+        <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:0 16px;align-items:baseline;font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums">
+          <span style="font-family:var(--font-body);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-faint);padding-bottom:8px;border-bottom:2px solid var(--m-rule)">Component</span>
+          <span style="font-family:var(--font-body);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-faint);text-align:right;padding-bottom:8px;border-bottom:2px solid var(--m-rule)">Value</span>
+          <span style="font-family:var(--font-body);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-faint);text-align:right;padding-bottom:8px;border-bottom:2px solid var(--m-rule)">Wt</span>
+          <span style="font-family:var(--font-body);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-faint);text-align:right;padding-bottom:8px;border-bottom:2px solid var(--m-rule)">Contrib</span>
+
+          <span style="font-family:var(--font-body);font-size:14px;padding:10px 0;border-bottom:1px solid var(--m-hair)">Study design</span>
+          <span style="text-align:right;color:var(--m-dim);padding:10px 0;border-bottom:1px solid var(--m-hair)">0.86</span>
+          <span style="text-align:right;color:var(--m-faint);padding:10px 0;border-bottom:1px solid var(--m-hair)">40%</span>
+          <span style="text-align:right;padding:10px 0;border-bottom:1px solid var(--m-hair)">0.344</span>
+
+          <span style="font-family:var(--font-body);font-size:14px;padding:10px 0;border-bottom:1px solid var(--m-hair)">Sample size</span>
+          <span style="text-align:right;color:var(--m-dim);padding:10px 0;border-bottom:1px solid var(--m-hair)">0.74</span>
+          <span style="text-align:right;color:var(--m-faint);padding:10px 0;border-bottom:1px solid var(--m-hair)">20%</span>
+          <span style="text-align:right;padding:10px 0;border-bottom:1px solid var(--m-hair)">0.148</span>
+
+          <span style="font-family:var(--font-body);font-size:14px;padding:10px 0;border-bottom:1px solid var(--m-hair)">Corroboration</span>
+          <span style="text-align:right;color:var(--m-dim);padding:10px 0;border-bottom:1px solid var(--m-hair)">0.80</span>
+          <span style="text-align:right;color:var(--m-faint);padding:10px 0;border-bottom:1px solid var(--m-hair)">20%</span>
+          <span style="text-align:right;padding:10px 0;border-bottom:1px solid var(--m-hair)">0.160</span>
+
+          <span style="font-family:var(--font-body);font-size:14px;padding:10px 0;border-bottom:1px solid var(--m-hair)">Extraction confidence</span>
+          <span style="text-align:right;color:var(--m-dim);padding:10px 0;border-bottom:1px solid var(--m-hair)">0.91</span>
+          <span style="text-align:right;color:var(--m-faint);padding:10px 0;border-bottom:1px solid var(--m-hair)">20%</span>
+          <span style="text-align:right;padding:10px 0;border-bottom:1px solid var(--m-hair)">0.182</span>
+
+          <span style="font-family:var(--font-body);font-size:14px;color:var(--color-accent-700);padding:10px 0">Conflict penalty · 2 papers</span>
+          <span style="padding:10px 0"></span>
+          <span style="padding:10px 0"></span>
+          <span style="text-align:right;color:var(--color-accent-700);padding:10px 0">−0.060</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-top:14px;padding-top:16px;border-top:2px solid var(--m-rule)">
+          <span style="font-family:var(--font-heading);font-weight:800;font-size:34px;line-height:1;letter-spacing:-.03em;font-variant-numeric:tabular-nums">0.774</span>
+          <span style="font-family:var(--mono);font-size:12.5px;color:var(--m-faint)">threshold ≥ 0.75</span>
+          <span style="margin-left:auto;background:var(--color-accent);color:var(--color-bg);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;padding:6px 10px">Tier A</span>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <section style="width:100%;max-width:1280px;margin:0 auto;padding:clamp(48px,6vw,88px) clamp(20px,4vw,56px)">
+    <p style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent-700);margin:0 0 22px">02 — The problem</p>
+    <h2 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(28px,3.6vw,50px);line-height:1.02;letter-spacing:-.03em;margin:0 0 32px;max-width:28ch">A summary of forty papers takes a minute. Defending it takes a week.</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:clamp(24px,4vw,56px)">
+      <p style="font-size:16px;line-height:1.62;color:var(--m-dim);margin:0;border-top:2px solid var(--m-rule);padding-top:18px">Existing tools answer the easy question. You get a fluent paragraph with a row of citations under it, and then a colleague asks which paper a specific sentence came from, and you are back in the PDFs.</p>
+      <p style="font-size:16px;line-height:1.62;color:var(--m-dim);margin:0;border-top:2px solid var(--m-rule);padding-top:18px">Three questions decide whether a finding survives review: <em style="font-style:normal;color:var(--color-text);font-weight:600">which paper is this actually from</em>, <em style="font-style:normal;color:var(--color-text);font-weight:600">why do these two disagree</em>, and <em style="font-style:normal;color:var(--color-text);font-weight:600">how much should I trust it</em>. Nodus is built to answer those three, in a form you can check line by line.</p>
+    </div>
+  </section>
+
+  <section id="axes" style="width:100%;max-width:1280px;margin:0 auto;padding:0 clamp(20px,4vw,56px)">
+    <p style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent-700);margin:0 0 22px">03 — Three axes</p>
+
+    <div style="display:flex;flex-wrap:wrap;gap:clamp(24px,4vw,56px);align-items:flex-start;padding-bottom:clamp(40px,5vw,72px)">
+      <div style="flex:1 1 300px;min-width:0">
+        <h3 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(24px,2.6vw,36px);line-height:1.04;letter-spacing:-.03em;margin:0 0 14px">Lineage</h3>
+        <p style="font-size:15.5px;line-height:1.62;color:var(--m-dim);margin:0 0 12px;max-width:46ch">Every cluster carries the chronological chain of papers behind it: the originating paper and its year, the span of years the claim survived, and how each later paper relates to it.</p>
+        <p style="font-size:15.5px;line-height:1.62;color:var(--m-dim);margin:0;max-width:46ch">Relationships are typed — origin, supports, contradicts, extends — so you can read the shape of the evidence, not just its size.</p>
+      </div>
+      <figure style="flex:1 1 460px;min-width:0;margin:0;background:var(--color-surface);padding:24px">
+        <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:12px;border-bottom:2px solid var(--m-rule);margin-bottom:22px">
+          <span style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Lineage · cluster c2</span>
+          <span style="font-family:var(--mono);font-size:11.5px;color:var(--m-faint)">1999–2024 · 6 papers</span>
+        </div>
+        <div style="display:flex;flex-direction:column;border-left:2px solid var(--m-rule);margin-left:5px;padding-left:22px">
+          <div style="position:relative;padding-bottom:20px">
+            <span style="position:absolute;left:-30px;top:4px;width:12px;height:12px;background:var(--color-accent);display:block"></span>
+            <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px">
+              <span style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--color-accent-700)">origin</span>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--m-faint)">1999 · 156 cites</span>
+            </div>
+            <p style="font-size:14.5px;line-height:1.45;margin:0">Blumenthal et al. — Effects of exercise training on older patients with major depression</p>
+          </div>
+          <div style="position:relative;padding-bottom:20px">
+            <span style="position:absolute;left:-30px;top:4px;width:12px;height:12px;background:var(--color-text);display:block"></span>
+            <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px">
+              <span style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase">supports</span>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--m-faint)">2007 · 892 cites</span>
+            </div>
+            <p style="font-size:14.5px;line-height:1.45;margin:0">Babyak et al. — Exercise and pharmacotherapy in the treatment of major depressive disorder</p>
+          </div>
+          <div style="position:relative;padding-bottom:20px">
+            <span style="position:absolute;left:-30px;top:4px;width:12px;height:12px;border:2px solid var(--color-text);display:block"></span>
+            <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px">
+              <span style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase">contradicts</span>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--m-faint)">2013 · 604 cites</span>
+            </div>
+            <p style="font-size:14.5px;line-height:1.45;margin:0">Cooney et al. — Exercise for depression: Cochrane review of 39 trials</p>
+          </div>
+          <div style="position:relative;padding-bottom:20px">
+            <span style="position:absolute;left:-30px;top:4px;width:12px;height:12px;border:2px solid var(--m-faint);display:block"></span>
+            <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px">
+              <span style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--m-dim)">extends</span>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--m-faint)">2018 · 411 cites</span>
+            </div>
+            <p style="font-size:14.5px;line-height:1.45;margin:0">Schuch et al. — Physical activity and incident depression: meta-analysis of prospective cohorts</p>
+          </div>
+          <div style="position:relative">
+            <span style="position:absolute;left:-30px;top:4px;width:12px;height:12px;background:var(--color-text);display:block"></span>
+            <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:5px">
+              <span style="font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase">supports</span>
+              <span style="font-family:var(--mono);font-size:12px;color:var(--m-faint)">2024 · 218 cites</span>
+            </div>
+            <p style="font-size:14.5px;line-height:1.45;margin:0">Noetel et al. — Effect of exercise for depression: systematic review and network meta-analysis</p>
+          </div>
+        </div>
+      </figure>
+    </div>
+
+    <div style="height:2px;background:var(--m-rule)"></div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:clamp(24px,4vw,56px);align-items:flex-start;padding:clamp(40px,5vw,72px) 0">
+      <div style="flex:1 1 300px;min-width:0">
+        <h3 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(24px,2.6vw,36px);line-height:1.04;letter-spacing:-.03em;margin:0 0 14px">Disagreement</h3>
+        <p style="font-size:15.5px;line-height:1.62;color:var(--m-dim);margin:0 0 18px;max-width:46ch">That two papers conflict is easy to notice. Nodus states why. Each cluster gets typed disagreement drivers across eight categories, and every driver names the specific papers involved.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <span class="tag tag-outline" style="font-family:var(--mono);font-size:11px">methodology</span>
+          <span class="tag tag-outline" style="font-family:var(--mono);font-size:11px">population</span>
+          <span class="tag tag-outline" style="font-family:var(--mono);font-size:11px">metric definition</span>
+          <span class="tag tag-outline" style="font-family:var(--mono);font-size:11px">temporal</span>
+          <span class="tag tag-outline" style="font-family:var(--mono);font-size:11px">sample size</span>
+          <span class="tag tag-outline" style="font-family:var(--mono);font-size:11px">analysis</span>
+          <span class="tag tag-outline" style="font-family:var(--mono);font-size:11px">publication bias</span>
+          <span class="tag tag-outline" style="font-family:var(--mono);font-size:11px">other</span>
+        </div>
+      </div>
+      <div style="flex:1 1 460px;min-width:0;display:flex;flex-direction:column">
+        <div style="padding:20px 0;border-top:2px solid var(--m-rule)">
+          <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px">
+            <span style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-700)">methodology</span>
+            <span style="font-family:var(--mono);font-size:11.5px;color:var(--m-faint);margin-left:auto">Cooney 2013 ↔ Noetel 2024</span>
+          </div>
+          <p style="font-size:15px;line-height:1.55;margin:0;color:var(--m-dim)">One review restricts to trials with blinded outcome assessment and finds a small effect; the other pools unblinded trials in a network model and finds a moderate one.</p>
+        </div>
+        <div style="padding:20px 0;border-top:1px solid var(--m-hair)">
+          <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px">
+            <span style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-700)">population</span>
+            <span style="font-family:var(--mono);font-size:11.5px;color:var(--m-faint);margin-left:auto">Blumenthal 1999 ↔ Schuch 2018</span>
+          </div>
+          <p style="font-size:15px;line-height:1.55;margin:0;color:var(--m-dim)">Clinically diagnosed older adults in a supervised trial against a general adult cohort self-reporting activity levels.</p>
+        </div>
+        <div style="padding:20px 0;border-top:1px solid var(--m-hair);border-bottom:2px solid var(--m-rule)">
+          <div style="display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px">
+            <span style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-700)">metric definition</span>
+            <span style="font-family:var(--mono);font-size:11.5px;color:var(--m-faint);margin-left:auto">Babyak 2007 ↔ Cooney 2013</span>
+          </div>
+          <p style="font-size:15px;line-height:1.55;margin:0;color:var(--m-dim)">Remission rate on HAM-D versus standardised mean difference in continuous symptom scores — the same trials, two effect measures.</p>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:2px;background:var(--m-rule)"></div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:clamp(24px,4vw,56px);align-items:flex-start;padding:clamp(40px,5vw,72px) 0">
+      <div style="flex:1 1 300px;min-width:0">
+        <h3 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(24px,2.6vw,36px);line-height:1.04;letter-spacing:-.03em;margin:0 0 14px">Quality, computed — not judged by a model</h3>
+        <p style="font-size:15.5px;line-height:1.62;color:var(--m-dim);margin:0 0 12px;max-width:46ch">A tier comes from a published formula: study design 40%, sample size 20%, corroboration 20%, extraction confidence 20%, minus a conflict penalty of up to 15%. No language model rates the evidence.</p>
+        <p style="font-size:15.5px;line-height:1.62;color:var(--m-dim);margin:0;max-width:46ch">Every input is exposed, so the arithmetic is auditable. Change your mind about it and you override the tier by hand — the computed value stays on the record beside yours.</p>
+      </div>
+      <figure style="flex:1 1 460px;min-width:0;margin:0;background:var(--color-surface);padding:24px">
+        <span style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;display:block;padding-bottom:12px;border-bottom:2px solid var(--m-rule);margin-bottom:18px">The formula</span>
+        <div style="font-family:var(--mono);font-size:13.5px;line-height:1.95;font-variant-numeric:tabular-nums;color:var(--m-dim)">
+          <div><span style="color:var(--color-accent-700);font-weight:700">score</span> = 0.40·design + 0.20·sample</div>
+          <div style="padding-left:6.5ch">+ 0.20·corroboration</div>
+          <div style="padding-left:6.5ch">+ 0.20·confidence − penalty</div>
+        </div>
+        <span style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;display:block;margin:22px 0 0;padding-top:18px;border-top:2px solid var(--m-rule)">Thresholds</span>
+        <div style="display:flex;flex-direction:column;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;margin-top:12px">
+          <div style="display:flex;align-items:center;gap:16px;padding:11px 12px;background:var(--color-accent);color:var(--color-bg);font-weight:700"><span style="width:2.5ch">A</span><span>≥ 0.75</span><span style="margin-left:auto;font-size:12px">this cluster · 0.774</span></div>
+          <div style="display:flex;align-items:center;gap:16px;padding:11px 12px;border-bottom:1px solid var(--m-hair);color:var(--m-dim)"><span style="width:2.5ch">B</span><span>≥ 0.60</span></div>
+          <div style="display:flex;align-items:center;gap:16px;padding:11px 12px;border-bottom:1px solid var(--m-hair);color:var(--m-dim)"><span style="width:2.5ch">C</span><span>≥ 0.45</span></div>
+          <div style="display:flex;align-items:center;gap:16px;padding:11px 12px;color:var(--m-dim)"><span style="width:2.5ch">D</span><span>&lt; 0.45</span></div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <section id="pipeline" style="border-top:2px solid var(--m-rule);border-bottom:2px solid var(--m-rule)">
+    <div style="width:100%;max-width:1280px;margin:0 auto;padding:clamp(48px,6vw,88px) clamp(20px,4vw,56px)">
+      <p style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent-700);margin:0 0 22px">04 — How it works</p>
+      <h2 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(28px,3.4vw,46px);line-height:1.02;letter-spacing:-.03em;margin:0 0 16px;max-width:26ch">Three stages, and it takes minutes</h2>
+      <p style="font-size:16px;line-height:1.62;color:var(--m-dim);max-width:58ch;margin:0 0 44px">A run streams its progress phase by phase because it is doing real work on real papers rather than autocompleting a summary. Expect minutes, not seconds.</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:clamp(20px,3vw,36px)">
+        <div>
+          <p style="font-family:var(--font-heading);font-weight:800;font-size:13px;letter-spacing:.1em;text-transform:uppercase;margin:0 0 12px;padding-bottom:12px;border-bottom:2px solid var(--m-rule)">Stage 1</p>
+          <h4 style="font-family:var(--font-heading);font-weight:800;font-size:23px;line-height:1.1;letter-spacing:-.025em;margin:0 0 12px">Retrieve and rank</h4>
+          <p style="font-size:15px;line-height:1.58;color:var(--m-dim);margin:0 0 18px">Around twenty papers come from Semantic Scholar, ranked by a stated composite rather than an opaque relevance score.</p>
+          <div style="font-family:var(--mono);font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--m-dim)">
+            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--m-hair)"><span>normalized citations</span><span style="color:var(--color-text);font-weight:700">40%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--m-hair)"><span>influential citations</span><span style="color:var(--color-text);font-weight:700">30%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--m-hair)"><span>recency</span><span style="color:var(--color-text);font-weight:700">20%</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px 0"><span>relevance</span><span style="color:var(--color-text);font-weight:700">10%</span></div>
+          </div>
+        </div>
+        <div>
+          <p style="font-family:var(--font-heading);font-weight:800;font-size:13px;letter-spacing:.1em;text-transform:uppercase;margin:0 0 12px;padding-bottom:12px;border-bottom:2px solid var(--m-rule)">Stage 2</p>
+          <h4 style="font-family:var(--font-heading);font-weight:800;font-size:23px;line-height:1.1;letter-spacing:-.025em;margin:0 0 12px">Extract and cluster claims</h4>
+          <p style="font-size:15px;line-height:1.58;color:var(--m-dim);margin:0 0 18px">Up to twelve claims per paper are extracted, embedded, and grouped with equivalent claims from other papers. The cluster keeps each source claim, its stance, and its extraction confidence.</p>
+          <div style="font-family:var(--mono);font-size:12.5px;color:var(--m-dim)">
+            <div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--m-hair)"><span>20 papers</span><span style="color:var(--m-faint)">→ up to 240 claims</span></div>
+            <div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid var(--m-hair)"><span>claims</span><span style="color:var(--m-faint)">→ clusters</span></div>
+            <div style="display:flex;justify-content:space-between;gap:8px;padding:8px 0"><span>cluster</span><span style="color:var(--m-faint)">→ lineage + drivers + tier</span></div>
+          </div>
+        </div>
+        <div>
+          <p style="font-family:var(--font-heading);font-weight:800;font-size:13px;letter-spacing:.1em;text-transform:uppercase;margin:0 0 12px;padding-bottom:12px;border-bottom:2px solid var(--m-rule)">Stage 3</p>
+          <h4 style="font-family:var(--font-heading);font-weight:800;font-size:23px;line-height:1.1;letter-spacing:-.025em;margin:0 0 12px">Analyse and synthesise</h4>
+          <p style="font-size:15px;line-height:1.58;color:var(--m-dim);margin:0 0 18px">Sections assemble as they finish, each citing the clusters behind it. Follow-up questions are scoped to a previous query and linked to their parent, so the refinement chain stays inspectable.</p>
+          <div style="font-family:var(--mono);font-size:12.5px;color:var(--m-dim)">
+            <div style="padding:8px 0;border-bottom:1px solid var(--m-hair)">Export → PDF · Markdown · JSON · HTML</div>
+            <div style="padding:8px 0;font-family:var(--font-body);line-height:1.55;color:var(--m-faint)">The PDF is the print variant of the document on screen, so it cannot drift from it.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="width:100%;max-width:1280px;margin:0 auto;padding:clamp(48px,6vw,88px) clamp(20px,4vw,56px);display:flex;flex-wrap:wrap;gap:clamp(28px,4vw,56px);align-items:flex-start">
+    <div style="flex:1 1 320px;min-width:0">
+      <p style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent-700);margin:0 0 22px">05 — Human in the loop</p>
+      <h2 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(28px,3.2vw,44px);line-height:1.02;letter-spacing:-.03em;margin:0 0 16px;max-width:24ch">Your correction is recorded beside the computation, not on top of it</h2>
+      <p style="font-size:16px;line-height:1.62;color:var(--m-dim);max-width:52ch;margin:0 0 12px">You know things the formula does not: that a trial's registry entry was amended, that a cohort double-counts. Override the tier and give a reason. Both values stay visible.</p>
+      <p style="font-size:16px;line-height:1.62;color:var(--m-dim);max-width:52ch;margin:0">Edited clusters and reports are pinned. Re-analyse the question and your work survives instead of being overwritten by the next run.</p>
+    </div>
+    <div style="flex:1 1 420px;min-width:0;display:flex;flex-wrap:wrap;gap:0;align-items:stretch;border-top:2px solid var(--m-rule);border-bottom:2px solid var(--m-rule)">
+      <figure style="flex:1 1 190px;min-width:0;margin:0;padding:20px">
+        <span style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--m-faint);display:block;margin-bottom:16px">Computed</span>
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px"><span style="font-family:var(--font-heading);font-weight:800;font-size:52px;line-height:.9;letter-spacing:-.04em">B</span><span style="font-family:var(--mono);font-size:13px;color:var(--m-faint);font-variant-numeric:tabular-nums">0.681</span></div>
+        <p style="font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--m-dim);margin:0">design 0.72 · sample 0.55<br>corrob. 0.80 · conf. 0.88<br>penalty −0.045</p>
+      </figure>
+      <figure style="flex:1 1 190px;min-width:0;margin:0;padding:20px;border-left:2px solid var(--m-rule);background:var(--color-surface)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px"><span style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-700)">Override</span><span style="margin-left:auto;background:var(--color-accent);color:var(--color-bg);font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 7px">pinned</span></div>
+        <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:14px"><span style="font-family:var(--font-heading);font-weight:800;font-size:52px;line-height:.9;letter-spacing:-.04em;color:var(--color-accent)">C</span><span style="font-family:var(--mono);font-size:13px;color:var(--m-faint)">manual</span></div>
+        <p style="font-size:12.5px;line-height:1.6;color:var(--m-dim);margin:0">“Two of the four corroborating cohorts draw on the same registry — corroboration is overstated.”</p>
+      </figure>
+    </div>
+  </section>
+
+  <section id="deploy" style="border-top:2px solid var(--m-rule)">
+    <div style="width:100%;max-width:1280px;margin:0 auto;padding:clamp(48px,6vw,88px) clamp(20px,4vw,56px);display:flex;flex-wrap:wrap;gap:clamp(24px,4vw,56px);align-items:flex-start">
+      <div style="flex:1 1 300px;min-width:0">
+        <p style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent-700);margin:0 0 22px">06 — Deployment and privacy</p>
+        <h2 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(28px,3.2vw,44px);line-height:1.02;letter-spacing:-.03em;margin:0 0 16px;max-width:22ch">Runs on your hardware, with your model</h2>
+        <p style="font-size:16px;line-height:1.62;color:var(--m-dim);max-width:52ch;margin:0 0 12px">Nodus is self-hosted. Papers, claims, clusters and reports live in your own Postgres — there is no hosted service holding them.</p>
+        <p style="font-size:16px;line-height:1.62;color:var(--m-dim);max-width:52ch;margin:0">The model is swappable: Azure OpenAI, Anthropic, or Ollama. With Ollama the whole pipeline runs locally and nothing leaves the machine, which is the configuration to use for unpublished or embargoed work.</p>
+      </div>
+      <figure id="quickstart" style="flex:1 1 470px;min-width:0;margin:0;background:var(--color-surface);border-top:2px solid var(--m-rule)">
+        <div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid var(--m-hair)">
+          <span style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Quickstart</span>
+          <span style="font-family:var(--mono);font-size:11.5px;color:var(--m-faint);margin-left:auto">Python 3.12 · Postgres 16</span>
+        </div>
+        <div style="padding:20px;font-family:var(--mono);font-size:13px;line-height:2;overflow-x:auto">
+          <div style="color:var(--m-faint)"># clone and install</div>
+          <div><span style="color:var(--color-accent);font-weight:700">$</span> git clone git@github.com:nodus/nodus.git</div>
+          <div><span style="color:var(--color-accent);font-weight:700">$</span> cd nodus &amp;&amp; uv sync</div>
+          <div style="color:var(--m-faint);padding-top:10px"># configure the model and database</div>
+          <div><span style="color:var(--color-accent);font-weight:700">$</span> cp .env.example .env</div>
+          <div style="color:var(--m-dim);padding-left:2ch">NODUS_MODEL=ollama:llama3.1</div>
+          <div style="color:var(--m-dim);padding-left:2ch">DATABASE_URL=postgresql://localhost/nodus</div>
+          <div style="color:var(--m-faint);padding-top:10px"># migrate and run</div>
+          <div><span style="color:var(--color-accent);font-weight:700">$</span> uv run alembic upgrade head</div>
+          <div><span style="color:var(--color-accent);font-weight:700">$</span> uv run nodus serve</div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <section style="width:100%;max-width:1280px;margin:0 auto;padding:0 clamp(20px,4vw,56px) clamp(48px,6vw,88px)">
+    <p style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent-700);margin:0 0 22px">07 — Compared with what you have already tried</p>
+    <div style="overflow-x:auto">
+      <table class="table" style="min-width:680px;width:100%;font-size:14.5px">
+        <thead>
+          <tr>
+            <th style="width:28%">Question you get asked</th>
+            <th>General LLM chat</th>
+            <th>Search-and-summarize tools</th>
+            <th style="color:var(--color-accent-700)">Nodus</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Which paper is this claim from?</td>
+            <td style="color:var(--m-faint)">Sometimes cited, sometimes invented</td>
+            <td style="color:var(--m-dim)">Citation list per answer</td>
+            <td>Chronological chain of every paper in the cluster</td>
+          </tr>
+          <tr>
+            <td>Why do these two papers disagree?</td>
+            <td style="color:var(--m-faint)">Prose guess, unstructured</td>
+            <td style="color:var(--m-dim)">Conflict noted, reason rarely typed</td>
+            <td>Typed drivers across eight categories, naming the papers</td>
+          </tr>
+          <tr>
+            <td>How was quality decided?</td>
+            <td style="color:var(--m-faint)">Model's opinion</td>
+            <td style="color:var(--m-dim)">Model or metadata heuristic</td>
+            <td>Published formula with every input exposed</td>
+          </tr>
+          <tr>
+            <td>Can I correct it?</td>
+            <td style="color:var(--m-faint)">Re-prompt and hope</td>
+            <td style="color:var(--m-dim)">Edits usually lost on re-run</td>
+            <td>Override recorded beside the computation, pinned across re-analysis</td>
+          </tr>
+          <tr>
+            <td>Where does my data live?</td>
+            <td style="color:var(--m-faint)">Vendor's servers</td>
+            <td style="color:var(--m-dim)">Vendor's servers</td>
+            <td>Your Postgres; fully local with Ollama</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-family:var(--mono);font-size:12px;line-height:1.6;color:var(--m-faint);margin:16px 0 0;max-width:66ch">Categories, not products. Individual tools in these categories vary, and some do parts of this well.</p>
+  </section>
+
+  <section id="faq" style="border-top:2px solid var(--m-rule)">
+    <div style="width:100%;max-width:1280px;margin:0 auto;padding:clamp(48px,6vw,88px) clamp(20px,4vw,56px)">
+      <p style="font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent-700);margin:0 0 30px">08 — FAQ</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:clamp(24px,4vw,48px)">
+        <div>
+          <h4 style="font-family:var(--font-heading);font-weight:800;font-size:20px;line-height:1.15;letter-spacing:-.025em;margin:0 0 12px;padding-bottom:12px;border-bottom:2px solid var(--m-rule)">Where do the papers come from?</h4>
+          <p style="font-size:15px;line-height:1.58;color:var(--m-dim);margin:0 0 32px;max-width:48ch">Semantic Scholar. Retrieval, citation counts and influential-citation counts all come from its API.</p>
+          <h4 style="font-family:var(--font-heading);font-weight:800;font-size:20px;line-height:1.15;letter-spacing:-.025em;margin:0 0 12px;padding-bottom:12px;border-bottom:2px solid var(--m-rule)">Can it run offline?</h4>
+          <p style="font-size:15px;line-height:1.58;color:var(--m-dim);margin:0;max-width:48ch">The pipeline can, via Ollama — extraction, clustering and synthesis all run locally. Retrieval needs Semantic Scholar, so papers already in your database can be re-analysed offline while new queries cannot.</p>
+        </div>
+        <div>
+          <h4 style="font-family:var(--font-heading);font-weight:800;font-size:20px;line-height:1.15;letter-spacing:-.025em;margin:0 0 12px;padding-bottom:12px;border-bottom:2px solid var(--m-rule)">What does it not do?</h4>
+          <p style="font-size:15px;line-height:1.58;color:var(--m-dim);margin:0 0 32px;max-width:48ch">It does not judge quality with a language model — tiers are arithmetic. It does not replace reading the paper: it tells you which papers to read and what to check when you do.</p>
+          <h4 style="font-family:var(--font-heading);font-weight:800;font-size:20px;line-height:1.15;letter-spacing:-.025em;margin:0 0 12px;padding-bottom:12px;border-bottom:2px solid var(--m-rule)">How long does a run take?</h4>
+          <p style="font-size:15px;line-height:1.58;color:var(--m-dim);margin:0;max-width:48ch">Minutes. Twenty papers, up to twelve claims each, embedding and clustering, then synthesis — progress streams phase by phase while it works.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="background:var(--color-accent);color:var(--color-bg)">
+    <div style="width:100%;max-width:1280px;margin:0 auto;padding:clamp(52px,6vw,96px) clamp(20px,4vw,56px)">
+      <h2 style="font-family:var(--font-heading);font-weight:800;font-size:clamp(34px,4.6vw,68px);line-height:.98;letter-spacing:-.035em;margin:0 0 20px;max-width:22ch;color:var(--color-bg)">Read the source before you trust the output</h2>
+      <p style="font-size:17px;line-height:1.55;max-width:52ch;margin:0 0 30px;color:color-mix(in srgb,var(--color-bg) 88%,transparent)">Nodus is self-hosted and open. Clone it, read the ranking and quality code, and decide for yourself whether the arithmetic is sound.</p>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+        <a href="#quickstart" class="btn" style="background:var(--color-bg);color:var(--color-accent-700);padding:13px 22px;font-size:15px;justify-content:flex-start;border:0">Clone the repository</a>
+        <a href="#quickstart" class="btn" style="background:transparent;color:var(--color-bg);border:1px solid var(--color-bg);padding:13px 20px;font-size:15px;justify-content:flex-start">Read the docs</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div style="width:100%;max-width:1280px;margin:0 auto;padding:clamp(36px,4vw,56px) clamp(20px,4vw,56px) 32px">
+      <sc-if value="{{ showHostedNotify }}" hint-placeholder-val="{{ true }}">
+        <div style="max-width:520px;padding-bottom:32px">
+          <p style="font-size:14px;line-height:1.6;color:var(--m-dim);margin:0 0 14px">There is no hosted version and no accounts. If one is ever built, this list is how you would hear about it.</p>
+          <div style="display:flex;gap:10px;align-items:stretch;flex-wrap:wrap">
+            <input class="input" type="email" placeholder="you@university.edu" aria-label="Email address" style="flex:1 1 220px;min-height:38px">
+            <button type="button" class="btn btn-secondary" style="min-height:38px;justify-content:flex-start">Notify me</button>
+          </div>
+        </div>
+      </sc-if>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;padding-top:22px;border-top:2px solid var(--m-rule);font-family:var(--mono);font-size:12px;color:var(--m-faint)">
+        <span style="display:flex;align-items:center;gap:9px">
+          <span style="width:22px;height:22px;background:var(--color-accent);position:relative;flex:0 0 22px;display:block">
+            <span style="position:absolute;left:4px;top:4px;width:5px;height:5px;background:var(--color-bg);display:block"></span>
+            <span style="position:absolute;right:4px;bottom:4px;width:5px;height:5px;background:var(--color-bg);display:block"></span>
+            <span style="position:absolute;left:6px;top:6px;width:12px;height:2px;background:var(--color-bg);transform:rotate(45deg);transform-origin:left center;display:block"></span>
+          </span>
+          <span style="font-family:var(--font-heading);font-weight:800;font-size:18px;letter-spacing:-.03em;color:var(--color-text)">Nodus</span>
+        </span>
+        <span>Self-hosted research-paper analysis</span>
+        <span style="margin-left:auto">Papers via Semantic Scholar</span>
+      </div>
+    </div>
+  </footer>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;heroVariant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Traceable&quot;,&quot;Arithmetic&quot;],&quot;default&quot;:&quot;Traceable&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Hero&quot;},&quot;showHostedNotify&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Footer&quot;}}">
+class Component extends DCLogic {
+  renderVals(){
+    const v = this.props.heroVariant ?? 'Traceable';
+    const lines = v === 'Arithmetic'
+      ? ['Quality tiers you can', 'check with a calculator.']
+      : ['Every judgement it makes,', 'you can trace and correct.'];
+    return {
+      heroLine1: lines[0],
+      heroLine2: lines[1],
+      showHostedNotify: this.props.showHostedNotify ?? true,
+    };
+  }
+}
+</script>
+</body>
+</html>
