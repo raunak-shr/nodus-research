@@ -41,6 +41,7 @@ from app.services import (
     export,
     limits,
     pdf_export,
+    provenance,
     report_edit,
     report_render,
     runner,
@@ -65,6 +66,10 @@ class ActionContext:
     #: Whether the handshake presented ADMIN_API_KEY. Gates the inline `wait`
     #: path, which is otherwise a cheap way to pin a database session.
     is_admin: bool = False
+    #: The identity this connection's rate limits are keyed on, resolved once at
+    #: the handshake. An action that reports budgets must read the same key the
+    #: limiter charges, or it would report someone else's allowance.
+    client_key: str = "unknown"
 
 
 Handler = Callable[[ActionContext, Any], Awaitable[Any]]
@@ -148,6 +153,11 @@ async def meta_describe(ctx: ActionContext, params: frames.Empty) -> dict[str, A
 @action("meta.health", frames.Empty, "Liveness check")
 async def meta_health(ctx: ActionContext, params: frames.Empty) -> dict[str, Any]:
     return {"status": "ok", "version": "2.0.0"}
+
+
+@action("meta.limits", frames.Empty, "This connection's admission state and rate budgets")
+async def meta_limits(ctx: ActionContext, params: frames.Empty) -> dict[str, Any]:
+    return limits.snapshot_for(ctx.client_key)
 
 
 @action("meta.config", frames.Empty, "Non-secret view of the active configuration")
@@ -453,6 +463,16 @@ async def claims_list(ctx: ActionContext, params: frames.ClaimsForPaper) -> list
             )
         ).scalars()
         return [_dump(ClaimRead.model_validate(c)) for c in rows.all()]
+
+
+@action(
+    "claims.source",
+    frames.ClaimRef,
+    "The passage a claim was extracted from, with the quote located in it",
+)
+async def claims_source(ctx: ActionContext, params: frames.ClaimRef) -> dict[str, Any]:
+    async with AsyncSessionLocal() as db:
+        return _dump(await provenance.load_claim_source(params.claim_id, db))
 
 
 @action("clusters.list", frames.QueryRef, "Clusters for a query, best evidence first")

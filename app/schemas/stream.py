@@ -154,6 +154,10 @@ class ClaimsForPaper(Page):
     paper_id: UUID
 
 
+class ClaimRef(BaseModel):
+    claim_id: UUID
+
+
 class ClusterRef(BaseModel):
     cluster_id: UUID
 

@@ -42,6 +42,11 @@ def launch(query_id: UUID, raw_query: str, *, slot: RunSlot | None = None) -> as
             slot.release()
         return existing
 
+    if slot is not None:
+        # Named now rather than at acquisition: the slot is reserved before the
+        # query row exists, and the phase lookup needs the id.
+        slot.attach(query_id)
+
     task = asyncio.create_task(run_pipeline_safe(query_id, raw_query), name=f"pipeline:{query_id}")
     _tasks[query_id] = task
 

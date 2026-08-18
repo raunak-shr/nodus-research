@@ -27,8 +27,11 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
+from uuid import UUID
 
 from app.core.config import settings
+from app.core.events import hub
 from app.services.errors import TooManyRequests
 
 # A pipeline run takes minutes, so there is no useful precision to offer a
@@ -47,6 +50,23 @@ _MAX_RETRY_AFTER = 3600.0
 class _Bucket:
     tokens: float
     updated: float
+
+
+@dataclass(frozen=True)
+class Budget:
+    """What one caller has left in a bucket, without spending any of it.
+
+    `remaining` is floored: nine tenths of a token buys nothing, so reporting it
+    as 1 would promise a request that is about to be refused.
+    """
+
+    name: str
+    enabled: bool
+    remaining: int
+    capacity: int
+    #: Seconds to regain one token, or None when limiting is off or the bucket is
+    #: closed. This is the sustained rate, which `capacity` (a burst) is not.
+    refill_seconds: float | None
 
 
 class RateLimiter:
@@ -118,6 +138,41 @@ class RateLimiter:
             scope=self.name,
         )
 
+    def peek(self, key: str) -> Budget:
+        """What `key` has left right now, spending nothing.
+
+        Non-mutating and non-inserting on purpose: answering a question about a
+        caller must not create a bucket for them, or polling this would fill the
+        dict with keys that never spent a token — the same unbounded growth
+        `_prune` exists to prevent.
+        """
+        capacity = max(1, self._capacity())
+        rate = max(0.0, self._rate_per_second())
+
+        if not self._enabled():
+            return Budget(
+                name=self.name,
+                enabled=False,
+                remaining=capacity,
+                capacity=capacity,
+                refill_seconds=None,
+            )
+
+        bucket = self._buckets.get(key)
+        if bucket is None:
+            tokens = float(capacity)
+        else:
+            elapsed = max(0.0, self._clock() - bucket.updated)
+            tokens = min(float(capacity), bucket.tokens + elapsed * rate)
+
+        return Budget(
+            name=self.name,
+            enabled=True,
+            remaining=int(tokens),
+            capacity=capacity,
+            refill_seconds=(1.0 / rate) if rate > 0 else None,
+        )
+
     def _prune(self, now: float) -> None:
         """Drop idle buckets.
 
@@ -158,23 +213,38 @@ class RunSlot:
     Releasing twice is a no-op so ownership can move from the request that
     reserved the slot to the background task that consumes it, without either
     side having to know whether the other already let go.
+
+    The slot also carries when the run began and, once `attach` is called, which
+    query it is running — the two facts needed to describe a busy queue to
+    somebody who has just been refused.
     """
 
-    __slots__ = ("_gate", "_released")
+    __slots__ = ("_gate", "_released", "started_at", "query_id")
 
-    def __init__(self, gate: RunGate) -> None:
+    def __init__(self, gate: RunGate, *, started_at: float) -> None:
         self._gate = gate
         self._released = False
+        self.started_at = started_at
+        self.query_id: UUID | None = None
 
     @property
     def released(self) -> bool:
         return self._released
 
+    def attach(self, query_id: UUID) -> None:
+        """Name the run holding this slot, so its phase can be looked up.
+
+        A slot is reserved before the query row exists, so this cannot happen at
+        acquisition. An unattached slot is still reported — an inline admin run
+        occupies capacity whether or not anything named it.
+        """
+        self.query_id = query_id
+
     def release(self) -> None:
         if self._released:
             return
         self._released = True
-        self._gate.release_one()
+        self._gate.release_one(self)
 
 
 class RunGate:
@@ -196,13 +266,22 @@ class RunGate:
         limit: Callable[[], int],
         daily_limit: Callable[[], int],
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._limit = limit
         self._daily_limit = daily_limit
         self._now = now
-        self._active = 0
+        self._monotonic = monotonic
+        # The live slots *are* the count. Keeping a separate integer alongside
+        # them would let the number reported drift from the runs actually held.
+        # Ordered by acquisition, so the oldest run is always first.
+        self._live: list[RunSlot] = []
         self._day: date | None = None
         self._runs_today = 0
+
+    @property
+    def _active(self) -> int:
+        return len(self._live)
 
     def acquire(self) -> RunSlot:
         """Reserve a slot, or raise `TooManyRequests` without side effects."""
@@ -227,13 +306,23 @@ class RunGate:
                 active=self._active,
             )
 
-        self._active += 1
         self._runs_today += 1
-        return RunSlot(self)
+        slot = RunSlot(self, started_at=self._monotonic())
+        self._live.append(slot)
+        return slot
 
-    def release_one(self) -> None:
+    def release_one(self, slot: RunSlot) -> None:
         """Give a slot back. Paired with `RunSlot.release`, which is idempotent."""
-        self._active = max(0, self._active - 1)
+        try:
+            self._live.remove(slot)
+        except ValueError:
+            # Already gone. Releasing twice is allowed by design, so this is not
+            # an error worth raising at a caller that did nothing wrong.
+            pass
+
+    def live_slots(self) -> list[RunSlot]:
+        """The slots currently held, oldest first."""
+        return list(self._live)
 
     def snapshot(self) -> dict[str, int]:
         self._roll_day()
@@ -245,7 +334,7 @@ class RunGate:
         }
 
     def reset(self) -> None:
-        self._active = 0
+        self._live.clear()
         self._runs_today = 0
         self._day = None
 
@@ -294,6 +383,80 @@ _LIMITER_BY_COST = {"run": runs_limiter, "edit": edits_limiter}
 
 def limiter_for_cost(cost: str) -> RateLimiter | None:
     return _LIMITER_BY_COST.get(cost)
+
+
+def budgets_for(key: str) -> dict[str, dict[str, object]]:
+    """Every rate-limited bucket's remaining allowance for one caller.
+
+    Reads never consume, so a client may poll this to show a caller what they
+    have left without that display itself costing them a request.
+    """
+    return {
+        limiter.name: {
+            "remaining": budget.remaining,
+            "capacity": budget.capacity,
+            "refill_seconds": budget.refill_seconds,
+        }
+        for limiter in (runs_limiter, edits_limiter)
+        for budget in (limiter.peek(key),)
+    }
+
+
+def _last_progress(query_id: UUID) -> tuple[int | None, int | None]:
+    """The most recent completed/total a run published, if it published any.
+
+    Read back off the hub's history rather than tracked separately: the events
+    already carry it, and a second copy would be one more thing to keep in step.
+    """
+    for event in reversed(hub.history(query_id)):
+        total = event.get("total")
+        if total:
+            return int(event.get("completed") or 0), int(total)
+    return None, None
+
+
+def active_runs() -> list[dict[str, Any]]:
+    """One anonymous entry per in-flight run, oldest first.
+
+    Deliberately carries no query id. Someone refused for capacity is a stranger,
+    and an id is a key to `queries.get`, which returns the question itself —
+    handing ids out to explain a busy queue would leak exactly what reporting
+    only the phase was meant to protect. Nothing here predicts a finish time
+    either; elapsed is measured, remaining would be invented.
+    """
+    runs: list[dict[str, Any]] = []
+    for slot in run_gate.live_slots():
+        elapsed = max(0.0, time.monotonic() - slot.started_at)
+        phase: str | None = None
+        completed: int | None = None
+        total: int | None = None
+        if slot.query_id is not None:
+            phase = hub.snapshot(slot.query_id).get("phase") or None
+            completed, total = _last_progress(slot.query_id)
+        runs.append(
+            {
+                "phase": phase,
+                "elapsed_seconds": round(elapsed, 1),
+                "completed": completed,
+                "total": total,
+            }
+        )
+    return runs
+
+
+def snapshot_for(key: str) -> dict[str, object]:
+    """The whole admission picture for one caller: global gate plus own budgets.
+
+    Two different limits, kept apart on purpose. The gate is shared by everyone
+    and says whether the machine is busy; the budgets are the caller's own and say
+    how fast they may ask. A UI that merged them would explain neither.
+    """
+    return {
+        "runs": run_gate.snapshot(),
+        "active_runs": active_runs(),
+        "rate_limit_enabled": settings.rate_limit_enabled,
+        "budgets": budgets_for(key),
+    }
 
 
 def client_key(*, client_host: str | None, forwarded_for: str | None) -> str:

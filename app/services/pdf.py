@@ -3,14 +3,22 @@
 Full text is a bonus, never a requirement: when a PDF is missing, paywalled,
 oversized or unparseable, the pipeline falls back to title + abstract + TLDR.
 Failures here are logged and swallowed on purpose.
+
+Page boundaries are kept. The text of every page is cleaned individually and
+then joined, so the offset each page starts at is known exactly — which is what
+lets a claim's stored character range become a page number, and a citation chip
+become a link into the PDF. Cleaning the joined text instead would shift every
+offset by an unknowable amount.
 """
 
 from __future__ import annotations
 
 import asyncio
+import bisect
 import io
 import logging
 import re
+from dataclasses import dataclass, field
 
 import httpx
 
@@ -41,7 +49,28 @@ _SECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 
-async def fetch_pdf_text(url: str | None) -> str | None:
+@dataclass(frozen=True)
+class PdfDocument:
+    """Parsed PDF text plus the offset each page starts at."""
+
+    text: str
+    page_offsets: list[int] = field(default_factory=list)
+
+    @property
+    def page_count(self) -> int:
+        return len(self.page_offsets)
+
+
+def page_for_offset(offset: int | None, page_offsets: list[int] | None) -> int | None:
+    """The 1-based page a character offset falls on."""
+    if offset is None or not page_offsets:
+        return None
+    if offset < 0:
+        return None
+    return bisect.bisect_right(page_offsets, offset)
+
+
+async def fetch_pdf_document(url: str | None) -> PdfDocument | None:
     """Download an open-access PDF and return its text, or None on any failure."""
     if not url or not settings.fetch_pdfs:
         return None
@@ -62,28 +91,37 @@ async def fetch_pdf_text(url: str | None) -> str | None:
                 return None
 
             # pypdf is CPU-bound and synchronous — keep it off the event loop.
-            text = await asyncio.to_thread(_extract_text, response.content)
-            return text
+            return await asyncio.to_thread(_extract_document, response.content)
     except Exception as exc:  # noqa: BLE001 - full text is best-effort
         logger.info("PDF fetch failed for %s: %s", url, exc)
         return None
 
 
-def _extract_text(data: bytes) -> str | None:
+def _extract_document(data: bytes) -> PdfDocument | None:
     try:
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(data))
         chunks: list[str] = []
+        offsets: list[int] = []
         total = 0
         for page in reader.pages:
-            page_text = page.extract_text() or ""
+            # Clean per page: cleaning after the join would collapse whitespace
+            # across boundaries and invalidate every offset recorded here.
+            page_text = _clean(page.extract_text() or "")
+            offsets.append(total)
             chunks.append(page_text)
-            total += len(page_text)
+            # +1 for the newline the join adds after every page but the last.
+            total += len(page_text) + 1
             if total >= settings.pdf_max_chars:
                 break
-        text = _clean("\n".join(chunks))
-        return text or None
+        text = "\n".join(chunks)
+        # Deliberately not stripped. A blank leading page would make `strip()`
+        # remove the joined newline and silently shift every offset above by one.
+        # Emptiness is tested without mutating the text.
+        if not text.strip():
+            return None
+        return PdfDocument(text=text, page_offsets=offsets)
     except Exception as exc:  # noqa: BLE001
         logger.info("PDF parse failed: %s", exc)
         return None

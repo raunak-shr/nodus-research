@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -80,18 +81,18 @@ def test_build_paper_text_truncates_to_budget():
 
 
 @pytest.mark.asyncio
-async def test_fetch_pdf_text_returns_none_without_url():
-    assert await pdf.fetch_pdf_text(None) is None
+async def test_fetch_pdf_document_returns_none_without_url():
+    assert await pdf.fetch_pdf_document(None) is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_pdf_text_skips_when_disabled():
+async def test_fetch_pdf_document_skips_when_disabled():
     with patch.object(pdf.settings, "fetch_pdfs", False):
-        assert await pdf.fetch_pdf_text("https://example.org/a.pdf") is None
+        assert await pdf.fetch_pdf_document("https://example.org/a.pdf") is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_pdf_text_rejects_non_pdf_content():
+async def test_fetch_pdf_document_rejects_non_pdf_content():
     resp = MagicMock()
     resp.headers = {"content-type": "text/html"}
     resp.content = b"<html>paywall</html>"
@@ -104,11 +105,11 @@ async def test_fetch_pdf_text_rejects_non_pdf_content():
     cm.__aexit__ = AsyncMock(return_value=False)
 
     with patch("app.services.pdf.httpx.AsyncClient", return_value=cm):
-        assert await pdf.fetch_pdf_text("https://example.org/a.pdf") is None
+        assert await pdf.fetch_pdf_document("https://example.org/a.pdf") is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_pdf_text_rejects_oversized_download():
+async def test_fetch_pdf_document_rejects_oversized_download():
     resp = MagicMock()
     resp.headers = {"content-type": "application/pdf"}
     resp.content = b"%PDF-" + b"x" * 100
@@ -124,11 +125,42 @@ async def test_fetch_pdf_text_rejects_oversized_download():
         patch("app.services.pdf.httpx.AsyncClient", return_value=cm),
         patch.object(pdf.settings, "pdf_max_bytes", 10),
     ):
-        assert await pdf.fetch_pdf_text("https://example.org/a.pdf") is None
+        assert await pdf.fetch_pdf_document("https://example.org/a.pdf") is None
 
 
 @pytest.mark.asyncio
-async def test_fetch_pdf_text_swallows_network_errors():
+async def test_fetch_pdf_document_swallows_network_errors():
     """A missing PDF degrades to abstract-only; it must never fail the run."""
     with patch("app.services.pdf.httpx.AsyncClient", side_effect=RuntimeError("network down")):
-        assert await pdf.fetch_pdf_text("https://example.org/a.pdf") is None
+        assert await pdf.fetch_pdf_document("https://example.org/a.pdf") is None
+
+
+def test_extract_document_records_where_each_page_starts():
+    """The offsets must index the joined text exactly, blank pages included.
+
+    This is the arithmetic a citation chip's page number rests on: each page
+    contributes its own length plus the one newline the join inserts after it.
+    """
+    pages = [
+        SimpleNamespace(extract_text=lambda: "Page one text"),
+        SimpleNamespace(extract_text=lambda: ""),
+        SimpleNamespace(extract_text=lambda: "Page three"),
+    ]
+    reader = SimpleNamespace(pages=pages)
+
+    with patch.dict("sys.modules", {"pypdf": SimpleNamespace(PdfReader=lambda _stream: reader)}):
+        document = pdf._extract_document(b"%PDF-fake")
+
+    assert document.text == "Page one text\n\nPage three"
+    assert document.page_offsets == [0, 14, 15]
+    assert document.page_count == 3
+    # Every recorded offset lands on the real start of that page's text.
+    assert document.text[document.page_offsets[2] :] == "Page three"
+    assert pdf.page_for_offset(0, document.page_offsets) == 1
+    assert pdf.page_for_offset(15, document.page_offsets) == 3
+
+
+def test_extract_document_is_none_when_every_page_is_blank():
+    reader = SimpleNamespace(pages=[SimpleNamespace(extract_text=lambda: "   ")])
+    with patch.dict("sys.modules", {"pypdf": SimpleNamespace(PdfReader=lambda _stream: reader)}):
+        assert pdf._extract_document(b"%PDF-fake") is None

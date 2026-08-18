@@ -49,6 +49,11 @@ EXTRACTOR_SYSTEM = (
     "- confidence_score reflects how faithfully the claim is grounded in the supplied "
     "text: 0.9+ for statistics quoted verbatim, ~0.5 for abstract-only paraphrase, "
     "lower when the text is thin.\n"
+    "- supporting_quote must be copied from the supplied text character for "
+    "character — the one span a reader should be shown to verify the claim. Do not "
+    "paraphrase it, do not correct its spelling or spacing, and do not join text "
+    "from two places. One or two sentences is right. Return null rather than "
+    "inventing a quote: an unquotable claim is expected and handled.\n"
     "- Return at most {max_claims} claims, ordered as they appear. Prefer the most "
     "specific and quantitative ones. If the text supports no claims, return an empty list."
 )

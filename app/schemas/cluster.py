@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.models.cluster import QualityTier
+from app.schemas.claim import ClaimSourceFields
 
 
 class ClaimClusterRead(BaseModel):
@@ -26,7 +27,7 @@ class ClaimClusterRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ClusterClaimRead(BaseModel):
+class ClusterClaimRead(ClaimSourceFields):
     claim_id: UUID
     paper_id: UUID
     claim_text: str
@@ -35,6 +36,8 @@ class ClusterClaimRead(BaseModel):
     similarity_score: float | None
     confidence_score: float
     sample_size: str | None
+    # Provenance rides along so a stance chip can offer "show me the sentence"
+    # without a request per claim; the full paragraph comes from claims.source.
 
 
 class ClaimClusterDetail(ClaimClusterRead):

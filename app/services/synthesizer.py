@@ -84,6 +84,13 @@ async def _claim_rows(cluster: ClaimCluster, db: AsyncSession) -> list[dict[str,
             "effect_size": claim.effect_size,
             "confidence_score": claim.confidence_score,
             "stance": stance_by_claim.get(claim.id, "supports"),
+            # Carried into report sections so a citation chip in the rendered
+            # document has the same provenance the cluster view does.
+            "source_match": claim.source_match,
+            "source_quote": claim.source_quote,
+            "source_origin": claim.source_origin,
+            "source_section": claim.source_section,
+            "source_page": claim.source_page,
         }
         for claim, paper in rows
     ]

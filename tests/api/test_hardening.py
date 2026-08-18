@@ -8,6 +8,7 @@ pipeline entry points — a test that reached the real database would open an
 asyncpg connection and run for minutes.
 """
 
+import json
 from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import uuid4
@@ -519,3 +520,184 @@ def test_config_reports_admission_state_without_leaking_keys():
     assert config["rate_limit_enabled"] is True
     assert set(config["runs"]) == {"active", "limit", "runs_today", "daily_limit"}
     assert "admin-secret" not in str(frame)
+
+
+# ------------------------------------------------------- reporting the budget
+
+
+@pytest.mark.asyncio
+async def test_health_limits_reports_the_gate_and_the_callers_budget(client: AsyncClient):
+    with (
+        patch.object(settings, "max_active_queries", 2),
+        patch.object(settings, "max_daily_runs", 40),
+        patch.object(settings, "rate_limit_runs_burst", 10),
+        patch.object(settings, "rate_limit_runs_per_hour", 60),
+    ):
+        for _ in range(3):
+            limits.runs_limiter.allow(HTTP_CLIENT_KEY)
+        held = run_gate.acquire()
+        try:
+            response = await client.get("/health/limits")
+        finally:
+            held.release()
+
+    assert response.status_code == 200
+    body = response.json()
+    # The shared gate and the caller's own allowance are separate facts.
+    assert body["runs"] == {"active": 1, "limit": 2, "runs_today": 1, "daily_limit": 40}
+    assert body["budgets"]["runs"]["remaining"] == 7
+    assert body["budgets"]["runs"]["capacity"] == 10
+    assert body["budgets"]["runs"]["refill_seconds"] == pytest.approx(60.0)
+    assert "edits" in body["budgets"]
+
+
+@pytest.mark.asyncio
+async def test_reading_the_budget_does_not_spend_it(client: AsyncClient):
+    """A UI that polls this must not throttle the caller by displaying it."""
+    for _ in range(4):
+        await client.get("/health/limits")
+
+    body = (await client.get("/health/limits")).json()
+    assert body["budgets"]["runs"]["remaining"] == body["budgets"]["runs"]["capacity"]
+    assert limits.runs_limiter.tracked_keys() == 0
+
+
+@pytest.mark.asyncio
+async def test_the_budget_falls_as_submissions_are_spent(client: AsyncClient):
+    with (
+        patch.object(settings, "rate_limit_runs_burst", 3),
+        patch.object(settings, "max_active_queries", 5),
+    ):
+        before = (await client.get("/health/limits")).json()["budgets"]["runs"]["remaining"]
+        _drain(limits.runs_limiter, HTTP_CLIENT_KEY)
+        after = (await client.get("/health/limits")).json()["budgets"]["runs"]["remaining"]
+
+    assert before == 3
+    assert after == 0
+
+
+@pytest.mark.asyncio
+async def test_health_limits_leaks_no_keys(client: AsyncClient):
+    with patch.object(settings, "admin_api_key", "admin-secret"):
+        response = await client.get("/health/limits")
+    body = response.text.lower()
+    assert "secret" not in body and "api_key" not in body
+
+
+def test_socket_reports_the_budget_for_its_own_connection():
+    _drain(limits.edits_limiter, WS_CLIENT_KEY)
+
+    with TestClient(app) as client, client.websocket_connect("/api/v2/ws") as socket:
+        assert socket.receive_json()["type"] == "ready"
+        socket.send_json({"id": "1", "action": "meta.limits"})
+        frame = socket.receive_json()
+
+    data = frame["data"]
+    # The action must read the same key the limiter charges, not a fresh one.
+    assert data["budgets"]["edits"]["remaining"] == 0
+    assert data["budgets"]["runs"]["remaining"] > 0
+    assert set(data) == {"runs", "active_runs", "rate_limit_enabled", "budgets"}
+
+
+def test_meta_limits_is_a_read_so_it_cannot_throttle_itself():
+    from app.api.v2.actions import REGISTRY
+
+    assert REGISTRY["meta.limits"].cost == "read"
+
+
+# --------------------------------------------------- describing a busy queue
+
+
+@pytest.mark.asyncio
+async def test_active_runs_describes_each_slot_without_naming_it(client: AsyncClient):
+    """The whole point: explain the wait, reveal nobody's research question."""
+    from uuid import uuid4
+
+    from app.core.events import hub
+
+    query_id = uuid4()
+    hub.publish(query_id, "pipeline_started", raw_query="a private question")
+    hub.publish(query_id, "paper_processed", completed=9, total=18, progress=0.5)
+
+    with patch.object(settings, "max_active_queries", 2):
+        held = run_gate.acquire()
+        held.attach(query_id)
+        try:
+            body = (await client.get("/health/limits")).json()
+        finally:
+            held.release()
+            hub.clear(query_id)
+
+    assert body["runs"]["active"] == 1
+    run = body["active_runs"][0]
+    assert run["phase"] == "processing"
+    assert (run["completed"], run["total"]) == (9, 18)
+    assert run["elapsed_seconds"] >= 0
+
+    # No identifier of any kind, and nothing resembling the question.
+    serialised = json.dumps(body)
+    assert str(query_id) not in serialised
+    assert "private question" not in serialised
+    assert not any("id" in key for key in run)
+
+
+@pytest.mark.asyncio
+async def test_active_runs_is_empty_when_nothing_is_running(client: AsyncClient):
+    body = (await client.get("/health/limits")).json()
+    assert body["active_runs"] == []
+    assert body["runs"]["active"] == 0
+
+
+@pytest.mark.asyncio
+async def test_an_unnamed_slot_still_occupies_the_queue(client: AsyncClient):
+    """An inline admin run holds capacity even though nothing attached an id."""
+    with patch.object(settings, "max_active_queries", 2):
+        held = run_gate.acquire()
+        try:
+            body = (await client.get("/health/limits")).json()
+        finally:
+            held.release()
+
+    assert len(body["active_runs"]) == 1
+    run = body["active_runs"][0]
+    assert run["phase"] is None
+    assert run["total"] is None
+    assert run["elapsed_seconds"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_active_runs_reports_slots_oldest_first(client: AsyncClient):
+    with patch.object(settings, "max_active_queries", 3):
+        first, second = run_gate.acquire(), run_gate.acquire()
+        try:
+            body = (await client.get("/health/limits")).json()
+        finally:
+            first.release()
+            second.release()
+
+    elapsed = [run["elapsed_seconds"] for run in body["active_runs"]]
+    assert len(elapsed) == 2
+    assert elapsed == sorted(elapsed, reverse=True)
+
+
+@pytest.mark.asyncio
+async def test_no_run_advertises_a_finish_time(client: AsyncClient):
+    """Elapsed is measured; anything remaining would be invented."""
+    with patch.object(settings, "max_active_queries", 2):
+        held = run_gate.acquire()
+        try:
+            body = (await client.get("/health/limits")).json()
+        finally:
+            held.release()
+
+    run = body["active_runs"][0]
+    assert set(run) == {"phase", "elapsed_seconds", "completed", "total"}
+
+
+def test_socket_reports_active_runs_too():
+    with TestClient(app) as client, client.websocket_connect("/api/v2/ws") as socket:
+        assert socket.receive_json()["type"] == "ready"
+        socket.send_json({"id": "1", "action": "meta.limits"})
+        data = socket.receive_json()["data"]
+
+    assert data["active_runs"] == []

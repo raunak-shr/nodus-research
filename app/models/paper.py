@@ -97,6 +97,10 @@ class NormalizedPaper(Base):
         unique=True,
     )
     full_text: Mapped[str | None] = mapped_column(Text)
+    # Offset in `full_text` at which each PDF page starts, so a claim's stored
+    # character range can be turned back into a page number. Cannot be
+    # recomputed later without re-downloading the PDF.
+    page_offsets: Mapped[list | None] = mapped_column(JSONB)
     sections: Mapped[dict | None] = mapped_column(JSONB)
     study_type: Mapped[StudyType] = mapped_column(
         Enum(StudyType, name="study_type"), nullable=False, default=StudyType.unknown

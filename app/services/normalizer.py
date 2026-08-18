@@ -52,13 +52,18 @@ async def normalize_paper(
         db.add(record)
     await db.commit()
 
-    full_text = await pdf.fetch_pdf_text(paper.open_access_pdf_url)
+    document = await pdf.fetch_pdf_document(paper.open_access_pdf_url)
+    full_text = document.text if document else None
+    # Page starts are only knowable at parse time; nothing downstream can
+    # reconstruct them without fetching the PDF again.
+    page_offsets = document.page_offsets if document else None
     sections = pdf.split_sections(full_text) if full_text else {}
     paper_text = pdf.build_paper_text(
         title=paper.title,
         abstract=paper.abstract,
         tldr=_tldr_text(paper),
         full_text=full_text,
+        page_offsets=page_offsets or None,
         sections=sections or None,
     )
 
@@ -71,6 +76,7 @@ async def normalize_paper(
         logger.warning("Normalization failed for paper %s: %s", paper.id, exc)
         record.processing_status = ProcessingStatus.failed
         record.full_text = full_text
+        record.page_offsets = page_offsets or None
         record.sections = sections or None
         await db.commit()
         return record
@@ -80,6 +86,7 @@ async def normalize_paper(
         merged_sections.setdefault(key, value)
 
     record.full_text = full_text
+    record.page_offsets = page_offsets or None
     record.sections = merged_sections or None
     record.study_type = result.study_type
     record.methodology = result.methodology_payload()

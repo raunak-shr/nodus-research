@@ -219,7 +219,10 @@ class Connection:
 
         try:
             data = await entry.handler(
-                ActionContext(connection=self, is_admin=self.is_admin), params
+                ActionContext(
+                    connection=self, is_admin=self.is_admin, client_key=self._client_key
+                ),
+                params,
             )
         except NodusError as exc:
             await self.send_error(exc, request_id=request.id, action=request.action)

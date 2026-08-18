@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from app.api.v1.deps import DBSession, EditRateLimit, PageParams
 from app.models.claim import Claim
-from app.schemas.claim import ClaimRead
+from app.schemas.claim import ClaimRead, ClaimSourceRead
 from app.schemas.cluster import (
     ClaimClusterDetail,
     ClaimClusterRead,
@@ -23,7 +23,7 @@ from app.schemas.cluster import (
     ClusterClaimUpdate,
     ClusterUpdate,
 )
-from app.services import cluster_edit
+from app.services import cluster_edit, provenance
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -41,6 +41,17 @@ async def list_claims_for_paper(
         .offset(page.offset)
     )
     return [ClaimRead.model_validate(c) for c in result.scalars().all()]
+
+
+@router.get("/{claim_id}/source", response_model=ClaimSourceRead)
+async def get_claim_source(claim_id: UUID, db: DBSession) -> ClaimSourceRead:
+    """The passage a claim was extracted from, with the quote located in it.
+
+    A read, so it is not rate limited. `available: false` is a normal answer —
+    abstract-only papers and truncated PDFs leave nothing to point at, and the
+    caller is told which it was rather than shown a chip that guesses.
+    """
+    return await provenance.load_claim_source(claim_id, db)
 
 
 @router.get("/clusters/queries/{query_id}", response_model=list[ClaimClusterRead])

@@ -18,7 +18,7 @@ from app.core.llm_provider import get_structured_llm
 from app.models.claim import Claim
 from app.models.paper import NormalizedPaper, Paper, ProcessingStatus
 from app.schemas.extraction import ExtractionOutput
-from app.services import pdf
+from app.services import pdf, provenance
 from app.services.prompts import EXTRACTOR_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -92,14 +92,26 @@ async def extract_claims(
     if force and existing:
         await db.execute(delete(Claim).where(Claim.paper_id == paper.id))
 
+    kept = [
+        extracted
+        for extracted in result.claims[: settings.max_claims_per_paper]
+        if (extracted.claim_text or "").strip()
+    ]
+
+    # Resolved together so the paper's source text is normalized once rather
+    # than once per claim, and in Python because a model cannot count characters.
+    located = provenance.resolve_all(
+        [extracted.supporting_quote for extracted in kept],
+        normalized=normalized,
+        paper=paper,
+        sections=sections or None,
+    )
+
     claims: list[Claim] = []
-    for position, extracted in enumerate(result.claims[: settings.max_claims_per_paper], start=1):
-        text = (extracted.claim_text or "").strip()
-        if not text:
-            continue
+    for position, (extracted, source) in enumerate(zip(kept, located, strict=True), start=1):
         claim = Claim(
             paper_id=paper.id,
-            claim_text=text,
+            claim_text=extracted.claim_text.strip(),
             evidence_type=extracted.evidence_type,
             causal_classification=extracted.causal_classification,
             methodology_details=extracted.methodology_payload(),
@@ -107,6 +119,13 @@ async def extract_claims(
             effect_size=extracted.effect_size_payload(),
             confidence_score=max(0.0, min(1.0, extracted.confidence_score)),
             position_in_paper=position,
+            source_quote=source.quote,
+            source_origin=source.origin,
+            source_section=source.section,
+            source_start=source.start,
+            source_end=source.end,
+            source_page=source.page,
+            source_match=source.match,
         )
         db.add(claim)
         claims.append(claim)
@@ -116,5 +135,8 @@ async def extract_claims(
     for claim in claims:
         await db.refresh(claim)
 
-    logger.info("Extracted %d claims from %s", len(claims), paper.id)
+    cited = sum(1 for claim in claims if claim.source_match != "none")
+    logger.info(
+        "Extracted %d claims from %s (%d located in source)", len(claims), paper.id, cited
+    )
     return claims

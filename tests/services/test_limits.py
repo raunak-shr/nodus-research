@@ -5,6 +5,7 @@ is exact rather than timing-dependent — no sleeps, no tolerances.
 """
 
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
@@ -298,3 +299,177 @@ def test_forwarded_for_falls_back_when_blank(monkeypatch):
 
 def test_missing_peer_still_yields_a_key():
     assert client_key(client_host=None, forwarded_for=None) == "unknown"
+
+
+# ---------------------------------------------------------------- peek/budget
+
+
+def test_peek_reports_what_is_left_without_spending_it():
+    clock = FakeClock()
+    limiter = _limiter(clock, per_second=1.0, capacity=10)
+    for _ in range(3):
+        limiter.allow("ip")
+
+    first = limiter.peek("ip")
+    second = limiter.peek("ip")
+
+    assert (first.remaining, first.capacity) == (7, 10)
+    # Peeking twice must not cost a token; a status display cannot be a charge.
+    assert second.remaining == 7
+    assert limiter.allow("ip") is None
+    assert limiter.peek("ip").remaining == 6
+
+
+def test_peek_does_not_create_a_bucket():
+    """Polling must not populate the dict, or it becomes the growth vector."""
+    clock = FakeClock()
+    limiter = _limiter(clock, per_second=1.0, capacity=5)
+
+    budget = limiter.peek("never-seen")
+
+    assert budget.remaining == 5
+    assert limiter.tracked_keys() == 0
+
+
+def test_peek_accounts_for_refill_since_the_last_spend():
+    clock = FakeClock()
+    limiter = _limiter(clock, per_second=1.0, capacity=10)
+    for _ in range(10):
+        limiter.allow("ip")
+    assert limiter.peek("ip").remaining == 0
+
+    clock.advance(4.0)
+    assert limiter.peek("ip").remaining == 4
+
+
+def test_peek_floors_partial_tokens():
+    """Nine tenths of a token buys nothing, so it must not read as one."""
+    clock = FakeClock()
+    limiter = _limiter(clock, per_second=1.0, capacity=5)
+    for _ in range(5):
+        limiter.allow("ip")
+
+    clock.advance(0.9)
+    assert limiter.peek("ip").remaining == 0
+    clock.advance(0.1)
+    assert limiter.peek("ip").remaining == 1
+
+
+def test_peek_reports_the_sustained_rate_not_the_burst():
+    """`capacity` is a burst; `refill_seconds` is the rate. Conflating them lies."""
+    clock = FakeClock()
+    limiter = _limiter(clock, per_second=1 / 60, capacity=10)
+
+    budget = limiter.peek("ip")
+
+    assert budget.capacity == 10
+    assert budget.refill_seconds == pytest.approx(60.0)
+
+
+def test_peek_says_so_when_limiting_is_off():
+    clock = FakeClock()
+    limiter = _limiter(clock, per_second=1.0, capacity=4, enabled=False)
+
+    budget = limiter.peek("ip")
+
+    assert budget.enabled is False
+    assert budget.remaining == budget.capacity == 4
+    assert budget.refill_seconds is None
+
+
+def test_peek_on_a_closed_bucket_has_no_refill():
+    clock = FakeClock()
+    limiter = _limiter(clock, per_second=0.0, capacity=1)
+    assert limiter.peek("ip").refill_seconds is None
+
+
+# ------------------------------------------------------------- live slot state
+
+
+class FakeMono:
+    def __init__(self, now: float = 500.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def _timed_gate(*, limit=3, mono=None) -> RunGate:
+    return RunGate(
+        limit=lambda: limit,
+        daily_limit=lambda: 0,
+        now=FakeDate(datetime(2026, 8, 18, 12, 0, tzinfo=UTC)),
+        monotonic=mono or FakeMono(),
+    )
+
+
+def test_active_count_is_derived_from_the_live_slots():
+    """One source of truth: the reported count cannot drift from what is held."""
+    gate = _timed_gate(limit=3)
+    first, second = gate.acquire(), gate.acquire()
+
+    assert gate.snapshot()["active"] == 2
+    assert len(gate.live_slots()) == 2
+
+    first.release()
+    assert gate.snapshot()["active"] == 1
+    assert gate.live_slots() == [second]
+
+
+def test_live_slots_are_ordered_oldest_first():
+    """So "slot 1" stays "slot 1" between polls rather than reshuffling."""
+    mono = FakeMono()
+    gate = _timed_gate(limit=3, mono=mono)
+
+    first = gate.acquire()
+    mono.advance(10.0)
+    second = gate.acquire()
+
+    assert [slot.started_at for slot in gate.live_slots()] == [
+        first.started_at,
+        second.started_at,
+    ]
+    assert first.started_at < second.started_at
+
+
+def test_a_slot_records_when_its_run_began():
+    mono = FakeMono(1000.0)
+    gate = _timed_gate(mono=mono)
+    slot = gate.acquire()
+
+    mono.advance(362.0)
+
+    assert mono() - slot.started_at == 362.0
+
+
+def test_releasing_twice_removes_one_slot_only():
+    gate = _timed_gate(limit=3)
+    slot = gate.acquire()
+    gate.acquire()
+
+    slot.release()
+    slot.release()
+
+    assert gate.snapshot()["active"] == 1
+
+
+def test_a_slot_is_anonymous_until_a_run_claims_it():
+    """Reserved before the query row exists, so it cannot be named at acquire."""
+    gate = _timed_gate()
+    slot = gate.acquire()
+    assert slot.query_id is None
+
+    query_id = uuid4()
+    slot.attach(query_id)
+    assert gate.live_slots()[0].query_id == query_id
+
+
+def test_reset_drops_live_slots():
+    gate = _timed_gate()
+    gate.acquire()
+    gate.reset()
+    assert gate.snapshot()["active"] == 0
+    assert gate.live_slots() == []

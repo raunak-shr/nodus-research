@@ -106,6 +106,22 @@ async def health() -> dict:
     return {"status": "ok", "version": "1.0.0"}
 
 
+@app.get("/health/limits", tags=["meta"])
+async def health_limits(request: Request) -> dict:
+    """This caller's admission state: the shared gate plus their own budgets.
+
+    Public, like the other health endpoints, and safe to be: a caller only ever
+    learns about their own address. Reading it consumes nothing, so a UI can show
+    someone what they have left without that display costing them a request.
+    """
+    return limits.snapshot_for(
+        limits.client_key(
+            client_host=request.client.host if request.client else None,
+            forwarded_for=request.headers.get("x-forwarded-for"),
+        )
+    )
+
+
 @app.get("/health/config", tags=["meta"])
 async def health_config() -> dict:
     """Non-secret view of the active configuration — useful when swapping providers."""

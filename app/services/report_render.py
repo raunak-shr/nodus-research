@@ -328,6 +328,47 @@ td {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Provenance marks. The four states are separated by border treatment, never by
+   colour alone — a reader printing in greyscale must still tell a verified quote
+   from an approximate span — and each glyph repeats the distinction for anyone
+   who cannot see borders at all. */
+.prov {
+  display: inline-flex; align-items: baseline; gap: .3em;
+  font-family: var(--mono); font-size: .78em; letter-spacing: .02em;
+  padding: .1em .4em; white-space: nowrap; color: var(--muted);
+  border: 1px solid transparent;
+}
+.prov__glyph { font-style: normal; }
+.prov--verified { border-color: var(--ink); color: var(--ink); }
+.prov--approximate { border-style: dashed; border-color: var(--rule-strong); }
+.prov--abstract {
+  border-color: var(--rule-strong);
+  border-left-width: 3px; border-left-color: var(--ink);
+}
+.prov--unavailable {
+  border: 0; border-bottom: 1px dotted var(--rule-strong);
+  padding-left: 0; padding-right: 0;
+}
+.sources { margin-top: 1rem; }
+.sources ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.sources li {
+  display: grid; grid-template-columns: 2.4rem 1fr; gap: .6rem; font-size: .82rem;
+}
+.mark { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+.sources__quote { font-style: italic; }
+.sources__note { color: var(--muted); }
+.coverage {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  font-size: .78rem; color: var(--muted); margin: .2rem 0 .6rem;
+}
+.coverage__bar { display: flex; height: 5px; width: 180px; gap: 1px; }
+.coverage__seg--verified { background: var(--ink); }
+.coverage__seg--approximate {
+  background: repeating-linear-gradient(45deg, var(--muted) 0 2px, transparent 2px 4px);
+}
+.coverage__seg--abstract { background: var(--rule-strong); }
+.coverage__seg--unavailable { box-shadow: inset 0 0 0 1px var(--rule-strong); }
 """
 
 _PRINT_CSS = """
@@ -360,6 +401,12 @@ summary { list-style: none; color: var(--muted); font-weight: 600; }
 summary::-webkit-details-marker { display: none; }
 a { color: var(--ink); text-decoration: none; }
 .doc > div:first-child { break-after: page; page-break-after: always; }
+/* A chip cannot be clicked on paper, so the marker becomes the link: it keys a
+   claim row to its footnote under the same section. */
+.prov { font-size: 7pt; padding: 0 3px; }
+.sources { font-size: 8pt; break-inside: avoid-page; page-break-inside: avoid; }
+.sources li { grid-template-columns: 2rem 1fr; }
+.coverage__bar { width: 120px; }
 """
 
 
@@ -446,20 +493,163 @@ def _drivers(section: dict[str, Any]) -> str:
     )
 
 
-def _claims(section: dict[str, Any], *, expanded: bool) -> str:
+#: The four provenance states a claim can be in, with the glyph and word that
+#: identify each. Order matters: it is the order the legend and the coverage bar
+#: read in, best-evidenced first.
+_PROV_ORDER = ("verified", "approximate", "abstract", "unavailable")
+_PROV_GLYPH = {
+    "verified": "\u00b6",
+    "approximate": "\u2248",
+    "abstract": "\u00a7",
+    "unavailable": "\u2014",
+}
+_PROV_WORD = {
+    "verified": "verified",
+    "approximate": "approximate span",
+    "abstract": "abstract only",
+    "unavailable": "not locatable",
+}
+#: Printed beside a footnote whose provenance is less than a verified body quote.
+#: Deliberately terse — the full sentence is the API's `reason`.
+_PROV_NOTE = {
+    "approximate": "Span boundaries approximate; verify against the page.",
+    "abstract": "Quoted from the abstract; the paper body was never retrieved.",
+    "unavailable": "Quote recorded but not locatable in the retrieved text.",
+}
+
+#: Markers key a claim row to its footnote: section 2's third claim is "2c".
+_MARK_LETTERS = "abcdefghijklmnopqrstuvwxyz"
+
+_MIDDOT = "·"
+
+
+def prov_kind(claim: dict[str, Any]) -> str:
+    """Which provenance state a claim is in.
+
+    Origin is tested before match on purpose. An abstract-only quote can match
+    exactly, and calling that "verified" would assert the paper body was checked
+    when it was never retrieved.
+    """
+    if claim.get("source_origin") == "abstract":
+        return "abstract"
+    match = claim.get("source_match") or "none"
+    if match in {"exact", "normalized"}:
+        return "verified"
+    if match == "fuzzy":
+        return "approximate"
+    return "unavailable"
+
+
+def _prov_label(claim: dict[str, Any], kind: str) -> str:
+    if kind == "unavailable":
+        return "no source"
+    if kind == "abstract":
+        return "abstract"
+    where = claim.get("source_section") or "source"
+    page = claim.get("source_page")
+    return f"{where} \u00b7 p. {page}" if page else str(where)
+
+
+def _prov_mark(claim: dict[str, Any]) -> str:
+    kind = prov_kind(claim)
+    return (
+        f'<span class="prov prov--{kind}" title="{_esc(_PROV_WORD[kind])}">'
+        f'<i class="prov__glyph" aria-hidden="true">{_PROV_GLYPH[kind]}</i>'
+        f"<span>{_esc(_prov_label(claim, kind))}</span></span>"
+    )
+
+
+def _mark_for(position: int, index: int) -> str:
+    return f"{index}{_MARK_LETTERS[position % len(_MARK_LETTERS)]}"
+
+
+def _coverage(rows: list[dict[str, Any]]) -> str:
+    """How much of a section's evidence can actually be pointed at.
+
+    The same honesty as "built on 17 of 20 papers", one level down: a section
+    whose claims are mostly unlocatable should say so on its face rather than
+    leaving a reader to notice.
+    """
+    if not rows:
+        return ""
+    counts = {kind: 0 for kind in _PROV_ORDER}
+    for claim in rows:
+        counts[prov_kind(claim)] += 1
+
+    segments = "".join(
+        f'<div class="coverage__seg coverage__seg--{kind}" style="flex:{counts[kind]}"></div>'
+        for kind in _PROV_ORDER
+        if counts[kind]
+    )
+    words = " \u00b7 ".join(
+        f"{counts[kind]} {_PROV_WORD[kind]}" for kind in _PROV_ORDER if counts[kind]
+    )
+    return (
+        f'<div class="coverage"><span>Source coverage</span>'
+        f'<span class="coverage__bar" aria-hidden="true">{segments}</span>'
+        f"<span>{_esc(words)}</span></div>"
+    )
+
+
+def _source_notes(section: dict[str, Any], index: int) -> str:
+    """Footnotes carrying the verbatim quote behind every claim in a section.
+
+    Rendered open for print rather than hidden in a disclosure: a chip cannot be
+    clicked on paper, so the quote, section and page have to be on the page.
+    """
+    rows = section.get("claims") or []
+    items = []
+    for position, claim in enumerate(rows):
+        quote = claim.get("source_quote")
+        if not quote:
+            continue
+        kind = prov_kind(claim)
+        page = claim.get("source_page")
+        locus = " \u00b7 ".join(
+            part
+            for part in (claim.get("source_section"), f"p. {page}" if page else None)
+            if part
+        )
+        note = _PROV_NOTE.get(kind)
+        note_html = f'<span class="sources__note"> {_esc(note)}</span>' if note else ""
+        # Assembled before the f-string: Python 3.11 rejects a backslash escape
+        # inside an f-string expression, and these are typographic characters.
+        locus_html = f" {_MIDDOT} {_esc(locus)}" if locus else ""
+        items.append(
+            f'<li><span class="mark">{_mark_for(position, index)}</span><span>'
+            f'<span class="prov prov--{kind}">'
+            f'<i class="prov__glyph" aria-hidden="true">{_PROV_GLYPH[kind]}</i>'
+            f"<span>{_esc(_PROV_WORD[kind])}</span></span> "
+            f"{_esc(claim.get('citation'))}"
+            f"{locus_html} \u2014 "
+            f'<span class="sources__quote">\u201c{_esc(quote)}\u201d</span>'
+            f"{note_html}</span></li>"
+        )
+    if not items:
+        return ""
+    return (
+        f'<div class="sources"><div class="block__head">Sources for section {index}</div>'
+        f'<ol>{"".join(items)}</ol></div>'
+    )
+
+
+def _claims(section: dict[str, Any], index: int, *, expanded: bool) -> str:
     rows = section.get("claims") or []
     if not rows:
         return ""
     body = []
-    for claim in rows:
+    for position, claim in enumerate(rows):
         stance = _esc(claim.get("stance") or "neutral")
         score = claim.get("confidence_score")
         sample = claim.get("sample_size")
+        mark = _mark_for(position, index) if claim.get("source_quote") else ""
         body.append(
             "<tr>"
+            f'<td class="cell--num"><span class="mark">{mark}</span></td>'
             f'<td><span class="stance stance--{stance}">{stance}</span></td>'
             f'<td class="cell--source">{_esc(claim.get("citation"))}</td>'
             f"<td>{_esc(claim.get('claim_text'))}</td>"
+            f"<td>{_prov_mark(claim)}</td>"
             f'<td class="cell--num">{_esc(claim.get("evidence_type"))}</td>'
             f'<td class="cell--num">{format(sample, ",") if isinstance(sample, int) else "—"}</td>'
             f'<td class="cell--num">{format(score, ".2f") if score is not None else "—"}</td>'
@@ -469,9 +659,13 @@ def _claims(section: dict[str, Any], *, expanded: bool) -> str:
     return (
         f'<details class="claims"{open_attr}>'
         f"<summary>Underlying claims ({len(rows)})</summary>"
-        '<div class="table-wrap"><table><thead><tr><th>Stance</th><th>Source</th>'
-        "<th>Claim</th><th>Evidence</th><th>n</th><th>Conf.</th></tr></thead>"
-        f'<tbody>{"".join(body)}</tbody></table></div></details>'
+        f"{_coverage(rows)}"
+        '<div class="table-wrap"><table><thead><tr><th></th><th>Stance</th>'
+        "<th>Source</th><th>Claim</th><th>Provenance</th><th>Evidence</th>"
+        "<th>n</th><th>Conf.</th></tr></thead>"
+        f'<tbody>{"".join(body)}</tbody></table></div>'
+        f"{_source_notes(section, index) if expanded else ''}"
+        "</details>"
     )
 
 
@@ -531,7 +725,7 @@ def render_body(payload: dict[str, Any], *, variant: str = "screen") -> str:
             f"{_meters(section.get('quality_rationale'), expanded=expanded)}"
             f"{_lineage(section)}"
             f"{_drivers(section)}"
-            f"{_claims(section, expanded=expanded)}"
+            f"{_claims(section, index, expanded=expanded)}"
             f"{_caveats(section)}"
             "</section>"
         )
