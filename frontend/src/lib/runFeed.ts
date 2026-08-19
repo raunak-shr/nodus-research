@@ -33,6 +33,13 @@ const STAGE_BY_EVENT: Record<string, { stage: PaperStage; label: string }> = {
   paper_failed: { stage: 'failed', label: 'failed' },
 }
 
+/** How a paper's full text was reached, for the paper row's detail line. */
+const SOURCE_LABELS: Record<string, string> = {
+  open_access: 'open access',
+  doi: 'via DOI',
+  arxiv: 'via arXiv',
+}
+
 /** What the database can say about a run, for `RunFeed.reconcile`. */
 export interface RunSnapshot {
   phase?: Phase
@@ -130,7 +137,14 @@ export class RunFeed {
       const title = str(frame.title)
       if (title) entry.title = title
       if (frame.event === 'paper_normalized') {
-        entry.detail = [str(frame.study_type), frame.full_text ? 'full text' : 'abstract only']
+        // Naming the route matters for arXiv specifically: a paper whose
+        // publisher gave nothing still reads as 'full text', and only the
+        // source says the fallback is what found it.
+        const source = SOURCE_LABELS[str(frame.full_text_source) ?? '']
+        entry.detail = [
+          str(frame.study_type),
+          frame.full_text ? (source ? `full text · ${source}` : 'full text') : 'abstract only',
+        ]
           .filter(Boolean)
           .join(' · ')
       }

@@ -111,6 +111,7 @@ app/
 │   ├── retriever.py            # relevance + bulk search, throttled
 │   ├── ranking.py              # composite scoring
 │   ├── pdf.py                  # open-access PDF fetch + section splitting
+│   ├── arxiv.py                # arXiv fallback when no PDF is reachable
 │   ├── normalizer.py           # Stage 2 agent
 │   ├── extractor.py            # Stage 2 agent
 │   ├── embedding_store.py      # pgvector storage, model-aware cache
@@ -542,3 +543,4 @@ Tests are hermetic — no network, no database, no LLM calls. Coverage focuses o
 - **Relevance search needs an API key.** Without one, retrieval silently uses bulk search, which ranks by citations rather than relevance.
 - **The progress hub is in-process.** Correct for a single API worker; scaling out needs Redis pub/sub behind the same interface.
 - **PDF section splitting is heuristic.** It handles conventional headings and falls back to abstract-only text when a PDF is missing, paywalled, or scanned.
+- **The arXiv fallback is paced, and only helps preprinted work.** arXiv asks for three seconds between calls, so a run where many papers need it spends that time serially — and a paper that was never preprinted still ends up abstract-only. `ARXIV_SEARCH_BY_TITLE=false` keeps the exact-identifier route and drops the searching.

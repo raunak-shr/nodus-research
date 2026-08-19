@@ -249,7 +249,9 @@ def _fetching(routes, seen):
         patch.object(
             pdf,
             "_extract_document",
-            lambda data: pdf.PdfDocument(text="body text", page_offsets=[0]),
+            lambda data, source=None: pdf.PdfDocument(
+                text="body text", page_offsets=[0], source=source
+            ),
         ),
     ):
         yield

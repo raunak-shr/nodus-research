@@ -18,6 +18,7 @@ import bisect
 import io
 import logging
 import re
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 
 import httpx
@@ -55,6 +56,10 @@ class PdfDocument:
 
     text: str
     page_offsets: list[int] = field(default_factory=list)
+    #: Which route produced this text — "open_access", "doi", "arxiv". Reported
+    #: on the progress stream so a run shows *how* a paper got its full text,
+    #: rather than leaving the fallback invisible when it works.
+    source: str | None = None
 
     @property
     def page_count(self) -> int:
@@ -133,6 +138,45 @@ async def _fetch(
     return None
 
 
+async def fetch_from_urls(
+    candidates: Sequence[tuple[str, str]],
+    *,
+    before_request: Callable[[], Awaitable[None]] | None = None,
+) -> PdfDocument | None:
+    """Try each `(url, source)` in turn and return the first parsed document.
+
+    `before_request` is awaited immediately before every outbound call, which is
+    how a caller with its own rate limit — arXiv asks for three seconds between
+    requests — imposes it without this module knowing whose limit it is.
+    """
+    if not settings.fetch_pdfs or not candidates:
+        return None
+
+    # Everything is inside the guard, the client included: building it can fail
+    # too, and a paper losing its full text must never fail the run.
+    try:
+        async with httpx.AsyncClient(
+            timeout=60.0, follow_redirects=True, verify=outbound_verify()
+        ) as client:
+            for url, source in candidates:
+                try:
+                    if before_request is not None:
+                        await before_request()
+                    data = await _fetch(client, url)
+                except Exception as exc:  # noqa: BLE001 - full text is best-effort
+                    logger.info("PDF fetch failed for %s: %s", url, exc)
+                    continue
+                if data is None:
+                    continue
+                # pypdf is CPU-bound and synchronous — keep it off the event loop.
+                document = await asyncio.to_thread(_extract_document, data, source)
+                if document is not None:
+                    return document
+    except Exception as exc:  # noqa: BLE001 - full text is best-effort
+        logger.info("PDF fetch failed for %s: %s", candidates[0][0], exc)
+    return None
+
+
 async def fetch_pdf_document(url: str | None, doi: str | None = None) -> PdfDocument | None:
     """Download a paper's PDF and return its text, or None on any failure.
 
@@ -143,41 +187,26 @@ async def fetch_pdf_document(url: str | None, doi: str | None = None) -> PdfDocu
     file in a meta tag. Full text is still best-effort: every failure here
     leaves the paper to be read from its abstract.
     """
-    if not settings.fetch_pdfs:
-        return None
-
-    candidates = [candidate for candidate in (url,) if candidate]
+    candidates: list[tuple[str, str]] = [(url, "open_access")] if url else []
     if doi and settings.pdf_resolve_doi:
         resolved = doi if doi.startswith("http") else f"https://doi.org/{doi.strip()}"
-        if resolved not in candidates:
-            candidates.append(resolved)
-    if not candidates:
-        return None
-
-    # Everything is inside the guard, the client included: building it can fail
-    # too, and a paper losing its full text must never fail the run.
-    try:
-        async with httpx.AsyncClient(
-            timeout=60.0, follow_redirects=True, verify=outbound_verify()
-        ) as client:
-            for candidate in candidates:
-                try:
-                    data = await _fetch(client, candidate)
-                except Exception as exc:  # noqa: BLE001 - full text is best-effort
-                    logger.info("PDF fetch failed for %s: %s", candidate, exc)
-                    continue
-                if data is None:
-                    continue
-                # pypdf is CPU-bound and synchronous — keep it off the event loop.
-                document = await asyncio.to_thread(_extract_document, data)
-                if document is not None:
-                    return document
-    except Exception as exc:  # noqa: BLE001 - full text is best-effort
-        logger.info("PDF fetch failed for %s: %s", url or doi, exc)
-    return None
+        if all(resolved != existing for existing, _ in candidates):
+            candidates.append((resolved, "doi"))
+    return await fetch_from_urls(candidates)
 
 
-def _extract_document(data: bytes) -> PdfDocument | None:
+def is_thin(document: PdfDocument | None) -> bool:
+    """Whether a document is missing or too short to be more than an abstract.
+
+    A one-page cover sheet or "abstract only" PDF parses perfectly well and
+    tells the extractor nothing the abstract did not, so treating it as full
+    text would end the search for real full text on a false positive.
+    """
+    return document is None or len(document.text) < settings.pdf_min_full_text_chars
+
+
+
+def _extract_document(data: bytes, source: str | None = None) -> PdfDocument | None:
     try:
         from pypdf import PdfReader
 
@@ -201,7 +230,7 @@ def _extract_document(data: bytes) -> PdfDocument | None:
         # Emptiness is tested without mutating the text.
         if not text.strip():
             return None
-        return PdfDocument(text=text, page_offsets=offsets)
+        return PdfDocument(text=text, page_offsets=offsets, source=source)
     except Exception as exc:  # noqa: BLE001
         logger.info("PDF parse failed: %s", exc)
         return None

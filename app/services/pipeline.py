@@ -31,6 +31,7 @@ from app.models.paper import Paper, QueryPaper
 from app.models.query import Query, QueryStatus
 from app.schemas.query import StructuredQuery
 from app.services import (
+    arxiv,
     cross_paper,
     embedding_store,
     extractor,
@@ -198,6 +199,9 @@ async def store_results_node(state: PipelineState) -> dict:
                 "open_access_pdf_url": open_access.get("url"),
                 "tldr": raw.get("tldr") or tldrs.get(ss_id),
                 "doi": external_ids.get("DOI"),
+                # The one external id that leads to a file rather than to a
+                # publisher's paywall — see `app/services/arxiv.py`.
+                "arxiv_id": arxiv.normalize_id(external_ids.get("ArXiv")),
             }
             await db.execute(
                 pg_insert(Paper)
@@ -275,6 +279,9 @@ async def process_papers_node(state: PipelineState) -> dict:
                         paper_id=pid,
                         study_type=str(normalized.study_type) if normalized else None,
                         full_text=bool(normalized and normalized.has_full_text),
+                        # Which route reached the text. The arXiv fallback is
+                        # otherwise invisible exactly when it works.
+                        full_text_source=normalized.full_text_source if normalized else None,
                     )
                     claims = await extractor.extract_claims(paper, normalized, db)
                     emit("paper_claims_extracted", paper_id=pid, claims=len(claims))

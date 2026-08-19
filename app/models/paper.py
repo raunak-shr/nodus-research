@@ -39,6 +39,10 @@ class Paper(Base):
     )
     semantic_scholar_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     doi: Mapped[str | None] = mapped_column(String(255))
+    #: `externalIds.ArXiv`, kept because it is the cheapest route to a paper's
+    #: full text: an exact identifier needs no search and cannot match the
+    #: wrong preprint. See `app/services/arxiv.py`.
+    arxiv_id: Mapped[str | None] = mapped_column(String(64))
     title: Mapped[str] = mapped_column(Text, nullable=False)
     abstract: Mapped[str | None] = mapped_column(Text)
     authors: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
@@ -101,6 +105,11 @@ class NormalizedPaper(Base):
     # character range can be turned back into a page number. Cannot be
     # recomputed later without re-downloading the PDF.
     page_offsets: Mapped[list | None] = mapped_column(JSONB)
+    # Which route produced `full_text` — "open_access", "doi" or "arxiv". A run
+    # that reaches full text through the arXiv fallback looks identical to one
+    # that never needed it unless this is recorded, and the coverage each route
+    # actually buys is the thing worth measuring here.
+    full_text_source: Mapped[str | None] = mapped_column(String(20))
     sections: Mapped[dict | None] = mapped_column(JSONB)
     study_type: Mapped[StudyType] = mapped_column(
         Enum(StudyType, name="study_type"), nullable=False, default=StudyType.unknown

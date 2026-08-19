@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.llm_provider import get_llm_name, get_structured_llm
 from app.models.paper import NormalizedPaper, Paper, ProcessingStatus
 from app.schemas.extraction import NormalizationOutput
-from app.services import pdf
+from app.services import arxiv, pdf
 from app.services.prompts import NORMALIZER_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,16 @@ async def normalize_paper(
     # than half the papers a query retrieves, and the publisher page a DOI
     # resolves to usually advertises the file anyway.
     document = await pdf.fetch_pdf_document(paper.open_access_pdf_url, doi=paper.doi)
+    if pdf.is_thin(document):
+        # Nothing, or a paywall's one-page "abstract only" file. Either way this
+        # paper is about to be read from its abstract, so a preprint on arXiv is
+        # worth the throttled request. Kept only if it is actually longer: the
+        # fallback exists to add full text, never to trade some away.
+        replacement = await arxiv.fetch_document(
+            arxiv_id=paper.arxiv_id, title=paper.title, authors=paper.authors
+        )
+        if replacement and (document is None or len(replacement.text) > len(document.text)):
+            document = replacement
     full_text = document.text if document else None
     # Page starts are only knowable at parse time; nothing downstream can
     # reconstruct them without fetching the PDF again.
@@ -79,6 +89,7 @@ async def normalize_paper(
         record.processing_status = ProcessingStatus.failed
         record.full_text = full_text
         record.page_offsets = page_offsets or None
+        record.full_text_source = document.source if document else None
         record.sections = sections or None
         await db.commit()
         return record
@@ -89,6 +100,7 @@ async def normalize_paper(
 
     record.full_text = full_text
     record.page_offsets = page_offsets or None
+    record.full_text_source = document.source if document else None
     record.sections = merged_sections or None
     record.study_type = result.study_type
     record.methodology = result.methodology_payload()
@@ -99,10 +111,11 @@ async def normalize_paper(
     await db.refresh(record)
 
     logger.info(
-        "Normalized %s as %s (full_text=%s)",
+        "Normalized %s as %s (full_text=%s, source=%s)",
         paper.id,
         record.study_type,
         "yes" if full_text else "no",
+        document.source if document else "none",
     )
     return record
 
