@@ -6,7 +6,13 @@ from unittest.mock import patch
 import pytest
 
 from app.core import llm_provider
-from app.core.llm_provider import HashingEmbeddings, get_embedder, get_embedder_name, get_llm_name
+from app.core.llm_provider import (
+    HashingEmbeddings,
+    embedder_warning,
+    get_embedder,
+    get_embedder_name,
+    get_llm_name,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -147,3 +153,80 @@ def test_azure_uses_json_schema_structured_output():
     ):
         llm_provider.get_structured_llm(_Schema)
     assert captured == {}
+
+
+# ---------------------------------------------- embedder reachability warning
+
+
+def test_loopback_ollama_is_flagged_on_a_serverless_host(monkeypatch):
+    """docker-compose.yml is not read on Vercel, so nothing answers on loopback."""
+    monkeypatch.setenv("VERCEL", "1")
+    with (
+        patch.object(llm_provider.settings, "embedding_provider", "ollama"),
+        patch.object(llm_provider.settings, "ollama_base_url", "http://localhost:11434"),
+    ):
+        warning = embedder_warning()
+    assert warning is not None
+    assert "VERCEL" in warning and "EMBEDDING_PROVIDER=hash" in warning
+
+
+def test_loopback_ollama_is_fine_off_a_serverless_host(monkeypatch):
+    for marker in ("VERCEL", "AWS_LAMBDA_FUNCTION_NAME", "FUNCTIONS_WORKER_RUNTIME", "K_SERVICE"):
+        monkeypatch.delenv(marker, raising=False)
+    with (
+        patch.object(llm_provider.settings, "embedding_provider", "ollama"),
+        patch.object(llm_provider.settings, "ollama_base_url", "http://localhost:11434"),
+    ):
+        assert embedder_warning() is None
+
+
+def test_a_remote_ollama_with_a_token_is_not_flagged(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    with (
+        patch.object(llm_provider.settings, "embedding_provider", "ollama"),
+        patch.object(llm_provider.settings, "ollama_base_url", "https://ollama.example.com"),
+        patch.object(llm_provider.settings, "ollama_auth_token", "s3cret"),
+    ):
+        assert embedder_warning() is None
+
+
+def test_a_warning_never_carries_credentials_from_the_url(monkeypatch):
+    """This string is served from a public health endpoint."""
+    monkeypatch.delenv("VERCEL", raising=False)
+    with (
+        patch.object(llm_provider.settings, "embedding_provider", "ollama"),
+        patch.object(
+            llm_provider.settings, "ollama_base_url", "https://user:sup3rsecret@ollama.example.com"
+        ),
+        patch.object(llm_provider.settings, "ollama_auth_token", ""),
+    ):
+        warning = embedder_warning()
+    assert warning is not None
+    assert "sup3rsecret" not in warning and "ollama.example.com" in warning
+
+
+def test_a_remote_ollama_without_a_token_is_flagged(monkeypatch):
+    """Ollama authenticates nothing itself, so an open endpoint is open inference."""
+    monkeypatch.delenv("VERCEL", raising=False)
+    with (
+        patch.object(llm_provider.settings, "embedding_provider", "ollama"),
+        patch.object(llm_provider.settings, "ollama_base_url", "https://ollama.example.com"),
+        patch.object(llm_provider.settings, "ollama_auth_token", ""),
+    ):
+        warning = embedder_warning()
+    assert warning is not None and "OLLAMA_AUTH_TOKEN" in warning
+
+
+def test_a_token_is_sent_to_a_hosted_ollama():
+    """The header, not the URL: the proxy in front of Ollama is what checks it."""
+    with patch.object(llm_provider.settings, "ollama_auth_token", "s3cret"):
+        assert llm_provider._ollama_client_kwargs()["headers"] == {"Authorization": "Bearer s3cret"}
+    with patch.object(llm_provider.settings, "ollama_auth_token", ""):
+        assert "headers" not in llm_provider._ollama_client_kwargs()
+
+
+def test_other_providers_are_never_flagged(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    for provider in ("hash", "azure"):
+        with patch.object(llm_provider.settings, "embedding_provider", provider):
+            assert embedder_warning() is None
