@@ -400,6 +400,7 @@ def test_only_expensive_writes_carry_a_rate_limiter():
     }
     assert limited["edits"] == {
         "DELETE /api/v1/queries/{query_id}",
+        "POST /api/v1/queries/{query_id}/report/sources",
         "PATCH /api/v1/queries/{query_id}/report",
         "PATCH /api/v1/queries/{query_id}/report/sections/{cluster_id}",
         "PATCH /api/v1/claims/clusters/{cluster_id}",

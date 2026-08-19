@@ -17,7 +17,7 @@ from app.models.query import Query, QueryStatus
 from app.schemas.paper import QueryPaperRead
 from app.schemas.query import QueryCreate, QueryRead, QueryWithPapersRead
 from app.schemas.report import FollowUpCreate, ReportRead, ReportUpdate, SectionNarrativeUpdate
-from app.services import export, runner, synthesizer
+from app.services import export, report_edit, runner, synthesizer
 from app.services.errors import Forbidden
 from app.services.pipeline import run_pipeline_safe
 
@@ -150,6 +150,22 @@ async def regenerate_report(query_id: UUID, db: DBSession) -> ReportRead:
     if not report:
         raise HTTPException(status_code=409, detail="No clusters available to synthesize")
     return ReportRead.model_validate(report)
+
+
+@router.post(
+    "/{query_id}/report/sources",
+    response_model=ReportRead,
+    dependencies=[EditRateLimit],
+)
+async def refresh_report_sources(query_id: UUID, db: DBSession) -> ReportRead:
+    """Refresh the claim rows behind each section without re-synthesising.
+
+    An edit, not a run: no model is called, so it is throttled as a database
+    write rather than through the pipeline gate. Narratives and caveats are left
+    untouched, which is the point — a regeneration would rewrite them.
+    """
+    await _get_query_or_404(query_id, db)
+    return ReportRead.model_validate(await report_edit.refresh_sources(query_id, db))
 
 
 @router.patch("/{query_id}/report", response_model=ReportRead, dependencies=[EditRateLimit])

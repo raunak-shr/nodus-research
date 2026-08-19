@@ -63,7 +63,6 @@ async def normalize_paper(
         abstract=paper.abstract,
         tldr=_tldr_text(paper),
         full_text=full_text,
-        page_offsets=page_offsets or None,
         sections=sections or None,
     )
 

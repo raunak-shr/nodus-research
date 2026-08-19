@@ -553,6 +553,18 @@ async def report_regenerate(ctx: ActionContext, params: frames.QueryRef) -> dict
         return _dump(ReportRead.model_validate(report))
 
 
+@action(
+    "report.refresh_sources",
+    frames.QueryRef,
+    "Re-read the claim rows behind each section, keeping the prose",
+    cost="edit",
+)
+async def report_refresh_sources(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
+    async with AsyncSessionLocal() as db:
+        report = await report_edit.refresh_sources(params.query_id, db)
+        return _dump(ReportRead.model_validate(report))
+
+
 @action("report.update", frames.ReportPatch, "Edit report front matter or sections", cost="edit")
 async def report_update(ctx: ActionContext, params: frames.ReportPatch) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
