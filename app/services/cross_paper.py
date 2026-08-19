@@ -23,12 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.events import ProgressCallback
-from app.core.llm_provider import get_structured_llm
+from app.core.llm_provider import get_embedder_name, get_structured_llm
 from app.models.claim import Claim
 from app.models.cluster import ClaimCluster, ClusterClaim, QualityTier
 from app.models.paper import NormalizedPaper, Paper, QueryPaper
 from app.schemas.analysis import ClusterAnalysis
 from app.services import clustering, embedding_store, lineage, quality
+from app.services.errors import Unavailable
 from app.services.prompts import CROSS_PAPER_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -160,8 +161,20 @@ async def analyze_query(
         if ctx.claim.id in vectors
     ]
     if not items:
-        logger.warning("No embeddings available for query %s — skipping clustering", query_id)
-        return []
+        # Claims exist but none of them carry a vector under the active model, so
+        # there is nothing to cluster, nothing to synthesize, and no report at the
+        # end of it. Returning [] used to let the run finish as `completed` with
+        # an empty report screen and no stated reason; fail it instead.
+        logger.warning("No embeddings available for query %s — cannot cluster", query_id)
+        emit("clusters_formed", clusters=0, claims=0, reason="no embeddings")
+        raise Unavailable(
+            f"None of the {len(contexts)} extracted claim(s) have an embedding under "
+            f"'{get_embedder_name()}', so they cannot be clustered. Check the "
+            f"EMBEDDING_PROVIDER service is reachable, then re-run the query.",
+            provider=settings.embedding_provider,
+            model=get_embedder_name(),
+            claims=len(contexts),
+        )
 
     groups = clustering.cluster_claims(
         items,
@@ -179,10 +192,31 @@ async def analyze_query(
         for group in groups
     ]
 
+    # `cluster_claims` truncates to `max_clusters_per_query` by keeping the
+    # largest clusters, so any claim in a smaller one never reaches a report
+    # section. That is a coverage figure the reader is entitled to: the report
+    # header counts papers and claims, and this is the gap between what was
+    # extracted and what was actually written about.
+    clustered = sum(len(group.members) for group in groups)
+    dropped = len(items) - clustered
+    if dropped:
+        logger.info(
+            "Query %s: %d of %d claim(s) fell outside the %d-cluster cap",
+            query_id,
+            dropped,
+            len(items),
+            settings.max_clusters_per_query,
+        )
+
     emit(
         "clusters_formed",
         clusters=len(groups),
         claims=len(items),
+        # A partial embedding failure silently shrinks the evidence base, so the
+        # shortfall travels with the count rather than only reaching the log.
+        claims_without_vectors=len(contexts) - len(items),
+        claims_clustered=clustered,
+        claims_dropped=dropped,
         threshold=settings.active_cluster_threshold,
     )
 

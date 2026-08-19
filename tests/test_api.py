@@ -5,6 +5,7 @@ endpoints are exercised by the end-to-end run (scripts/run_query.py) and the
 eval harness.
 """
 
+from typing import get_args
 from unittest.mock import patch
 
 import pytest
@@ -23,14 +24,21 @@ async def test_health(client: AsyncClient) -> None:
     assert "version" in data
 
 
+def _allowed(field: str) -> tuple[str, ...]:
+    """The Literal values a Settings provider field accepts."""
+    return get_args(type(settings).model_fields[field].annotation)
+
+
 @pytest.mark.asyncio
 async def test_health_config_reports_active_providers(client: AsyncClient) -> None:
     response = await client.get("/health/config")
     assert response.status_code == 200
 
     data = response.json()
-    assert data["llm_provider"] in {"azure", "anthropic", "ollama"}
-    assert data["embedding_provider"] in {"azure", "ollama", "hash"}
+    # Derived from the settings schema rather than restated, so adding a provider
+    # cannot leave this test asserting against a stale list.
+    assert data["llm_provider"] in _allowed("llm_provider")
+    assert data["embedding_provider"] in _allowed("embedding_provider")
     assert data["embedding_dim"] == 768
     # Secrets must never appear in a health payload.
     body = response.text.lower()

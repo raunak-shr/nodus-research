@@ -15,7 +15,7 @@ Nodus is a research paper analysis tool that helps researchers by retrieving, no
 - **Agent framework:** LangGraph (not vanilla LangChain)
 - **LLM (default):** Azure OpenAI `gpt-5.1` via langchain-openai, authenticated with Entra ID client credentials + an APIM subscription key
 - **LLM (alternatives):** Anthropic, Ollama — selected by `LLM_PROVIDER`
-- **Embeddings:** `nomic-embed-text` (768d) via Ollama, an Azure embedding deployment, or a deterministic local lexical fallback — selected by `EMBEDDING_PROVIDER`
+- **Embeddings:** Cloudflare Workers AI `@cf/baai/bge-base-en-v1.5` (768d), `nomic-embed-text` (768d) via Ollama, an Azure embedding deployment, or a deterministic local lexical fallback — selected by `EMBEDDING_PROVIDER`
 - **HTTP client:** httpx (async)
 - **Validation:** Pydantic v2 with pydantic-settings
 - **Linting:** ruff
@@ -34,7 +34,7 @@ Every graph node opens its own DB session: the graph runs as a detached backgrou
 
 **Retrieval details:** Relevance search (`/graph/v1/paper/search`) is preferred; bulk search (`/graph/v1/paper/search/bulk`) is the fallback. Relevance search 429s on every anonymous call, so without `SEMANTIC_SCHOLAR_API_KEY` the pipeline runs on bulk — the outcome is latched per process. A key grants a dedicated quota and relevance search, but not a higher ceiling: 1 request/second cumulative across all endpoints either way, enforced in-process by `SEMANTIC_SCHOLAR_MIN_INTERVAL`. Bulk ANDs every term and rejects the `tldr` field, so `StructuredQuery.core_concepts` supplies 2–4 distinct concepts to AND (never synonyms), and TLDRs are backfilled from `/graph/v1/paper/batch`. Papers are re-ranked with `0.4 × normalized_citations + 0.3 × influential_citations + 0.2 × recency + 0.1 × relevance_rank`, keeping the top 20.
 
-**Clustering:** greedy leader clustering with running centroids, seeded in descending extraction confidence. The similarity threshold is provider-aware — lexical (hash) embeddings score paraphrases far lower than semantic ones, so `settings.active_cluster_threshold` picks the right bar.
+**Clustering:** greedy leader clustering with running centroids, seeded in descending extraction confidence. The similarity threshold is provider-aware, because cosine similarity is not comparable across models: lexical (hash) embeddings score paraphrases far lower than semantic ones, and BGE packs its vectors into a narrower cone than nomic-embed-text (0.72 put 75% of one real 169-claim query into a single cluster; 0.80 is the measured knee). `settings.active_cluster_threshold` picks the right bar. `max_clusters_per_query` then **truncates** to the largest clusters, so claims in smaller ones reach no report section — `clusters_formed` carries `claims_clustered` and `claims_dropped` so that gap is visible rather than implied away.
 
 ## Project Structure
 
@@ -104,6 +104,8 @@ nodus/
 - **pgvector must be enabled on the hosted database** (`create extension if not exists vector;`) before migrations run.
 - **asyncpg rejects multi-statement SQL.** Migrations that ship raw SQL must run statements one at a time via `app/db/sql_split.py`.
 - **TLS interception.** Corporate proxies *and* antivirus HTTPS scanning re-sign traffic, so outbound HTTPS uses the OS trust store (`USE_SYSTEM_CA=true`). Apply it per httpx client — injecting truststore globally replaces `ssl.SSLContext` and breaks asyncpg's TLS.
+- **Workers AI models have fixed widths, and the wrong one is silent.** `bge-base-en-v1.5` is 768 and fits `vector(768)`; `bge-small` is 384 and `bge-large` is 1024, and every vector from those is discarded on write by the dimension check in `embedding_store`. `/health/config` reports the mismatch as `embedding_warning`.
+- **`EMBEDDING_PROVIDER` has to point at something reachable.** No vectors means no clusters, and no clusters means no report — so an unreachable embedder fails the run at the clustering step with a 503 naming the provider, rather than completing with an empty report screen. Locally `ollama` needs a running server (`docker compose up -d ollama`, then `docker compose exec ollama ollama pull nomic-embed-text`); `hash` needs nothing. **A serverless deployment cannot use the Compose service** — no sidecar, no volume, `docker-compose.yml` unread — which is what `EMBEDDING_PROVIDER=cloudflare` is for. A self-hosted Ollama reached over the network needs a token-checking proxy and `OLLAMA_AUTH_TOKEN`, because Ollama authenticates nothing itself. `/health/config` exposes `embedding_warning`, which is non-null exactly when the configuration cannot work.
 - **GPT-5.1 rejects non-default `temperature`.** Never set it; use `LLM_AZURE_REASONING_EFFORT` instead.
 - **PDF export needs the Chromium binary**, not just the `playwright` package: `uv run playwright install chromium`. A missing browser surfaces as an `unavailable` error carrying the install command, never an import crash.
 - **`uv` fails on TLS-inspected networks.** Pass `--native-tls` (e.g. `uv sync --native-tls`) so it uses the OS trust store.

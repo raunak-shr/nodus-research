@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.llm_provider import get_embedder, get_embedder_name
 from app.models.claim import Claim, ClaimEmbedding
+from app.services.errors import Unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,10 @@ def _model_key() -> str:
 async def embed_claims(claims: list[Claim], db: AsyncSession) -> int:
     """Embed and store any claims that do not yet have an embedding.
 
-    Returns the number of embeddings written.
+    Returns the number of embeddings written. Raises `Unavailable` if every
+    batch failed, which means the provider is down rather than the claims being
+    awkward — a caller needs to hear that, because the alternative is a run that
+    clusters nothing and reports no reason.
     """
     if not claims:
         return 0
@@ -67,12 +71,16 @@ async def embed_claims(claims: list[Claim], db: AsyncSession) -> int:
 
     embedder = get_embedder()
     written = 0
+    failures = 0
+    last_error: str | None = None
 
     for start in range(0, len(pending), _BATCH_SIZE):
         batch = pending[start : start + _BATCH_SIZE]
         try:
             vectors = await embedder.aembed_documents([claim.claim_text for claim in batch])
-        except Exception as exc:  # noqa: BLE001 - clustering degrades, run continues
+        except Exception as exc:  # noqa: BLE001 - one bad batch degrades, run continues
+            failures += 1
+            last_error = str(exc)
             logger.warning("Embedding batch failed (%d claims): %s", len(batch), exc)
             continue
 
@@ -95,7 +103,30 @@ async def embed_claims(claims: list[Claim], db: AsyncSession) -> int:
             written += 1
 
     await db.commit()
-    logger.info("Stored %d claim embeddings (%s)", written, model_key)
+
+    if failures and not written:
+        # Every batch failed, so this is the provider being unreachable rather
+        # than a few awkward claims. Returning a quiet 0 here is what lets a run
+        # look healthy for another minute and then produce no report at all:
+        # clustering skips claims with no vector, and no clusters means no
+        # report. Say it at the point of failure instead.
+        raise Unavailable(
+            f"Embedding provider '{model_key}' returned no vectors for "
+            f"{len(pending)} claim(s): {last_error}",
+            provider=settings.embedding_provider,
+            model=model_key,
+        )
+    if failures:
+        logger.error(
+            "Embedded only %d of %d claim(s) with %s — %d batch(es) failed: %s",
+            written,
+            len(pending),
+            model_key,
+            failures,
+            last_error,
+        )
+    else:
+        logger.info("Stored %d claim embeddings (%s)", written, model_key)
     return written
 
 

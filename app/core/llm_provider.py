@@ -2,7 +2,8 @@
 
 Agents must call `get_llm()` / `get_structured_llm()` / `get_embedder()` —
 never instantiate a client directly. Provider choice lives in LLM_PROVIDER
-(azure | anthropic | ollama) and EMBEDDING_PROVIDER (azure | ollama | hash).
+(azure | anthropic | ollama) and EMBEDDING_PROVIDER (azure | cloudflare |
+ollama | hash).
 """
 
 from __future__ import annotations
@@ -11,15 +12,19 @@ import functools
 import hashlib
 import logging
 import math
+import os
 import re
 from typing import Any, Literal
+from urllib.parse import urlparse
 
+import httpx
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel
 
 from app.core import azure_auth, azure_transport
 from app.core.config import settings
+from app.core.tls import outbound_verify
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +80,20 @@ def _anthropic_llm(task: Task) -> BaseChatModel:
     )
 
 
+def _ollama_client_kwargs() -> dict[str, Any]:
+    """httpx settings for both the Ollama chat model and the Ollama embedder.
+
+    Neither has a timeout field of its own — they reach the httpx client through
+    `client_kwargs`, and without a timeout a stalled server hangs a pipeline node
+    forever. The bearer token is here rather than in the URL because a hosted
+    Ollama is only as private as the proxy in front of it.
+    """
+    kwargs: dict[str, Any] = {"timeout": settings.llm_timeout_seconds}
+    if settings.ollama_auth_token:
+        kwargs["headers"] = {"Authorization": f"Bearer {settings.ollama_auth_token}"}
+    return kwargs
+
+
 @functools.lru_cache(maxsize=8)
 def _ollama_llm(task: Task) -> BaseChatModel:
     from langchain_ollama import ChatOllama
@@ -84,13 +103,11 @@ def _ollama_llm(task: Task) -> BaseChatModel:
         if task == "synthesis"
         else settings.ollama_extraction_model
     )
-    # ChatOllama has no timeout field of its own — it reaches the httpx client
-    # through client_kwargs. Without this a stalled Ollama server would hang a
-    # pipeline node forever. (There is no retry knob; Ollama is local.)
+    # (There is no retry knob on ChatOllama.)
     return ChatOllama(
         model=model,
         base_url=settings.ollama_base_url,
-        client_kwargs={"timeout": settings.llm_timeout_seconds},
+        client_kwargs=_ollama_client_kwargs(),
     )
 
 
@@ -207,8 +224,93 @@ def _ollama_embedder() -> Embeddings:
     return OllamaEmbeddings(
         model=settings.ollama_embedding_model,
         base_url=settings.ollama_base_url,
-        client_kwargs={"timeout": settings.llm_timeout_seconds},
+        client_kwargs=_ollama_client_kwargs(),
     )
+
+
+#: Vector width of each Workers AI embedding model, measured against the API.
+#: The mismatch is silent at Cloudflare and fatal at the database: the column is
+#: vector(EMBEDDING_DIM), and `embedding_store` discards anything else.
+_CLOUDFLARE_EMBEDDING_DIMS = {
+    "@cf/baai/bge-small-en-v1.5": 384,
+    "@cf/baai/bge-base-en-v1.5": 768,
+    "@cf/baai/bge-large-en-v1.5": 1024,
+}
+
+
+class CloudflareEmbeddings(Embeddings):
+    """Workers AI text embeddings over the Cloudflare REST API.
+
+    A direct client rather than a LangChain integration: the call is a single
+    POST, so an SDK would add a dependency and no capability. Batching stays the
+    caller's business — `embedding_store` already batches, and the API accepts
+    the whole batch in one request.
+    """
+
+    def __init__(self) -> None:
+        self._url = (
+            f"{settings.cloudflare_api_base.rstrip('/')}/accounts/"
+            f"{settings.cloudflare_account_id}/ai/run/{settings.cloudflare_embedding_model}"
+        )
+        self._headers = {"Authorization": f"Bearer {settings.cloudflare_api_token}"}
+
+    def _client_kwargs(self) -> dict[str, Any]:
+        # A client per call rather than one on the instance: `get_embedder` is
+        # cached for the process, and an httpx client bound to a finished event
+        # loop fails on the next run. A few batches per query makes the setup
+        # cost irrelevant next to the round trip.
+        return {"verify": outbound_verify(), "timeout": settings.llm_timeout_seconds}
+
+    async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        async with httpx.AsyncClient(**self._client_kwargs()) as client:
+            response = await client.post(self._url, headers=self._headers, json={"text": texts})
+        return self._vectors(response, len(texts))
+
+    async def aembed_query(self, text: str) -> list[float]:
+        return (await self.aembed_documents([text]))[0]
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        with httpx.Client(**self._client_kwargs()) as client:
+            response = client.post(self._url, headers=self._headers, json={"text": texts})
+        return self._vectors(response, len(texts))
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
+
+    @staticmethod
+    def _vectors(response: httpx.Response, expected: int) -> list[list[float]]:
+        """Read the vectors out, or raise with what Cloudflare actually said.
+
+        The status code alone is not the check: Workers AI answers some faults
+        with 200 and `success: false`. Raising here rather than returning short
+        lets `embedding_store` treat it as a failed batch and, if every batch
+        fails, report the provider as unavailable with this message attached.
+        """
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+        if response.status_code != 200 or not payload.get("success"):
+            errors = payload.get("errors") or []
+            detail = (
+                "; ".join(str(error.get("message", error)) for error in errors)
+                if errors
+                else response.text[:200]
+            )
+            raise RuntimeError(f"Workers AI returned {response.status_code}: {detail}")
+        data = (payload.get("result") or {}).get("data") or []
+        if len(data) != expected:
+            raise RuntimeError(f"Workers AI returned {len(data)} vectors for {expected} text(s)")
+        return [[float(value) for value in vector] for vector in data]
+
+
+@functools.lru_cache(maxsize=1)
+def _cloudflare_embedder() -> Embeddings:
+    return CloudflareEmbeddings()
 
 
 @functools.lru_cache(maxsize=1)
@@ -224,14 +326,107 @@ def get_embedder() -> Embeddings:
     """Return the configured embedding model (always `embedding_dim` wide)."""
     if settings.embedding_provider == "azure":
         return _azure_embedder()
+    if settings.embedding_provider == "cloudflare":
+        return _cloudflare_embedder()
     if settings.embedding_provider == "ollama":
         return _ollama_embedder()
     return _hash_embedder()
 
 
+#: Env vars managed serverless hosts set. Nothing listens on loopback there, and
+#: `docker-compose.yml` is a local-development file the host never reads — so an
+#: embedder pointed at localhost is a deployment that cannot embed anything.
+_SERVERLESS_MARKERS = (
+    "VERCEL",
+    "AWS_LAMBDA_FUNCTION_NAME",
+    "FUNCTIONS_WORKER_RUNTIME",
+    "K_SERVICE",
+)
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def embedder_warning() -> str | None:
+    """An embedding configuration worth acting on before a run starts.
+
+    Every fault here looks fine until a run ends with no report: no vectors means
+    no clusters means nothing to synthesize. Returned as a string so it can be
+    logged at boot *and* served from `/health/config` — on a managed host the logs
+    are the harder of the two to reach.
+    """
+    if settings.embedding_provider == "cloudflare":
+        return _cloudflare_warning()
+    if settings.embedding_provider == "ollama":
+        return _ollama_warning()
+    return None
+
+
+def _cloudflare_warning() -> str | None:
+    if not settings.cloudflare_account_id or not settings.cloudflare_api_token:
+        missing = " and ".join(
+            name
+            for name, value in (
+                ("CLOUDFLARE_ACCOUNT_ID", settings.cloudflare_account_id),
+                ("CLOUDFLARE_API_TOKEN", settings.cloudflare_api_token),
+            )
+            if not value
+        )
+        return (
+            f"EMBEDDING_PROVIDER=cloudflare but {missing} is not set. Workers AI will "
+            "reject every request with 401 and no claim will get a vector."
+        )
+
+    # The width is the trap: Cloudflare happily returns 1024-wide vectors for
+    # bge-large, and every one of them is then discarded on write because the
+    # column is narrower. Nothing about that is visible until clustering fails.
+    model = settings.cloudflare_embedding_model
+    dims = _CLOUDFLARE_EMBEDDING_DIMS.get(model)
+    if dims is not None and dims != settings.embedding_dim:
+        return (
+            f"CLOUDFLARE_EMBEDDING_MODEL={model} produces {dims}-dimensional vectors but "
+            f"EMBEDDING_DIM is {settings.embedding_dim}. Every vector would be discarded on "
+            "write. Use @cf/baai/bge-base-en-v1.5 for 768, or change EMBEDDING_DIM and "
+            "migrate the claim_embeddings column and its index to match."
+        )
+    return None
+
+
+def _ollama_warning() -> str | None:
+    parsed = urlparse(settings.ollama_base_url)
+    host = (parsed.hostname or "").lower()
+    # This string is served from a public health endpoint, so it must carry the
+    # address without any credentials someone put in the URL.
+    shown = parsed._replace(netloc=parsed.netloc.rpartition("@")[2]).geturl()
+
+    if host not in _LOOPBACK_HOSTS:
+        # A remote Ollama is the supported way to embed from a serverless host,
+        # but Ollama authenticates nothing itself: without a token in front of it
+        # the endpoint is open inference for anyone who finds the hostname.
+        if not settings.ollama_auth_token:
+            return (
+                f"OLLAMA_BASE_URL points at {shown} with no "
+                "OLLAMA_AUTH_TOKEN set. Ollama has no authentication of its own, so this "
+                "endpoint is open to anyone who reaches it. Put a token-checking proxy in "
+                "front of it and set OLLAMA_AUTH_TOKEN to match."
+            )
+        return None
+
+    platform = next((name for name in _SERVERLESS_MARKERS if os.environ.get(name)), None)
+    if platform is None:
+        return None
+    return (
+        f"EMBEDDING_PROVIDER=ollama points at {shown}, but this process "
+        f"runs on a managed host ({platform}) where nothing listens on loopback — "
+        "docker-compose.yml is not read there. Claims will get no vectors and every run "
+        "will fail at clustering. Set EMBEDDING_PROVIDER=cloudflare, point OLLAMA_BASE_URL "
+        "at a reachable Ollama, or set EMBEDDING_PROVIDER=hash."
+    )
+
+
 def get_embedder_name() -> str:
     if settings.embedding_provider == "azure":
         return f"azure/{settings.llm_azure_embedding_model}"
+    if settings.embedding_provider == "cloudflare":
+        return f"cloudflare/{settings.cloudflare_embedding_model}"
     if settings.embedding_provider == "ollama":
         return f"ollama/{settings.ollama_embedding_model}"
     return "hash/local-lexical"
@@ -243,5 +438,6 @@ def reset_provider_cache() -> None:
     _anthropic_llm.cache_clear()
     _ollama_llm.cache_clear()
     _azure_embedder.cache_clear()
+    _cloudflare_embedder.cache_clear()
     _ollama_embedder.cache_clear()
     _hash_embedder.cache_clear()

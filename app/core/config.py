@@ -47,22 +47,37 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
 
-    # Ollama (used when LLM_PROVIDER=ollama)
+    # Ollama (used when LLM_PROVIDER=ollama, or EMBEDDING_PROVIDER=ollama)
     ollama_base_url: str = "http://localhost:11434"
+    # Ollama has no authentication of its own, so a hosted one sits behind a
+    # proxy that checks a bearer token. Empty is right for a loopback server and
+    # wrong for anything reachable from the internet.
+    ollama_auth_token: str = ""
     ollama_extraction_model: str = "mistral-nemo"
     ollama_synthesis_model: str = "qwen2.5:32b"
     ollama_embedding_model: str = "nomic-embed-text"
 
     # Embeddings — kept separate from the chat provider because a chat-only
     # Azure deployment cannot serve embeddings.
-    #   azure  — Azure OpenAI embedding deployment (dimensions forced to 768)
-    #   ollama — nomic-embed-text via a local Ollama server
-    #   hash   — deterministic local lexical embedding, no external service
-    embedding_provider: Literal["azure", "ollama", "hash"] = "hash"
+    #   azure      — Azure OpenAI embedding deployment (dimensions forced to 768)
+    #   cloudflare — Workers AI, an HTTP call with nothing to host
+    #   ollama     — nomic-embed-text via an Ollama server, local or hosted
+    #   hash       — deterministic local lexical embedding, no external service
+    embedding_provider: Literal["azure", "cloudflare", "ollama", "hash"] = "hash"
     embedding_dim: int = 768
     llm_azure_embedding_endpoint: str = ""
     llm_azure_embedding_deployment: str = ""
     llm_azure_embedding_model: str = "text-embedding-3-small"
+
+    # Cloudflare Workers AI (used when EMBEDDING_PROVIDER=cloudflare). The model
+    # has to produce EMBEDDING_DIM-wide vectors: bge-base is 768 and fits the
+    # schema, bge-large is 1024 and every vector would be discarded on write.
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
+    cloudflare_embedding_model: str = "@cf/baai/bge-base-en-v1.5"
+    # Overridable so a Worker can stand in front of the API, keeping the account
+    # token on Cloudflare's side rather than in this deployment's environment.
+    cloudflare_api_base: str = "https://api.cloudflare.com/client/v4"
 
     # Semantic Scholar
     semantic_scholar_api_key: str = ""
@@ -86,12 +101,19 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 180.0
     llm_max_retries: int = 2
 
-    # Clustering
+    # Clustering. The bar depends on the embedding model, not on taste: each
+    # model spreads its vectors differently, so one number cannot serve all of
+    # them. See `active_cluster_threshold`.
     cluster_similarity_threshold: float = 0.72
     # The hash embedder measures lexical overlap, so two paraphrases of the
     # same claim score far lower than they would under a semantic model. Using
     # the semantic threshold there leaves every claim in its own cluster.
     lexical_cluster_similarity_threshold: float = 0.45
+    # BGE packs its vectors into a narrower cone than nomic-embed-text: on a real
+    # 169-claim query, 0.72 put 75% of the claims in a single cluster, which is
+    # one useless report section. 0.80 was the knee of the sweep — largest
+    # cluster 22%, and 86% of claims still inside the max_clusters cap.
+    bge_cluster_similarity_threshold: float = 0.80
     max_clusters_per_query: int = 25
     min_cluster_size: int = 1
 
@@ -159,9 +181,17 @@ class Settings(BaseSettings):
 
     @property
     def active_cluster_threshold(self) -> float:
-        """Similarity bar for the embedding model actually in use."""
+        """Similarity bar for the embedding model actually in use.
+
+        Cosine similarity is not comparable across models: the same pair of
+        paraphrased claims scores ~0.83 under BGE, lower under nomic-embed-text
+        and far lower under the lexical fallback. Carrying one threshold across a
+        provider swap silently changes what a cluster means.
+        """
         if self.embedding_provider == "hash":
             return self.lexical_cluster_similarity_threshold
+        if self.embedding_provider == "cloudflare":
+            return self.bge_cluster_similarity_threshold
         return self.cluster_similarity_threshold
 
     @property

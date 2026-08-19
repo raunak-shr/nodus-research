@@ -9,7 +9,7 @@ from app.api.v1.deps import require_api_key
 from app.api.v1.routes import claims, papers, queries, stream
 from app.api.v2.routes import ws as v2_ws
 from app.core.config import settings
-from app.core.llm_provider import get_embedder_name, get_llm_name
+from app.core.llm_provider import embedder_warning, get_embedder_name, get_llm_name
 from app.db.session import engine
 from app.services import limits, pdf_export
 from app.services.errors import NodusError, TooManyRequests
@@ -35,6 +35,8 @@ async def lifespan(app: FastAPI):
         settings.max_daily_runs or "unlimited",
         "on" if settings.rate_limit_enabled else "off",
     )
+    if (warning := embedder_warning()) is not None:
+        logger.error(warning)
     yield
     await queries.cancel_background_tasks()
     await pdf_export.shutdown()
@@ -131,6 +133,9 @@ async def health_config() -> dict:
         "embedding_provider": settings.embedding_provider,
         "embedding_model": get_embedder_name(),
         "embedding_dim": settings.embedding_dim,
+        # Null unless the embedder cannot work on this host — the one config
+        # fault that ends a run with no report and nothing obviously broken.
+        "embedding_warning": embedder_warning(),
         "auth_enabled": bool(settings.api_key),
         "admin_enabled": bool(settings.admin_api_key),
         "max_concurrent_papers": settings.max_concurrent_papers,

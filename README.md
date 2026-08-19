@@ -205,14 +205,33 @@ uv run alembic upgrade head
 
 Docker Compose does not define a database — it only carries the optional Ollama service.
 
-**4. Embeddings (recommended)**
+**4. Embeddings**
+
+Cloudflare Workers AI needs nothing hosted and works from a serverless deployment:
+
+```
+EMBEDDING_PROVIDER=cloudflare
+CLOUDFLARE_ACCOUNT_ID=<account id>
+CLOUDFLARE_API_TOKEN=<token with Workers AI read>
+CLOUDFLARE_EMBEDDING_MODEL=@cf/baai/bge-base-en-v1.5
+```
+
+`bge-base-en-v1.5` is 768-wide and fits the `claim_embeddings` column as it stands. `bge-small` (384) and `bge-large` (1024) do not — the dimension check in `embedding_store` discards every vector from those, which reaches you as a run that clusters nothing. `/health/config` reports the mismatch before you spend a run on it.
+
+Or a local Ollama instead:
 
 ```bash
 docker compose up -d ollama
 docker compose exec ollama ollama pull nomic-embed-text
 ```
 
-Then set `EMBEDDING_PROVIDER=ollama`. Without it, `EMBEDDING_PROVIDER=hash` runs everything offline using lexical overlap — the pipeline works, but clustering only catches claims that share vocabulary, not paraphrases.
+Then set `EMBEDDING_PROVIDER=ollama`. Failing both, `EMBEDDING_PROVIDER=hash` runs everything offline using lexical overlap — the pipeline works, but clustering only catches claims that share vocabulary, not paraphrases.
+
+The cluster similarity threshold follows the provider, because cosine similarity is not comparable across models: `CLUSTER_SIMILARITY_THRESHOLD` (0.72) for nomic-embed-text and Azure, `BGE_CLUSTER_SIMILARITY_THRESHOLD` (0.80) for Workers AI, `LEXICAL_CLUSTER_SIMILARITY_THRESHOLD` (0.45) for the hash fallback. On a real 169-claim query, running BGE at 0.72 put 75% of the claims into one cluster — a single useless report section.
+
+Whichever you pick has to be reachable. `EMBEDDING_PROVIDER=ollama` with no Ollama server yields no vectors, and claims with no vector cannot be clustered — so the run fails at the clustering step with a 503 naming the provider. It does not finish as a report-less success.
+
+A deployed API cannot use the Compose service at all: a serverless host runs no sidecar, keeps no volume for the weights, and never reads `docker-compose.yml`. That is what `EMBEDDING_PROVIDER=cloudflare` is for. If you do point `OLLAMA_BASE_URL` at an Ollama of your own, put a proxy in front that checks `OLLAMA_AUTH_TOKEN` and set the same token here — Ollama has no authentication of its own, so an exposed one is open inference. `/health/config` reports `embedding_warning` when the configuration cannot work, so a deploy can be checked without starting a run.
 
 **5. Verify**
 

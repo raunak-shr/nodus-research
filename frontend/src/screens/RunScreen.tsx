@@ -15,6 +15,10 @@ export function RunScreen(): ReactElement {
   const { run, flag } = store
   const [showStream, setShowStream] = useState(true)
 
+  // A finished run with no report is a real outcome, not a stalled panel: show
+  // why rather than a ladder of dashes and a button that opens an empty screen.
+  const noReport = run.complete && !run.reportAvailable
+
   return (
     <div style={{ padding: '0 0 80px' }}>
       <header
@@ -225,10 +229,16 @@ export function RunScreen(): ReactElement {
         <div style={{ padding: '30px 56px 0 0', position: 'sticky', top: 210 }}>
           <div className="panel" style={{ padding: '18px 20px', marginBottom: 16 }}>
             <div className="kicker" style={{ marginBottom: 14 }}>
-              Report assembling
+              {noReport ? 'No report' : 'Report assembling'}
             </div>
+            {noReport ? (
+              <div className="dim" style={{ fontSize: 13, lineHeight: 1.45 }}>
+                {run.reportNote ??
+                  'The run finished without writing a report. The stream below says how far it got.'}
+              </div>
+            ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {(run.sections.length ? run.sections : placeholderSlots()).map((slot, index) => (
+              {(run.sections.length ? run.sections : placeholderSlots(run.sectionTotal)).map((slot, index) => (
                 <div
                   key={index}
                   style={{
@@ -256,7 +266,8 @@ export function RunScreen(): ReactElement {
                 </div>
               ))}
             </div>
-            {run.complete ? (
+            )}
+            {run.complete && run.reportAvailable ? (
               <button
                 type="button"
                 className="btn btn-primary btn-block"
@@ -328,8 +339,12 @@ export function RunScreen(): ReactElement {
   )
 }
 
-function placeholderSlots(): { ready: boolean; heading: string }[] {
-  return Array.from({ length: 6 }, () => ({ ready: false, heading: '—' }))
+/** Empty rungs to fill the panel before any section lands.
+ *
+ *  `count` is the number of clusters the server has reported; until it has, six
+ *  is a stand-in for "some", not a claim about how many there will be. */
+function placeholderSlots(count: number): { ready: boolean; heading: string }[] {
+  return Array.from({ length: count || 6 }, () => ({ ready: false, heading: '—' }))
 }
 
 function shortId(id: string | null): string {

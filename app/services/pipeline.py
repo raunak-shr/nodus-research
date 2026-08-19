@@ -40,6 +40,7 @@ from app.services import (
     retriever,
     synthesizer,
 )
+from app.services.errors import Unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -250,11 +251,12 @@ async def process_papers_node(state: PipelineState) -> dict:
     completed = 0
     failed = 0
     total = len(paper_ids)
+    embedding_error: str | None = None
     lock = asyncio.Lock()
     emit = hub.callback_for(query_id)
 
     async def process(paper_id: UUID) -> int:
-        nonlocal completed, failed
+        nonlocal completed, failed, embedding_error
         async with semaphore:
             # A dedicated session per task: AsyncSession is not concurrency-safe.
             async with AsyncSessionLocal() as db:
@@ -276,8 +278,30 @@ async def process_papers_node(state: PipelineState) -> dict:
                     )
                     claims = await extractor.extract_claims(paper, normalized, db)
                     emit("paper_claims_extracted", paper_id=pid, claims=len(claims))
-                    await embedding_store.embed_claims(claims, db)
-                    emit("paper_claims_embedded", paper_id=pid, claims=len(claims))
+                    try:
+                        stored = await embedding_store.embed_claims(claims, db)
+                    except Unavailable as exc:
+                        # The paper itself is fine — normalized, claims extracted
+                        # and stored. Only the vectors are missing, so calling it
+                        # a failed paper would misreport it twenty times over.
+                        # It is still fatal to clustering, and saying so now is
+                        # what puts the reason on screen while the run is young
+                        # rather than leaving an empty report at the end of it.
+                        embedding_error = str(exc)
+                        emit(
+                            "paper_claims_embedded",
+                            paper_id=pid,
+                            claims=len(claims),
+                            stored=0,
+                            error=str(exc)[:300],
+                        )
+                    else:
+                        emit(
+                            "paper_claims_embedded",
+                            paper_id=pid,
+                            claims=len(claims),
+                            stored=stored,
+                        )
                     count = len(claims)
                 except Exception as exc:  # noqa: BLE001 - isolate per-paper failure
                     logger.warning("Paper processing failed for %s: %s", paper_id, exc)
@@ -308,6 +332,7 @@ async def process_papers_node(state: PipelineState) -> dict:
         claims=claim_count,
         papers=total,
         failed_papers=failed,
+        embedding_error=embedding_error,
     )
     return {"claim_count": claim_count}
 
@@ -345,12 +370,22 @@ async def synthesize_node(state: PipelineState) -> dict:
         query_obj.status = QueryStatus.completed
         await db.commit()
 
-    hub.publish(
-        query_id,
-        "report_ready",
-        sections=len(report.sections or []) if report else 0,
-        title=report.title if report else None,
-    )
+    if report is None:
+        # `generate_report` returns None when there is nothing to write about.
+        # Publishing `report_ready` for that leaves a client waiting for a
+        # document that will never arrive, and offering to open it.
+        hub.publish(
+            query_id,
+            "report_skipped",
+            reason="No clusters were formed, so there is nothing to synthesize.",
+        )
+    else:
+        hub.publish(
+            query_id,
+            "report_ready",
+            sections=len(report.sections or []),
+            title=report.title,
+        )
     hub.publish(query_id, "status", status=str(QueryStatus.completed))
     return {"status": "completed"}
 
