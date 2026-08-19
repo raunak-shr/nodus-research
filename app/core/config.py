@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     db_client_headroom: int = 3
 
     # LLM
-    llm_provider: Literal["azure", "anthropic", "ollama"] = "azure"
+    llm_provider: Literal["azure", "anthropic", "ollama", "gemini"] = "azure"
 
     # Azure OpenAI (used when LLM_PROVIDER=azure).
     # Auth is Entra ID client-credentials — no API key involved.
@@ -65,6 +65,33 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-20250514"
 
+    # Google Gemini (used when LLM_PROVIDER=gemini, or EMBEDDING_PROVIDER=gemini).
+    # The Generative Language API authenticates with the key alone; the project
+    # fields are recorded so the quota page this key is metered against can be
+    # found from the config, and are not sent anywhere.
+    gemini_api_key: str = ""
+    gemini_project: str = ""
+    gemini_project_number: str = ""
+    gemini_api_base: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_model: str = "gemini-3.5-flash-lite"
+    # Synthesis writes prose rather than filling in a classification, so it may
+    # warrant a larger model. Empty means "the same one" — one model is cheaper
+    # on a shared free quota than two.
+    gemini_synthesis_model: str = ""
+    # Gemini 3 bills thinking as output tokens. These agents decode against an
+    # explicit schema and do not need a scratchpad: "minimal" | "low" | "high",
+    # or empty to leave the model's default alone.
+    gemini_thinking_level: str = "low"
+    # Free-tier pacing. RPM is the binding constraint, and concurrency alone
+    # cannot enforce it — four calls that each take two seconds is 120 requests a
+    # minute. 0 disables the pacing (set it when the key is on a paid tier).
+    gemini_rpm_limit: int = 14
+    gemini_embedding_rpm_limit: int = 90
+    gemini_max_concurrency: int = 4
+    # gemini-embedding-001 returns 3072 dimensions unless a width is requested;
+    # the client always sends EMBEDDING_DIM, so this only picks the model.
+    gemini_embedding_model: str = "gemini-embedding-001"
+
     # Ollama (used when LLM_PROVIDER=ollama, or EMBEDDING_PROVIDER=ollama)
     ollama_base_url: str = "http://localhost:11434"
     # Ollama has no authentication of its own, so a hosted one sits behind a
@@ -78,10 +105,11 @@ class Settings(BaseSettings):
     # Embeddings — kept separate from the chat provider because a chat-only
     # Azure deployment cannot serve embeddings.
     #   azure      — Azure OpenAI embedding deployment (dimensions forced to 768)
+    #   gemini     — gemini-embedding-001, width requested per call
     #   cloudflare — Workers AI, an HTTP call with nothing to host
     #   ollama     — nomic-embed-text via an Ollama server, local or hosted
     #   hash       — deterministic local lexical embedding, no external service
-    embedding_provider: Literal["azure", "cloudflare", "ollama", "hash"] = "hash"
+    embedding_provider: Literal["azure", "gemini", "cloudflare", "ollama", "hash"] = "hash"
     embedding_dim: int = 768
     llm_azure_embedding_endpoint: str = ""
     llm_azure_embedding_deployment: str = ""
@@ -118,6 +146,10 @@ class Settings(BaseSettings):
     pdf_max_chars: int = 60_000
     llm_timeout_seconds: float = 180.0
     llm_max_retries: int = 2
+    # How long a structured question stays reusable. The Interpret button and
+    # the run started from the same screen structure the same text seconds
+    # apart; without this that is two identical calls. 0 disables the memo.
+    query_structure_memo_seconds: int = 900
 
     # Clustering. The bar depends on the embedding model, not on taste: each
     # model spreads its vectors differently, so one number cannot serve all of

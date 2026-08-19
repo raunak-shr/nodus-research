@@ -2,8 +2,8 @@
 
 Agents must call `get_llm()` / `get_structured_llm()` / `get_embedder()` —
 never instantiate a client directly. Provider choice lives in LLM_PROVIDER
-(azure | anthropic | ollama) and EMBEDDING_PROVIDER (azure | cloudflare |
-ollama | hash).
+(azure | anthropic | ollama | gemini) and EMBEDDING_PROVIDER (azure | gemini |
+cloudflare | ollama | hash).
 """
 
 from __future__ import annotations
@@ -95,6 +95,20 @@ def _ollama_client_kwargs() -> dict[str, Any]:
 
 
 @functools.lru_cache(maxsize=8)
+def _gemini_llm(task: Task) -> BaseChatModel:
+    from app.core.gemini import GeminiChat
+
+    model = (
+        settings.gemini_synthesis_model
+        if task == "synthesis" and settings.gemini_synthesis_model
+        else settings.gemini_model
+    )
+    # Timeout, retries and rate pacing live in the client rather than here:
+    # they are one budget shared by every agent, not a per-instance setting.
+    return GeminiChat(model=model)
+
+
+@functools.lru_cache(maxsize=8)
 def _ollama_llm(task: Task) -> BaseChatModel:
     from langchain_ollama import ChatOllama
 
@@ -121,6 +135,8 @@ def get_llm(task: Task = "extraction") -> BaseChatModel:
         return _azure_llm(task)
     if settings.llm_provider == "anthropic":
         return _anthropic_llm(task)
+    if settings.llm_provider == "gemini":
+        return _gemini_llm(task)
     return _ollama_llm(task)
 
 
@@ -130,6 +146,8 @@ def get_llm_name() -> str:
         return f"azure/{settings.llm_azure_model}"
     if settings.llm_provider == "anthropic":
         return f"anthropic/{settings.anthropic_model}"
+    if settings.llm_provider == "gemini":
+        return f"gemini/{settings.gemini_model}"
     return f"ollama/{settings.ollama_extraction_model}"
 
 
@@ -142,6 +160,8 @@ def get_structured_llm(schema: type[BaseModel], task: Task = "extraction"):
     llm = get_llm(task)
     if settings.llm_provider == "azure":
         return llm.with_structured_output(schema, method="json_schema")
+    # Gemini constrains generation to the schema natively too — `GeminiChat`
+    # overrides this method, so the default tool-call path is never taken.
     return llm.with_structured_output(schema)
 
 
@@ -314,6 +334,13 @@ def _cloudflare_embedder() -> Embeddings:
 
 
 @functools.lru_cache(maxsize=1)
+def _gemini_embedder() -> Embeddings:
+    from app.core.gemini import GeminiEmbeddings
+
+    return GeminiEmbeddings(settings.gemini_embedding_model, settings.embedding_dim)
+
+
+@functools.lru_cache(maxsize=1)
 def _hash_embedder() -> Embeddings:
     logger.info(
         "EMBEDDING_PROVIDER=hash — clustering uses lexical overlap, not semantics. "
@@ -326,6 +353,8 @@ def get_embedder() -> Embeddings:
     """Return the configured embedding model (always `embedding_dim` wide)."""
     if settings.embedding_provider == "azure":
         return _azure_embedder()
+    if settings.embedding_provider == "gemini":
+        return _gemini_embedder()
     if settings.embedding_provider == "cloudflare":
         return _cloudflare_embedder()
     if settings.embedding_provider == "ollama":
@@ -355,8 +384,19 @@ def embedder_warning() -> str | None:
     """
     if settings.embedding_provider == "cloudflare":
         return _cloudflare_warning()
+    if settings.embedding_provider == "gemini":
+        return _gemini_warning()
     if settings.embedding_provider == "ollama":
         return _ollama_warning()
+    return None
+
+
+def _gemini_warning() -> str | None:
+    if not settings.gemini_api_key:
+        return (
+            "EMBEDDING_PROVIDER=gemini but GEMINI_API_KEY is not set. Every embed "
+            "request would be refused and no claim would get a vector."
+        )
     return None
 
 
@@ -425,6 +465,8 @@ def _ollama_warning() -> str | None:
 def get_embedder_name() -> str:
     if settings.embedding_provider == "azure":
         return f"azure/{settings.llm_azure_embedding_model}"
+    if settings.embedding_provider == "gemini":
+        return f"gemini/{settings.gemini_embedding_model}"
     if settings.embedding_provider == "cloudflare":
         return f"cloudflare/{settings.cloudflare_embedding_model}"
     if settings.embedding_provider == "ollama":
@@ -436,8 +478,10 @@ def reset_provider_cache() -> None:
     """Clear memoised clients — used by tests that flip provider settings."""
     _azure_llm.cache_clear()
     _anthropic_llm.cache_clear()
+    _gemini_llm.cache_clear()
     _ollama_llm.cache_clear()
     _azure_embedder.cache_clear()
+    _gemini_embedder.cache_clear()
     _cloudflare_embedder.cache_clear()
     _ollama_embedder.cache_clear()
     _hash_embedder.cache_clear()

@@ -91,6 +91,67 @@ def test_llm_name_reflects_active_provider():
     ):
         assert get_llm_name() == "ollama/mistral-nemo"
 
+    with (
+        patch.object(llm_provider.settings, "llm_provider", "gemini"),
+        patch.object(llm_provider.settings, "gemini_model", "gemini-3.5-flash-lite"),
+    ):
+        assert get_llm_name() == "gemini/gemini-3.5-flash-lite"
+
+
+def test_gemini_is_selected_and_needs_no_credentials_to_construct():
+    """Constructing must not touch the network: `/health/config` calls this on
+    every request, including on a deployment with no key set."""
+    from app.core.gemini import GeminiChat
+
+    with (
+        patch.object(llm_provider.settings, "llm_provider", "gemini"),
+        patch.object(llm_provider.settings, "gemini_api_key", ""),
+    ):
+        assert isinstance(llm_provider.get_llm(), GeminiChat)
+
+
+def test_gemini_synthesis_falls_back_to_the_one_model():
+    """Two models is two quotas' worth of cold starts on a shared free tier."""
+    with (
+        patch.object(llm_provider.settings, "llm_provider", "gemini"),
+        patch.object(llm_provider.settings, "gemini_model", "flash-lite"),
+        patch.object(llm_provider.settings, "gemini_synthesis_model", ""),
+    ):
+        assert llm_provider.get_llm("synthesis").model == "flash-lite"
+
+    llm_provider.reset_provider_cache()
+    with (
+        patch.object(llm_provider.settings, "llm_provider", "gemini"),
+        patch.object(llm_provider.settings, "gemini_model", "flash-lite"),
+        patch.object(llm_provider.settings, "gemini_synthesis_model", "pro"),
+    ):
+        assert llm_provider.get_llm("synthesis").model == "pro"
+        assert llm_provider.get_llm("extraction").model == "flash-lite"
+
+
+def test_gemini_embeddings_are_reported_and_warn_without_a_key():
+    from app.core.gemini import GeminiEmbeddings
+
+    with (
+        patch.object(llm_provider.settings, "embedding_provider", "gemini"),
+        patch.object(llm_provider.settings, "gemini_embedding_model", "gemini-embedding-001"),
+        patch.object(llm_provider.settings, "gemini_api_key", "key"),
+    ):
+        embedder = get_embedder()
+        assert isinstance(embedder, GeminiEmbeddings)
+        # The width is always requested: the default output is 3072 wide and the
+        # column is 768, and every vector would be dropped on write.
+        assert embedder.dim == llm_provider.settings.embedding_dim
+        assert get_embedder_name() == "gemini/gemini-embedding-001"
+        assert embedder_warning() is None
+
+    llm_provider.reset_provider_cache()
+    with (
+        patch.object(llm_provider.settings, "embedding_provider", "gemini"),
+        patch.object(llm_provider.settings, "gemini_api_key", ""),
+    ):
+        assert "GEMINI_API_KEY" in (embedder_warning() or "")
+
 
 def test_azure_client_carries_apim_key_and_flat_route():
     with (
