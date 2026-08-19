@@ -1,0 +1,464 @@
+/* The landing page — the front door, in the grammar of the design project
+   (`Nodus Landing.dc.html`). It is the only surface with no sidebar, so it
+   carries its own header, its own measure, and its own rule weights.
+
+   Two grounds here are deliberately *not* theme-swapped. The hero band and the
+   closing slab are posters: inverting the hero with the theme would make it a
+   white slab in a dark UI, which reads as a rendering fault rather than as
+   emphasis. Each keeps a fixed ground and a fixed ink on it, and the rest of
+   the page rides the app's --n-* ramp so it matches the product either way. */
+
+.landing {
+  /* poster grounds — fixed, see above */
+  --l-void: #171615;
+  --l-void-ink: #f3f2f2;
+  --l-on-accent: #f3f2f2;
+
+  /* Accent as *text*: --color-accent-700 is right on the light ground and far
+     too dark on the dark one, so the landing borrows the app's stance red,
+     which is already tuned for both. Solid accent *fills* stay --color-accent,
+     which is theme-independent by design. */
+  --l-accent-ink: var(--n-con);
+
+  /* Named for the canvas, which reads its palette off these properties. */
+  --l-accent: var(--color-accent);
+
+  --l-rule: var(--n-text);
+  --l-hair: var(--n-line);
+  --l-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  min-height: 100vh;
+  background: var(--n-bg);
+  color: var(--n-text);
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing { scroll-behavior: auto; }
+}
+
+/* -- measure and rhythm --------------------------------------------------- */
+
+.lp-wrap {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding-inline: clamp(20px, 4vw, 56px);
+}
+.lp-sec { padding-block: clamp(48px, 6vw, 88px); }
+.lp-band { border-bottom: 2px solid var(--l-rule); }
+.lp-band-top { border-top: 2px solid var(--l-rule); }
+.lp-rule { height: 2px; background: var(--l-rule); }
+
+/* -- type ----------------------------------------------------------------- */
+
+.lp-eyebrow {
+  margin: 0 0 22px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--l-accent-ink);
+}
+.lp-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.lp-label-sm {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--n-faint);
+}
+.landing h1,
+.landing h2,
+.landing h3,
+.landing h4 {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  letter-spacing: -.03em;
+  text-wrap: balance;
+}
+.lp-h1 { font-size: clamp(34px, 3.8vw, 58px); line-height: .98; letter-spacing: -.035em; margin: 0 0 24px; }
+.lp-h2 { font-size: clamp(28px, 3.6vw, 50px); line-height: 1.02; margin: 0 0 16px; }
+.lp-h3 { font-size: clamp(24px, 2.6vw, 36px); line-height: 1.04; margin: 0 0 14px; }
+.lp-h4 { font-size: 23px; line-height: 1.1; letter-spacing: -.025em; margin: 0 0 12px; }
+.lp-lead { font-size: 17px; line-height: 1.58; color: var(--n-dim); margin: 0 0 28px; }
+.lp-body { font-size: 16px; line-height: 1.62; color: var(--n-dim); margin: 0; }
+.lp-body-sm { font-size: 15px; line-height: 1.58; color: var(--n-dim); margin: 0; }
+.lp-mono {
+  font-family: var(--l-mono);
+  font-variant-numeric: tabular-nums;
+}
+.landing .pretty { text-wrap: pretty; }
+.landing em.lp-term { font-style: normal; font-weight: 600; color: var(--n-text); }
+
+/* -- header --------------------------------------------------------------- */
+
+.lp-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--n-bg);
+  border-bottom: 2px solid var(--l-rule);
+}
+.lp-head-row {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+  padding-block: 16px;
+}
+.lp-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 27px;
+  letter-spacing: -.03em;
+  line-height: 1;
+}
+.lp-nav {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.lp-nav a { color: var(--n-dim); text-decoration: none; }
+.lp-nav a:hover { color: var(--l-accent-ink); }
+.lp-actions { display: flex; gap: 12px; align-items: center; margin-left: auto; }
+.lp-actions .btn { white-space: nowrap; }
+
+/* The design system's .btn takes both its border and its label from fixed
+   light-theme tokens (--color-divider, --color-text), so on the dark ground a
+   secondary button loses its outline and its text together. Both are swapped
+   for the app's theme-aware ramp. */
+.landing .btn-secondary { border-color: var(--n-line2); color: var(--n-text); }
+
+/* Below 860px the nav and the actions cannot share a row with the brand
+   without wrapping into an unreadable stack, so the section links go — every
+   one of them is reachable by scrolling, which the actions are not. */
+@media (max-width: 859px) {
+  .lp-nav { display: none; }
+  .lp-head-row { gap: 16px; }
+  .lp-brand { font-size: 22px; }
+}
+
+/* -- hero band ------------------------------------------------------------ */
+
+.lp-void {
+  background: var(--l-void);
+  color: var(--l-void-ink);
+  border-bottom: 2px solid var(--l-rule);
+  overflow: hidden;
+}
+.lp-void-inner {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 2vw, 20px);
+  min-height: clamp(520px, 78vh, 860px);
+  padding-block: clamp(20px, 2.6vw, 34px) clamp(18px, 2.4vw, 30px);
+}
+.lp-statement {
+  margin: 0;
+  max-width: 24ch;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: clamp(24px, 3vw, 42px);
+  line-height: 1.04;
+  letter-spacing: -.032em;
+  text-wrap: balance;
+}
+.lp-statement mark {
+  background: var(--color-accent);
+  color: var(--l-on-accent);
+  padding: 0 .12em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+.lp-field-holder { position: relative; flex: 1 1 auto; min-height: 300px; }
+.lp-field { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.lp-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px clamp(16px, 3vw, 36px);
+  align-items: center;
+  font-family: var(--l-mono);
+  font-size: 11.5px;
+  letter-spacing: .06em;
+  color: color-mix(in srgb, var(--l-void-ink) 68%, transparent);
+}
+.lp-legend > span { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+
+/* -- figures -------------------------------------------------------------- */
+
+.lp-fig { margin: 0; background: var(--n-panel); padding: 24px; }
+.lp-fig-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--l-rule);
+}
+.lp-fig-meta { font-family: var(--l-mono); font-size: 11.5px; color: var(--n-faint); margin-left: auto; }
+
+/* The quality breakdown: component / value / weight / contribution. A grid
+   rather than a table because the header row and the total straddle it. */
+.lp-calc {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: baseline;
+  font-family: var(--l-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.lp-calc > .h { padding-bottom: 8px; border-bottom: 2px solid var(--l-rule); }
+.lp-calc > .c { padding: 10px 0; border-bottom: 1px solid var(--l-hair); }
+.lp-calc > .n { text-align: right; padding-left: 16px; }
+.lp-calc > .term { font-family: var(--font-body); font-size: 14px; }
+.lp-calc > .last { border-bottom: 0; }
+.lp-total {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 2px solid var(--l-rule);
+}
+.lp-total-score {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums;
+}
+.lp-badge {
+  background: var(--color-accent);
+  color: var(--l-on-accent);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+}
+.lp-badge-sm {
+  background: var(--color-accent);
+  color: var(--l-on-accent);
+  font-family: var(--l-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+}
+
+/* -- lineage chain -------------------------------------------------------- */
+
+.lp-chain {
+  display: flex;
+  flex-direction: column;
+  border-left: 2px solid var(--l-rule);
+  margin: 22px 0 0 5px;
+  padding: 0 0 0 22px;
+}
+.lp-chain > li { position: relative; list-style: none; }
+.lp-chain > li + li { padding-top: 20px; }
+.lp-chain .node {
+  position: absolute;
+  left: -30px;
+  width: 12px;
+  height: 12px;
+  display: block;
+}
+.lp-chain > li + li .node { top: 24px; }
+.lp-chain > li:first-child .node { top: 4px; }
+.lp-chain .node-origin { background: var(--color-accent); }
+.lp-chain .node-supports { background: var(--n-text); }
+/* The hollow nodes need a ground of their own: they sit centred on the rail,
+   and without one the rail runs straight through the middle of the ring. */
+.lp-chain .node-contradicts { border: 2px solid var(--n-text); background: var(--n-panel); }
+.lp-chain .node-extends { border: 2px solid var(--n-faint); background: var(--n-panel); }
+.lp-chain .rel {
+  font-family: var(--l-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.lp-chain .rel-origin { color: var(--l-accent-ink); }
+.lp-chain .rel-extends { color: var(--n-dim); }
+.lp-chain .yr { font-family: var(--l-mono); font-size: 12px; color: var(--n-faint); }
+.lp-chain .cite { font-size: 14.5px; line-height: 1.45; margin: 0; }
+
+/* -- drivers -------------------------------------------------------------- */
+
+.lp-driver { padding-block: 20px; border-top: 1px solid var(--l-hair); }
+.lp-driver:first-child { border-top: 2px solid var(--l-rule); }
+.lp-driver:last-child { border-bottom: 2px solid var(--l-rule); }
+.lp-driver .cat {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--l-accent-ink);
+}
+.lp-driver .pair { font-family: var(--l-mono); font-size: 11.5px; color: var(--n-faint); margin-left: auto; }
+
+/* -- thresholds ----------------------------------------------------------- */
+
+.lp-tiers {
+  display: flex;
+  flex-direction: column;
+  margin-top: 12px;
+  font-family: var(--l-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.lp-tiers > div {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 12px;
+  color: var(--n-dim);
+  border-bottom: 1px solid var(--l-hair);
+}
+.lp-tiers > div:last-child { border-bottom: 0; }
+.lp-tiers > div.on {
+  background: var(--color-accent);
+  color: var(--l-on-accent);
+  font-weight: 700;
+  border-bottom: 0;
+}
+.lp-tiers .k { width: 8ch; }
+
+/* -- ledger rows (ranking weights, throughput) ---------------------------- */
+
+.lp-ledger { font-family: var(--l-mono); font-size: 12.5px; color: var(--n-dim); font-variant-numeric: tabular-nums; }
+.lp-ledger > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--l-hair);
+}
+.lp-ledger > div:last-child { border-bottom: 0; }
+.lp-ledger b { color: var(--n-text); font-weight: 700; }
+
+/* -- quickstart ----------------------------------------------------------- */
+
+.lp-shell {
+  margin: 0;
+  background: var(--n-panel);
+  border-top: 2px solid var(--l-rule);
+}
+.lp-shell-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--l-hair);
+}
+.lp-shell-body {
+  padding: 20px;
+  font-family: var(--l-mono);
+  font-size: 13px;
+  line-height: 2;
+  overflow-x: auto;
+}
+.lp-shell-body .cm { color: var(--n-faint); }
+.lp-shell-body .cm-gap { padding-top: 10px; }
+.lp-shell-body .pr { color: var(--color-accent); font-weight: 700; }
+.lp-shell-body .env { color: var(--n-dim); padding-left: 2ch; }
+
+/* -- comparison table ----------------------------------------------------- */
+
+.lp-table { width: 100%; min-width: 680px; border-collapse: collapse; font-size: 14.5px; }
+.lp-table th {
+  text-align: left;
+  vertical-align: bottom;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--n-faint);
+  padding: 8px;
+  border-bottom: 2px solid var(--l-rule);
+}
+.lp-table th.us { color: var(--l-accent-ink); }
+.lp-table td { padding: 10px 8px; vertical-align: top; border-bottom: 1px solid var(--l-hair); }
+.lp-table td.q { font-weight: 600; }
+.lp-table td.weak { color: var(--n-faint); }
+.lp-table td.mid { color: var(--n-dim); }
+.lp-table tbody tr:hover { background: color-mix(in srgb, var(--n-text) 4%, transparent); }
+
+/* -- closing slab --------------------------------------------------------- */
+
+.lp-slab { background: var(--color-accent); color: var(--l-on-accent); }
+.lp-slab h2 { color: var(--l-on-accent); }
+.lp-slab .lp-slab-lead {
+  font-size: 17px;
+  line-height: 1.55;
+  max-width: 52ch;
+  margin: 0 0 30px;
+  color: color-mix(in srgb, var(--l-on-accent) 88%, transparent);
+}
+.lp-slab .btn-on-accent { background: var(--l-on-accent); color: #ae1800; border: 0; }
+.lp-slab .btn-on-accent:hover { background: #fff; }
+.lp-slab .btn-off-accent { background: transparent; color: var(--l-on-accent); border: 1px solid var(--l-on-accent); }
+.lp-slab .btn-off-accent:hover { background: color-mix(in srgb, var(--l-on-accent) 14%, transparent); }
+.lp-slab :focus-visible { outline-color: var(--l-on-accent); }
+
+/* -- footer --------------------------------------------------------------- */
+
+.lp-foot-row {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding-top: 22px;
+  border-top: 2px solid var(--l-rule);
+  font-family: var(--l-mono);
+  font-size: 12px;
+  color: var(--n-faint);
+}
+.lp-foot-row a { color: var(--n-dim); }
+.lp-foot-row a:hover { color: var(--l-accent-ink); }
+
+/* -- two-column splits --------------------------------------------------- */
+
+/* The design splits at 400px per column; below that the grid collapses to one
+   column on its own, which is what auto-fit is for. */
+.lp-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+.lp-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: clamp(24px, 4vw, 56px); }
+.lp-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: clamp(20px, 3vw, 36px); }
+.lp-faq { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: clamp(24px, 4vw, 48px); }
+.lp-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: clamp(24px, 4vw, 56px);
+  align-items: flex-start;
+}
+.lp-row > .txt { flex: 1 1 300px; min-width: 0; }
+.lp-row > .art { flex: 1 1 460px; min-width: 0; }
+
+/* The hero's left column carries a rule down its right edge on wide screens.
+   Once the grid has collapsed the rule would run across the page, so it is
+   drawn only while there are two columns to divide. */
+.lp-hero-art { margin: 0; }
+@media (min-width: 860px) {
+  .lp-hero-copy { padding-right: clamp(0px, 3vw, 48px); }
+  .lp-hero-art { border-left: 2px solid var(--l-rule); padding-left: clamp(20px, 3vw, 44px); }
+}
+@media (max-width: 859px) {
+  .lp-hero-art { border-top: 2px solid var(--l-rule); padding-top: 28px; margin-top: 8px; }
+}
