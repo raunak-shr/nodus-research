@@ -41,6 +41,11 @@ def _mark(position: int, index: int) -> str:
     return f"{index}{_MARK_LETTERS[position % len(_MARK_LETTERS)]}"
 
 
+def _has_provenance(claims: list[dict[str, Any]]) -> bool:
+    """Mirrors `report_render.has_provenance` — see it for why the key matters."""
+    return any("source_match" in claim for claim in claims)
+
+
 def _prov_kind(claim: dict[str, Any]) -> str:
     """Origin before match: an abstract-only quote is not verified against the body."""
     if claim.get("source_origin") == "abstract":
@@ -170,7 +175,24 @@ def to_markdown(report: Report, query: Query) -> str:
             lines += [""]
 
         claims = section.get("claims") or []
-        if claims:
+        if claims and not _has_provenance(claims):
+            # Synthesised before provenance existed, so it renders as it did
+            # then. Marking these claims "not locatable" would report a search
+            # that never happened.
+            lines += [
+                "### Underlying claims",
+                "",
+                "| Stance | Source | Claim | n |",
+                "|---|---|---|---|",
+            ]
+            for claim in claims:
+                text = (claim.get("claim_text") or "").replace("|", "\\|")
+                lines.append(
+                    f"| {claim.get('stance')} | {claim.get('citation')} | {text} | "
+                    f"{claim.get('sample_size') or '—'} |"
+                )
+            lines += [""]
+        elif claims:
             lines += [
                 "### Underlying claims",
                 "",

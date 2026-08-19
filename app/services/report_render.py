@@ -633,10 +633,50 @@ def _source_notes(section: dict[str, Any], index: int) -> str:
     )
 
 
+def _claims_without_provenance(rows: list[dict[str, Any]], *, expanded: bool) -> str:
+    """The claim table as it stood before provenance — no marks, no footnotes."""
+    body = []
+    for claim in rows:
+        stance = _esc(claim.get("stance") or "neutral")
+        score = claim.get("confidence_score")
+        sample = claim.get("sample_size")
+        body.append(
+            "<tr>"
+            f'<td><span class="stance stance--{stance}">{stance}</span></td>'
+            f'<td class="cell--source">{_esc(claim.get("citation"))}</td>'
+            f"<td>{_esc(claim.get('claim_text'))}</td>"
+            f'<td class="cell--num">{_esc(claim.get("evidence_type"))}</td>'
+            f'<td class="cell--num">{format(sample, ",") if isinstance(sample, int) else "—"}</td>'
+            f'<td class="cell--num">{format(score, ".2f") if score is not None else "—"}</td>'
+            "</tr>"
+        )
+    open_attr = " open" if expanded else ""
+    return (
+        f'<details class="claims"{open_attr}>'
+        f"<summary>Underlying claims ({len(rows)})</summary>"
+        '<div class="table-wrap"><table><thead><tr><th>Stance</th><th>Source</th>'
+        "<th>Claim</th><th>Evidence</th><th>n</th><th>Conf.</th></tr></thead>"
+        f'<tbody>{"".join(body)}</tbody></table></div></details>'
+    )
+
+
+def has_provenance(rows: list[dict[str, Any]]) -> bool:
+    """Whether these claim rows were written after provenance existed.
+
+    A section synthesised before it carries no `source_match` key at all, which is
+    a different thing from having looked for a quote and failed. Marking every
+    claim in an older report "not locatable" would report a failure that never
+    happened, so those sections render exactly as they always did.
+    """
+    return any("source_match" in claim for claim in rows)
+
+
 def _claims(section: dict[str, Any], index: int, *, expanded: bool) -> str:
     rows = section.get("claims") or []
     if not rows:
         return ""
+    if not has_provenance(rows):
+        return _claims_without_provenance(rows, expanded=expanded)
     body = []
     for position, claim in enumerate(rows):
         stance = _esc(claim.get("stance") or "neutral")

@@ -8,6 +8,8 @@ distinction does not rest on colour.
 
 import re
 
+import pytest
+
 from app.services import export, report_render
 
 CLAIMS = [
@@ -261,3 +263,91 @@ def test_json_export_carries_every_provenance_field():
 
     for field in ("source_match", "source_origin", "source_section", "source_page"):
         assert field in claim
+
+
+# ------------------------------------------------- reports predating the feature
+
+LEGACY_SECTION = {
+    "cluster_id": "cl-old",
+    "heading": "A section synthesised before provenance existed",
+    "narrative": "Prose.",
+    "quality_tier": "high",
+    "quality_score": 0.9,
+    "stance_counts": {"supports": 2, "contradicts": 1, "neutral": 0},
+    "paper_count": 3,
+    # No source_* keys at all — this is the shape a pre-provenance snapshot has.
+    "claims": [
+        {
+            "claim_id": f"c{i}",
+            "citation": f"Author, 20{10 + i}",
+            "claim_text": f"Claim {i}.",
+            "stance": "supports",
+            "confidence_score": 0.8,
+            "sample_size": None,
+        }
+        for i in range(1, 4)
+    ],
+}
+
+LEGACY_PAYLOAD = {
+    "query": {"raw_query": "q", "structured_query": {}},
+    "report": {
+        "title": "An older report",
+        "executive_summary": "Summary.",
+        "key_findings": [],
+        "open_questions": [],
+        "sections": [LEGACY_SECTION],
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "llm_model_used": "gpt-5.1",
+    },
+}
+
+
+def test_a_missing_source_key_is_not_the_same_as_a_failed_lookup():
+    assert report_render.has_provenance(LEGACY_SECTION["claims"]) is False
+    assert report_render.has_provenance(CLAIMS) is True
+    # One claim carrying the key is enough: the section was written after the fact.
+    assert report_render.has_provenance([{"source_match": "none"}, {}]) is True
+
+
+@pytest.mark.parametrize("variant", ["screen", "print"])
+def test_an_older_report_is_not_marked_up_as_having_failed(variant):
+    """Nobody looked for these sources, so nothing may claim they were not found."""
+    html = report_render.render_body(LEGACY_PAYLOAD, variant=variant)
+
+    assert "not locatable" not in html
+    assert "Source coverage" not in html
+    assert "prov--" not in html
+    assert "Sources for section" not in html
+    # The claim table itself is still there, exactly as it was.
+    assert "Underlying claims (3)" in html
+    assert "Author, 2011" in html
+
+
+def test_an_older_report_keeps_its_original_markdown_table():
+    class _OldReport:
+        title = "An older report"
+        executive_summary = "Summary."
+        key_findings = []
+        open_questions = []
+        sections = [LEGACY_SECTION]
+        llm_model_used = "gpt-5.1"
+        user_edited = False
+        id = "r0"
+        created_at = None
+        updated_at = None
+
+    md = export.to_markdown(_OldReport(), _Query())
+
+    assert "| Stance | Source | Claim | n |" in md
+    assert "Provenance" not in md
+    assert "not locatable" not in md
+    assert "Sources for section" not in md
+
+
+def test_a_current_report_still_gets_the_full_treatment():
+    """The suppression must not leak into reports that do have provenance."""
+    html = report_render.render_body(PAYLOAD, variant="print")
+
+    assert "Source coverage" in html
+    assert "Sources for section 1" in html
