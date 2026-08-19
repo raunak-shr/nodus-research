@@ -20,7 +20,7 @@ export function StatesScreen(): ReactElement {
       go: () => store.go('run', 'busy'),
       enabled: true,
     },
-    { label: 'Seq gap — reload prompt', go: store.simulateGap, enabled: true },
+    { label: 'Seq gap — reload toast', go: store.simulateGap, enabled: true },
     { label: 'Failed run — retrieval stopped after four attempts', go: () => store.go('run', 'failed'), enabled: true },
     { label: 'Cancelled run — stopped part way through the papers', go: () => store.go('run', 'cancelled'), enabled: true },
     {
