@@ -319,6 +319,12 @@ async def generate_report(
 
     claim_rows = [await section_claim_rows(cluster, db) for cluster in clusters]
 
+    # Reads are done and nothing is pending, so end the transaction here: a
+    # session that stays in one keeps its connection checked out, and the stage
+    # that follows is minutes of LLM calls. Under a pooler that counts clients,
+    # a connection held across that is a slot no other run can use.
+    await db.commit()
+
     semaphore = asyncio.Semaphore(settings.max_concurrent_papers)
     total = len(clusters)
     written = 0

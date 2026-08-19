@@ -61,12 +61,27 @@ async def extract_claims(
 
     sections = normalized.sections or {}
     text_sections = {k: v for k, v in sections.items() if isinstance(v, str) and v}
+    tldr = _tldr_text(paper)
+
+    if not (paper.abstract or tldr or normalized.full_text or text_sections):
+        # A title is not evidence. Asking a model to extract empirical claims
+        # from one costs a call and returns nothing every time.
+        logger.info("No text to extract from for paper %s — skipping extraction", paper.id)
+        normalized.processing_status = ProcessingStatus.completed
+        await db.commit()
+        return []
+
     paper_text = pdf.build_paper_text(
         title=paper.title,
         abstract=paper.abstract,
-        tldr=_tldr_text(paper),
+        tldr=tldr,
         full_text=normalized.full_text,
         sections=text_sections or None,
+        # Claims live in results and what the authors concluded from them. The
+        # design, population and sample size reach the model in the context
+        # block below, distilled by the normalizer from the methods it is not
+        # being sent again.
+        section_order=pdf.CLAIM_SECTIONS,
     )
     prompt = (
         f"{_context_block(paper, normalized)}\n\n"

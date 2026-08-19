@@ -169,12 +169,26 @@ def split_sections(full_text: str) -> dict[str, str]:
     return sections
 
 
+#: Every section, in the order the normalizer wants them — it is classifying the
+#: study, so how the work was done matters as much as what it found.
+FULL_SECTIONS = ("methods", "results", "discussion", "conclusion", "limitations", "introduction")
+
+#: What the extractor needs. Methods and introduction are dropped on purpose:
+#: the design, population and sample size already reach that agent as a context
+#: block the normalizer distilled, and the introduction is other people's work,
+#: which its prompt tells it to skip. Sending either again is the same tokens
+#: twice — on a metered free tier, for a paragraph the model is told to ignore.
+CLAIM_SECTIONS = ("results", "conclusion", "discussion", "limitations")
+
+
 def build_paper_text(
     title: str,
     abstract: str | None,
     tldr: str | None,
     full_text: str | None,
     sections: dict[str, str] | None = None,
+    *,
+    section_order: tuple[str, ...] = FULL_SECTIONS,
 ) -> str:
     """Assemble the text an agent sees for one paper, within the char budget."""
     parts = [f"TITLE: {title}"]
@@ -183,13 +197,14 @@ def build_paper_text(
     if abstract:
         parts.append(f"ABSTRACT:\n{abstract}")
 
-    if sections:
-        ordered = ["methods", "results", "discussion", "conclusion", "limitations", "introduction"]
-        for name in ordered:
-            body = sections.get(name)
-            if body:
-                parts.append(f"{name.upper()}:\n{body}")
+    found = sections or {}
+    chosen = [(name, found[name]) for name in section_order if found.get(name)]
+    if chosen:
+        for name, body in chosen:
+            parts.append(f"{name.upper()}:\n{body}")
     elif full_text:
+        # Either the split found nothing, or it found nothing this caller asked
+        # for. Unsplit text is worth more to an agent than a title on its own.
         parts.append(f"FULL TEXT:\n{full_text}")
 
     text = "\n\n".join(parts)

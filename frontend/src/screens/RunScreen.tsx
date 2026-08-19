@@ -19,6 +19,13 @@ export function RunScreen(): ReactElement {
   // why rather than a ladder of dashes and a button that opens an empty screen.
   const noReport = run.complete && !run.reportAvailable
 
+  // Nothing has been submitted on this connection. The screen used to be
+  // reachable only by starting a run, so it assumed one; now that opening it
+  // is just navigation, it has to be able to say there isn't one. A flag is
+  // still shown — the failed and cancelled states are staged without a run.
+  const started = Boolean(run.queryId) || run.papers.length > 0 || run.events.length > 0
+  if (!started && !run.complete && !flag) return <NoRun />
+
   return (
     <div style={{ padding: '0 0 80px' }}>
       <header
@@ -331,10 +338,58 @@ export function RunScreen(): ReactElement {
         </div>
       </div>
 
-      {flag === 'seqgap' ? <SeqGapDialog /> : null}
       {flag === 'busy' ? <BusyDialog /> : null}
       {flag === 'failed' ? <FailedTakeover /> : null}
       {flag === 'cancelled' ? <CancelledTakeover /> : null}
+    </div>
+  )
+}
+
+/** No run to show, because none was started.
+ *
+ *  A designed screen rather than an empty ladder of phases: the phases would
+ *  all read "pending" and the elapsed clock would read 00:00, which looks like
+ *  a run that is stuck rather than a run that does not exist.
+ */
+function NoRun(): ReactElement {
+  const store = useStore()
+
+  return (
+    <div className="screen" style={{ maxWidth: 640 }}>
+      <div className="kicker" style={{ marginBottom: 18 }}>
+        live run
+      </div>
+      <h1
+        className="pretty"
+        style={{ fontSize: 30, lineHeight: 1.2, letterSpacing: '-.02em', margin: '0 0 12px' }}
+      >
+        No run on this connection yet.
+      </h1>
+      <p className="dim pretty" style={{ fontSize: 14.5, lineHeight: 1.6, margin: '0 0 26px' }}>
+        This screen follows one analysis as it happens — retrieval, then each paper as it is
+        normalised and mined for claims, then the sections as they are written. Ask a question to
+        start one. Opening this screen does not start anything on its own.
+      </p>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => store.go('query')}
+          style={{ whiteSpace: 'nowrap', fontSize: 13.5, padding: '9px 18px' }}
+        >
+          Ask a question
+        </button>
+        {store.queries.length ? (
+          <button
+            type="button"
+            className="btn btn-ghost dim"
+            onClick={() => store.go('history')}
+            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+          >
+            Open a previous run
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -350,53 +405,6 @@ function placeholderSlots(count: number): { ready: boolean; heading: string }[] 
 function shortId(id: string | null): string {
   if (!id) return '—'
   return id.replace(/-/g, '').slice(0, 6)
-}
-
-function SeqGapDialog(): ReactElement {
-  const store = useStore()
-  const gap = store.gap
-
-  return (
-    <div className="scrim">
-      <div className="dialog-box" style={{ width: 520 }}>
-        <div className="kicker" style={{ color: 'var(--color-accent-400)', marginBottom: 10 }}>
-          Event gap detected
-        </div>
-        <div style={{ fontSize: 19, letterSpacing: '-.01em', marginBottom: 8 }}>
-          {gap ? `Missed events ${gap.lastApplied + 1} – ${gap.received - 1}.` : 'Events were dropped.'}
-        </div>
-        <p className="dim" style={{ fontSize: 14, margin: '0 0 16px' }}>
-          {gap
-            ? `The socket delivered seq ${gap.received} after ${gap.lastApplied}. ${gap.missed} events never arrived, so what is on screen may be behind or out of order.`
-            : 'The socket reported a break in the sequence, so what is on screen may be behind or out of order.'}{' '}
-          Nodus will not guess the difference.
-        </p>
-        {gap ? (
-          <div className="mono-block" style={{ marginBottom: 18 }}>
-            {`last_applied_seq  ${gap.lastApplied}\nreceived_seq      ${gap.received}\ngap               ${gap.missed} events`}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={store.reloadRun}
-            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
-          >
-            Reload run state
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost dim"
-            onClick={() => store.setFlag(null)}
-            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function BusyDialog(): ReactElement {

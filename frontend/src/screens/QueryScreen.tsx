@@ -1,16 +1,30 @@
 import type { ReactElement } from 'react'
 
+import type { QueryVerdict } from '../lib/types'
 import { useStore } from '../state/store'
 
 const EXAMPLES = [
-  'Does aerobic exercise reduce depression severity?',
+  'Does aerobic exercise reduce depression severity in adults with major depression?',
   'Is exercise good?',
   'Does intermittent fasting improve HbA1c in type 2 diabetes?',
 ]
 
+const PLACEHOLDER =
+  'Ask one question — name the intervention or subject, the outcome, and the population it is measured in.'
+
+/** How each verdict is presented. Only `ready` is quiet: the rest are a warning
+ *  or a redirection, and none of them is a refusal — every one of these still
+ *  leads to a button that runs the question as typed. */
+const VERDICTS: Record<QueryVerdict, { kicker: string; headline: string; accent: boolean }> = {
+  ready: { kicker: 'worth running', headline: 'This is a question the literature can answer.', accent: false },
+  workable: { kicker: 'runnable, but loose', headline: 'This will run, and the report will be vague.', accent: true },
+  unsuitable: { kicker: 'not worth a run', headline: 'No body of papers answers this one.', accent: true },
+  unassessed: { kicker: 'not assessed', headline: 'Nodus could not check this question.', accent: false },
+}
+
 export function QueryScreen(): ReactElement {
   const store = useStore()
-  const { question, structured, clarify } = store
+  const { question, structured, interpretation, interpreting } = store
 
   return (
     <div style={{ padding: '0 0 90px' }}>
@@ -47,6 +61,7 @@ export function QueryScreen(): ReactElement {
             className="bare"
             value={question}
             onChange={(event) => store.setQuestion(event.target.value)}
+            placeholder={PLACEHOLDER}
             rows={2}
             spellCheck={false}
             maxLength={400}
@@ -73,10 +88,7 @@ export function QueryScreen(): ReactElement {
                   key={example}
                   type="button"
                   className="chip-btn"
-                  onClick={() => {
-                    store.setQuestion(example)
-                    store.editQuestion()
-                  }}
+                  onClick={() => store.setQuestion(example)}
                 >
                   {example}
                 </button>
@@ -89,17 +101,29 @@ export function QueryScreen(): ReactElement {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={store.interpret}
-                disabled={question.trim().length < 3}
+                onClick={() => store.interpret()}
+                disabled={question.trim().length < 3 || interpreting}
                 style={{ whiteSpace: 'nowrap', fontSize: 13, padding: '8px 16px' }}
               >
-                Interpret
+                {interpreting ? 'Interpreting…' : 'Interpret'}
               </button>
             </div>
           </div>
         </div>
 
-        {structured && !clarify ? (
+
+        {interpreting ? (
+          <div className="dim" style={{ marginTop: 30, fontSize: 13.5 }}>
+            Reading the question back and checking it against what a literature search can
+            answer&hellip;
+          </div>
+        ) : null}
+
+        {interpretation && !interpreting ? (
+          <Verdict />
+        ) : null}
+
+        {structured && !interpreting ? (
           <div style={{ marginTop: 34, animation: 'n-in .3s ease both' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>
               <span className="kicker">query_structured</span>
@@ -130,94 +154,138 @@ export function QueryScreen(): ReactElement {
               </Field>
               <Field label="search_keywords">
                 <span className="dim" style={{ fontSize: 13 }}>
-                  {structured.search_keywords.join(' · ')}
+                  {structured.search_keywords.join(' \u00b7 ')}
                 </span>
               </Field>
               <Field label="outcome_measure">{structured.outcome_measure ?? 'not fixed'}</Field>
             </div>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 26, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={store.startRun}
-                style={{ whiteSpace: 'nowrap', fontSize: 14, padding: '10px 20px' }}
-              >
-                Run analysis
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost dim"
-                onClick={store.editQuestion}
-                style={{ whiteSpace: 'nowrap', fontSize: 13 }}
-              >
-                Edit question
-              </button>
-              <span className="faint" style={{ fontSize: 12, marginLeft: 6 }}>
-                ~{store.config?.top_k_papers ?? 20} papers · est. 3–5 min
-                {store.config
-                  ? ` · ${Math.max(0, store.config.runs.limit - store.config.runs.active)} of ${store.config.runs.limit} pipeline slots free`
-                  : ''}
-              </span>
-            </div>
           </div>
         ) : null}
 
-        {clarify ? (
-          <div
-            style={{
-              marginTop: 34,
-              animation: 'n-in .3s ease both',
-              border: '1px solid var(--n-line2)',
-              borderLeft: '2px solid var(--color-accent)',
-              background: 'var(--n-panel)',
-              padding: '22px 24px',
-              maxWidth: 720,
-            }}
-          >
-            <div
-              className="kicker"
-              style={{ color: 'var(--color-accent-400)', marginBottom: 10 }}
-            >
-              clarification_needed
-            </div>
-            <div style={{ fontSize: 17, lineHeight: 1.45, marginBottom: 6 }}>
-              “{question.trim() || 'That'}” is too broad to retrieve against.
-            </div>
-            <p className="dim" style={{ fontSize: 14, margin: '0 0 18px' }}>
-              The structurer could not fix an outcome measure or a population. It will still run, but
-              ranking will be near-random and clusters will mix unrelated endpoints. Three things
-              would fix it:
-            </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-              <Numbered n="01">Name the outcome — mortality, depression severity, VO₂max?</Numbered>
-              <Numbered n="02">
-                Name the population — adults with a diagnosis, athletes, older adults?
-              </Numbered>
-              <Numbered n="03">
-                Name the exposure — aerobic, resistance, any physical activity?
-              </Numbered>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => store.useSuggestedQuestion('Does aerobic exercise reduce depression severity?')}
-                style={{ whiteSpace: 'nowrap', fontSize: 13 }}
-              >
-                Use “Does aerobic exercise reduce depression severity?”
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost dim"
-                onClick={store.startRun}
-                style={{ whiteSpace: 'nowrap', fontSize: 13 }}
-              >
-                Run anyway
-              </button>
-            </div>
-          </div>
-        ) : null}
+        {interpretation && !interpreting ? <RunControls /> : null}
+
       </div>
+    </div>
+  )
+}
+
+/** The answer to the Interpret button.
+ *
+ *  It reports and redirects; it never blocks. A person who has read "this will
+ *  run, and the report will be vague" and wants to run it anyway is entitled
+ *  to — they now know what they are getting, which is the only thing the
+ *  button was ever able to give them.
+ */
+function Verdict(): ReactElement | null {
+  const store = useStore()
+  const interpretation = store.interpretation
+  if (!interpretation) return null
+
+  const { kicker, headline, accent } = VERDICTS[interpretation.verdict]
+
+  return (
+    <div
+      style={{
+        marginTop: 34,
+        animation: 'n-in .3s ease both',
+        border: '1px solid var(--n-line2)',
+        borderLeft: `2px solid ${accent ? 'var(--color-accent)' : 'var(--n-line2)'}`,
+        background: 'var(--n-panel)',
+        padding: '22px 24px',
+        maxWidth: 720,
+      }}
+    >
+      <div
+        className="kicker"
+        style={{ color: accent ? 'var(--color-accent-400)' : 'var(--n-faint)', marginBottom: 10 }}
+      >
+        {kicker}
+      </div>
+      <div style={{ fontSize: 17, lineHeight: 1.45, marginBottom: 8 }}>{headline}</div>
+      <p className="dim pretty" style={{ fontSize: 14, margin: 0, lineHeight: 1.55 }}>
+        {interpretation.reason}
+      </p>
+
+      {interpretation.suggestions.length ? (
+        <>
+          <div className="kicker" style={{ margin: '22px 0 10px' }}>
+            run one of these instead
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {interpretation.suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="row-btn"
+                onClick={() => store.useSuggestedQuestion(suggestion)}
+              >
+                <span className="pretty">{suggestion}</span>
+                <span className="faint" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                  use this
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>
+            Picking one puts it in the box unrun and uninterpreted — interpret it too, or edit it
+            first.
+          </div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+/** Start the run, or go back and change the question.
+ *
+ *  Which one is the primary button follows the verdict: a question the check
+ *  called loose does not get a button styled like the obvious next step, but it
+ *  does still get a button.
+ */
+function RunControls(): ReactElement | null {
+  const store = useStore()
+  const interpretation = store.interpretation
+  if (!interpretation) return null
+
+  const runs = store.config?.runs
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 12,
+        alignItems: 'center',
+        marginTop: 26,
+        flexWrap: 'wrap',
+        animation: 'n-in .3s ease both',
+      }}
+    >
+      <button
+        type="button"
+        className={interpretation.worth_running ? 'btn btn-primary' : 'btn btn-secondary'}
+        onClick={store.startRun}
+        style={{
+          whiteSpace: 'nowrap',
+          fontSize: interpretation.worth_running ? 14 : 13,
+          padding: interpretation.worth_running ? '10px 20px' : '8px 16px',
+          color: interpretation.worth_running ? undefined : 'var(--n-text)',
+          borderColor: interpretation.worth_running ? undefined : 'var(--n-line2)',
+        }}
+      >
+        {interpretation.worth_running ? 'Run analysis' : 'Run it anyway'}
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost dim"
+        onClick={store.editQuestion}
+        style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+      >
+        Edit question
+      </button>
+      <span className="faint" style={{ fontSize: 12, marginLeft: 6 }}>
+        ~{store.config?.top_k_papers ?? 20} papers &middot; est. 3&ndash;5 min
+        {runs ? ` \u00b7 ${Math.max(0, runs.limit - runs.active)} of ${runs.limit} pipeline slots free` : ''}
+      </span>
     </div>
   )
 }
@@ -242,14 +310,5 @@ function Field({
       </div>
       <div style={{ padding: '12px 0', borderTop: border }}>{children}</div>
     </>
-  )
-}
-
-function Numbered({ n, children }: { n: string; children: React.ReactNode }): ReactElement {
-  return (
-    <div style={{ display: 'flex', gap: 10, fontSize: 14 }}>
-      <span className="faint num">{n}</span>
-      <span>{children}</span>
-    </div>
   )
 }

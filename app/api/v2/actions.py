@@ -25,7 +25,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.events import PHASE_ORDER, hub
 from app.core.llm_provider import get_embedder_name, get_llm_name
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, pool_warning
 from app.models.claim import Claim
 from app.models.cluster import ClaimCluster
 from app.models.paper import NormalizedPaper, Paper, QueryPaper
@@ -42,6 +42,7 @@ from app.services import (
     limits,
     pdf_export,
     provenance,
+    query_assessor,
     report_edit,
     report_render,
     runner,
@@ -168,6 +169,7 @@ async def meta_config(ctx: ActionContext, params: frames.Empty) -> dict[str, Any
         "embedding_provider": settings.embedding_provider,
         "embedding_model": get_embedder_name(),
         "embedding_dim": settings.embedding_dim,
+        "db_pool_warning": pool_warning,
         "auth_enabled": bool(settings.api_key),
         "max_concurrent_papers": settings.max_concurrent_papers,
         "top_k_papers": settings.top_k_papers,
@@ -219,6 +221,21 @@ async def queries_create(ctx: ActionContext, params: frames.CreateQuery) -> dict
             reserved.launch(query_id, params.query)
 
     return {"query": payload, "subscription": subscription}
+
+
+@action(
+    "queries.interpret",
+    frames.InterpretQuery,
+    "Read a draft question back and say whether it is worth running",
+    cost="interpret",
+)
+async def queries_interpret(ctx: ActionContext, params: frames.InterpretQuery) -> dict[str, Any]:
+    """Pre-submission only: nothing is stored and no run is started.
+
+    A verdict other than `ready` is advice. `queries.create` still accepts the
+    question exactly as typed — the point is that the caller knows first.
+    """
+    return _dump(await query_assessor.interpret(params.query))
 
 
 @action("queries.list", frames.Page, "List queries, newest first")

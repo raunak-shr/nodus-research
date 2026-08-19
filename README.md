@@ -75,8 +75,8 @@ Chosen over k-means because the number of distinct assertions in a query is unkn
 | Migrations | Alembic |
 | Agent framework | LangGraph |
 | LLM (default) | Azure OpenAI `gpt-5.1` via Entra ID + APIM |
-| LLM (alternatives) | Anthropic, Ollama |
-| Embeddings | `nomic-embed-text` (768d) via Ollama, Azure embeddings, or a local lexical fallback |
+| LLM (alternatives) | Google Gemini `gemini-3.5-flash-lite`, Anthropic, Ollama |
+| Embeddings | Cloudflare Workers AI `bge-base-en-v1.5` (768d), Gemini `gemini-embedding-001`, `nomic-embed-text` via Ollama, Azure embeddings, or a local lexical fallback |
 | HTTP client | httpx (async) |
 | Validation | Pydantic v2 + pydantic-settings |
 | Package manager | uv |
@@ -99,7 +99,7 @@ app/
 │   └── session.py              # per-connection dispatch, subscriptions, heartbeat
 ├── core/
 │   ├── config.py               # Settings from .env
-│   ├── llm_provider.py         # Azure ↔ Anthropic ↔ Ollama, embeddings
+│   ├── llm_provider.py         # Azure ↔ Gemini ↔ Anthropic ↔ Ollama, embeddings
 │   ├── azure_auth.py           # Entra ID client-credentials token cache
 │   ├── azure_transport.py      # APIM flat-route URL rewriting
 │   ├── tls.py                  # OS trust store for outbound HTTPS
@@ -280,7 +280,28 @@ GPT-5.1 rejects a non-default `temperature`, so it is deliberately never set; `L
 
 ### Swapping providers
 
-`LLM_PROVIDER` selects `azure`, `anthropic`, or `ollama`; `EMBEDDING_PROVIDER` selects `ollama`, `azure`, or `hash`, independently. Every agent calls `get_llm()` / `get_structured_llm()` / `get_embedder()` — no agent constructs a client. Azure gets native JSON-schema decoding; other providers use tool-call structured output.
+`LLM_PROVIDER` selects `azure`, `gemini`, `anthropic`, or `ollama`; `EMBEDDING_PROVIDER` selects `cloudflare`, `gemini`, `ollama`, `azure`, or `hash`, independently. Every agent calls `get_llm()` / `get_structured_llm()` / `get_embedder()` — no agent constructs a client. Azure and Gemini both get native JSON-schema decoding; Anthropic and Ollama use tool-call structured output.
+
+### Running on Gemini's free tier
+
+`LLM_PROVIDER=gemini` with a key from [AI Studio](https://aistudio.google.com/apikey) is the cheapest way to run the whole pipeline — no cloud project, no service account, no deployment to create:
+
+```
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=<key>
+GEMINI_MODEL=gemini-3.5-flash-lite
+```
+
+Set `EMBEDDING_PROVIDER=gemini` too and the same key covers embeddings; `gemini-embedding-001` is asked for 768 dimensions per call, so it fits `claim_embeddings` without a migration.
+
+The client is written for that tier rather than merely compatible with it:
+
+- **Requests are paced, not just capped.** `GEMINI_MAX_CONCURRENCY` bounds how many calls are in flight and `GEMINI_RPM_LIMIT` bounds how often one may start — only the second enforces requests-per-minute, since four calls that each take two seconds is 120 RPM. Chat and embeddings are paced separately because Google meters them separately. Both default to the free ceilings; set them to `0` on a paid key.
+- **429 is retried** with the delay Google attaches to the refusal, jittered so a twenty-paper fan-out does not come back in lockstep.
+- **Thinking is turned down, not off.** Gemini 3 bills thinking as output tokens; these agents decode against an explicit schema rather than reasoning in prose, so `GEMINI_THINKING_LEVEL=low` keeps the budget for the answer.
+- **The pipeline sends less.** A question structured for the Interpret check is reused by the run started from the same screen instead of being structured again (`QUERY_STRUCTURE_MEMO_SECONDS`); the extractor is sent results and conclusions rather than the whole paper, because the design, population and sample size already reach it as a context block the normalizer distilled; and a paper with no abstract, TLDR or full text is skipped rather than asked about.
+
+A twenty-paper run is roughly 60–70 calls, so at the default 14 RPM it is paced to about five minutes. `MAX_ACTIVE_QUERIES=2` runs share that budget.
 
 Embeddings are cached per claim, keyed by model: a provider swap discards stale vectors instead of comparing across vector spaces, where cosine similarity is meaningless.
 
@@ -299,6 +320,7 @@ Building a frontend? Skip to [API v2](#api-v2--the-whole-api-on-one-websocket) �
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/api/v1/queries/` | Submit a query. Runs in the background; add `?wait=true` to block. |
+| `POST` | `/api/v1/queries/interpret` | Read a draft question back and say whether running it is worth the five minutes. Stores nothing, starts nothing. |
 | `GET` | `/api/v1/queries/` | List queries, newest first |
 | `GET` | `/api/v1/queries/{id}` | Status, structured query, ranked papers |
 | `GET` | `/api/v1/queries/{id}/stats` | Counts across every pipeline stage |
@@ -403,7 +425,7 @@ Heartbeats continue for as long as the connection is open, including after a run
 | Group | Actions |
 |---|---|
 | meta | `meta.describe`, `meta.health`, `meta.config` |
-| queries | `queries.create`, `queries.list`, `queries.get`, `queries.stats`, `queries.delete`, `queries.cancel`, `queries.followup`, `queries.followups` |
+| queries | `queries.interpret`, `queries.create`, `queries.list`, `queries.get`, `queries.stats`, `queries.delete`, `queries.cancel`, `queries.followup`, `queries.followups` |
 | stream | `queries.subscribe`, `queries.unsubscribe`, `queries.events` |
 | papers | `papers.list`, `papers.get`, `papers.normalized` |
 | claims | `claims.list`, `clusters.list`, `clusters.get`, `clusters.update`, `clusters.set_stance`, `clusters.add_claim`, `clusters.remove_claim` |

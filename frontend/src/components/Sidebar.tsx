@@ -70,13 +70,11 @@ export function Sidebar(): ReactElement {
             key={item.id}
             type="button"
             className={`nav-item${store.screen === item.id ? ' on' : ''}`}
-            onClick={() => {
-              if (item.id === 'run' && !store.run.queryId && store.run.papers.length === 0) {
-                store.startRun()
-              } else {
-                store.go(item.id)
-              }
-            }}
+            // Navigation only. Opening the live run used to *start* one when
+            // there was nothing to show, which submitted whatever was in the
+            // question box — a click on a nav item is not consent to spend a
+            // pipeline slot. The run screen says there is no run instead.
+            onClick={() => store.go(item.id)}
           >
             <svg
               viewBox="0 0 24 24"

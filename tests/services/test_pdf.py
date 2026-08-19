@@ -164,3 +164,45 @@ def test_extract_document_is_none_when_every_page_is_blank():
     reader = SimpleNamespace(pages=[SimpleNamespace(extract_text=lambda: "   ")])
     with patch.dict("sys.modules", {"pypdf": SimpleNamespace(PdfReader=lambda _stream: reader)}):
         assert pdf._extract_document(b"%PDF-fake") is None
+
+
+def test_the_extractor_is_not_sent_the_methods_or_the_introduction():
+    """Both are already accounted for: the design, population and sample size
+    reach that agent as a context block the normalizer distilled from the
+    methods, and its prompt tells it to skip other people's work. Sending either
+    again is the same tokens twice, against a metered quota."""
+    sections = {
+        "introduction": "PRIOR WORK",
+        "methods": "HOW WE DID IT",
+        "results": "WHAT WE FOUND",
+        "conclusion": "WHAT IT MEANS",
+    }
+    text = build_paper_text(
+        title="T",
+        abstract="A",
+        tldr=None,
+        full_text="FULL TEXT BODY",
+        sections=sections,
+        section_order=pdf.CLAIM_SECTIONS,
+    )
+
+    assert "WHAT WE FOUND" in text and "WHAT IT MEANS" in text
+    assert "HOW WE DID IT" not in text
+    assert "PRIOR WORK" not in text
+    # Trimming must not silently drop the paper: results and conclusion are here.
+    assert "FULL TEXT BODY" not in text
+
+
+def test_a_paper_split_into_only_unwanted_sections_still_gets_its_text():
+    """A split that found nothing this caller asked for is not a reason to send
+    a title on its own — unsplit text is worth more than that."""
+    text = build_paper_text(
+        title="T",
+        abstract=None,
+        tldr=None,
+        full_text="FULL TEXT BODY",
+        sections={"methods": "HOW WE DID IT"},
+        section_order=pdf.CLAIM_SECTIONS,
+    )
+
+    assert "FULL TEXT BODY" in text

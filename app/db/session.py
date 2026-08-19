@@ -19,6 +19,7 @@ publishes three and they do not behave alike:
   Usable only with the three settings applied below.
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -27,6 +28,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "host.docker.internal", None, ""}
 
@@ -74,6 +77,41 @@ def build_connect_args(database_url: str, mode: str) -> dict[str, Any]:
     return args
 
 
+def resolve_pool_limits() -> tuple[int, int, str | None]:
+    """Pool sizes clamped to what the provider will actually accept.
+
+    A pooler caps *client* connections and refuses the one past the cap —
+    Supavisor session mode answers `EMAXCONNSESSION: max clients reached`,
+    which arrives mid-run as a failed paper rather than as a wait. The number
+    the provider sees is ``pool_size + max_overflow``, not ``pool_size``:
+    SQLAlchemy opens an overflow connection whenever the pool is empty instead
+    of queueing, so overflow is exactly the setting that walks past the cap.
+
+    Clamping here rather than only warning means a too-large pool degrades into
+    tasks waiting on each other, which is recoverable, instead of connections
+    the provider rejects, which is not.
+    """
+    pool_size = max(1, settings.db_pool_size)
+    overflow = max(0, settings.db_max_overflow)
+    if settings.db_max_clients <= 0:
+        return pool_size, overflow, None
+
+    budget = max(1, settings.db_max_clients - max(0, settings.db_client_headroom))
+    if pool_size + overflow <= budget:
+        return pool_size, overflow, None
+
+    clamped_size = min(pool_size, budget)
+    clamped_overflow = budget - clamped_size
+    warning = (
+        f"DB_POOL_SIZE + DB_MAX_OVERFLOW is {pool_size + overflow}, above the "
+        f"{budget} connections this process may hold "
+        f"(DB_MAX_CLIENTS={settings.db_max_clients} less "
+        f"DB_CLIENT_HEADROOM={settings.db_client_headroom}); "
+        f"clamped to pool_size={clamped_size}, max_overflow={clamped_overflow}"
+    )
+    return clamped_size, clamped_overflow, warning
+
+
 def build_engine_kwargs(database_url: str) -> dict[str, Any]:
     """Pool settings for this endpoint.
 
@@ -84,11 +122,30 @@ def build_engine_kwargs(database_url: str) -> dict[str, Any]:
     """
     if is_transaction_pooled(database_url):
         return {"poolclass": NullPool}
+
+    pool_size, overflow, _ = resolve_pool_limits()
     return {
-        "pool_size": settings.db_pool_size,
-        "max_overflow": settings.db_max_overflow,
+        "pool_size": pool_size,
+        "max_overflow": overflow,
+        "pool_timeout": settings.db_pool_timeout,
+        "pool_recycle": settings.db_pool_recycle,
+        # LIFO hands work back to the connection used most recently, so a burst
+        # that opened overflow connections lets the rest go idle and be recycled
+        # instead of keeping every slot warm against the provider's cap.
+        "pool_use_lifo": True,
         "pool_pre_ping": True,
     }
+
+
+#: Non-null when the configured pool would not fit the provider's client cap.
+#: Reported by /health/config, because the symptom (papers failing one by one)
+#: does not look like a configuration fault from the UI.
+pool_warning: str | None = (
+    None if is_transaction_pooled(settings.database_url) else resolve_pool_limits()[2]
+)
+
+if pool_warning:
+    logger.warning("%s", pool_warning)
 
 
 engine = create_async_engine(

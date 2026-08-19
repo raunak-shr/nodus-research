@@ -20,14 +20,15 @@ export function StatesScreen(): ReactElement {
       go: () => store.go('run', 'busy'),
       enabled: true,
     },
-    { label: 'Seq gap — reload prompt', go: store.simulateGap, enabled: true },
+    { label: 'Seq gap — reload toast', go: store.simulateGap, enabled: true },
     { label: 'Failed run — retrieval stopped after four attempts', go: () => store.go('run', 'failed'), enabled: true },
     { label: 'Cancelled run — stopped part way through the papers', go: () => store.go('run', 'cancelled'), enabled: true },
     {
-      label: 'Clarification needed — question too broad',
+      label: 'Not worth running — question too broad',
       go: () => {
         store.setQuestion('Is exercise good?')
-        store.interpret()
+        // The question was set this tick, so hand it to the check directly.
+        store.interpret('Is exercise good?')
         store.go('query')
       },
       enabled: true,

@@ -362,6 +362,20 @@ async def test_the_two_buckets_are_independent(client: AsyncClient, stub_pipelin
 
 
 @pytest.mark.asyncio
+async def test_interpreting_a_draft_has_its_own_bucket(client: AsyncClient, stub_pipeline):
+    """Redrafting a question must not spend the budget for running one."""
+    _drain(limits.interprets_limiter, HTTP_CLIENT_KEY)
+
+    refused = await client.post("/api/v1/queries/interpret", json=A_QUERY)
+    assert refused.status_code == 429
+    assert refused.json()["context"]["scope"] == "interprets"
+
+    # The runs bucket is untouched by the flood above.
+    run = await client.post("/api/v1/queries/", json=A_QUERY)
+    assert run.status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_rate_limiting_can_be_switched_off(client: AsyncClient, stub_pipeline):
     _drain(limits.runs_limiter, HTTP_CLIENT_KEY)
 
@@ -384,14 +398,17 @@ async def test_auth_is_checked_before_the_rate_limit(client: AsyncClient):
 
 def test_only_expensive_writes_carry_a_rate_limiter():
     """Reads must stay cheap to serve — a limiter on one is a bug, not a policy."""
-    limited: dict[str, set[str]] = {"runs": set(), "edits": set()}
+    buckets = {
+        "rate_limit_runs": "runs",
+        "rate_limit_edits": "edits",
+        "rate_limit_interprets": "interprets",
+    }
+    limited: dict[str, set[str]] = {bucket: set() for bucket in buckets.values()}
     for route in app.routes:
         for dependency in getattr(route, "dependencies", []):
-            name = getattr(dependency.dependency, "__name__", "")
-            if name == "rate_limit_runs":
-                limited["runs"] |= {f"{m} {route.path}" for m in route.methods if m != "HEAD"}
-            elif name == "rate_limit_edits":
-                limited["edits"] |= {f"{m} {route.path}" for m in route.methods if m != "HEAD"}
+            bucket = buckets.get(getattr(dependency.dependency, "__name__", ""))
+            if bucket:
+                limited[bucket] |= {f"{m} {route.path}" for m in route.methods if m != "HEAD"}
 
     assert limited["runs"] == {
         "POST /api/v1/queries/",
@@ -408,6 +425,8 @@ def test_only_expensive_writes_carry_a_rate_limiter():
         "POST /api/v1/claims/clusters/{cluster_id}/claims",
         "DELETE /api/v1/claims/clusters/{cluster_id}/claims/{claim_id}",
     }
+    # Two LLM calls that no run pays for, so it is limited despite writing nothing.
+    assert limited["interprets"] == {"POST /api/v1/queries/interpret"}
     # No GET anywhere in either set.
     assert not any(entry.startswith("GET ") for group in limited.values() for entry in group)
 

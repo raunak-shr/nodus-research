@@ -69,6 +69,15 @@ async def embed_claims(claims: list[Claim], db: AsyncSession) -> int:
         )
         await db.execute(delete(ClaimEmbedding).where(ClaimEmbedding.claim_id.in_(stale)))
 
+    # Close the read (and the delete above) before the provider calls start.
+    # Papers are embedded twenty at a time, each on its own session, and an
+    # open transaction keeps its connection checked out for as long as it
+    # stays open — which here would be every embedding round trip, against a
+    # pooler that caps how many clients may be connected at once. The delete is
+    # deliberately not tied to the insert succeeding, so committing it early
+    # changes nothing about the failure mode described above.
+    await db.commit()
+
     embedder = get_embedder()
     written = 0
     failures = 0

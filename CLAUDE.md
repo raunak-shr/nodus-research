@@ -14,8 +14,8 @@ Nodus is a research paper analysis tool that helps researchers by retrieving, no
 - **Migrations:** Alembic
 - **Agent framework:** LangGraph (not vanilla LangChain)
 - **LLM (default):** Azure OpenAI `gpt-5.1` via langchain-openai, authenticated with Entra ID client credentials + an APIM subscription key
-- **LLM (alternatives):** Anthropic, Ollama — selected by `LLM_PROVIDER`
-- **Embeddings:** Cloudflare Workers AI `@cf/baai/bge-base-en-v1.5` (768d), `nomic-embed-text` (768d) via Ollama, an Azure embedding deployment, or a deterministic local lexical fallback — selected by `EMBEDDING_PROVIDER`
+- **LLM (alternatives):** Google Gemini `gemini-3.5-flash-lite` (a direct REST client in `app/core/gemini.py`, not `langchain-google-genai`), Anthropic, Ollama — selected by `LLM_PROVIDER`
+- **Embeddings:** Cloudflare Workers AI `@cf/baai/bge-base-en-v1.5` (768d), Gemini `gemini-embedding-001` (width requested per call), `nomic-embed-text` (768d) via Ollama, an Azure embedding deployment, or a deterministic local lexical fallback — selected by `EMBEDDING_PROVIDER`
 - **HTTP client:** httpx (async)
 - **Validation:** Pydantic v2 with pydantic-settings
 - **Linting:** ruff
@@ -76,7 +76,10 @@ nodus/
 
 - **Papers are global, not per-query.** Deduplicated on semantic_scholar_id. The query_papers junction table links them to queries with per-query ranking.
 - **Claims are per-paper, clusters are per-query.** A paper's extracted claims don't change per query, but clustering depends on research context.
-- **LLM provider is swappable.** `llm_provider.py` returns Azure/Anthropic/Ollama based on `LLM_PROVIDER`. Every agent calls `get_llm()` or `get_structured_llm()`, never instantiates a client directly. Azure uses native JSON-schema structured output; other providers use tool calls.
+- **LLM provider is swappable.** `llm_provider.py` returns Azure/Gemini/Anthropic/Ollama based on `LLM_PROVIDER`. Every agent calls `get_llm()` or `get_structured_llm()`, never instantiates a client directly. Azure and Gemini use native JSON-schema structured output; Anthropic and Ollama use tool calls.
+- **Gemini is a direct REST client, and it is paced.** The Google SDKs verify TLS against certifi, which this project cannot rely on (see TLS interception below), so `app/core/gemini.py` speaks to `generativelanguage.googleapis.com` over httpx with `outbound_verify()` — the same choice `CloudflareEmbeddings` made. Pacing lives in the client rather than at each call site, so every agent inherits it: a semaphore for concurrency, a minimum interval for RPM (concurrency alone cannot hold a per-minute ceiling), separate budgets for chat and embeddings because Google meters them separately, and 429 retried with the delay Google names.
+- **A question is structured once, not twice.** The Interpret check and the run started from the same screen would otherwise send the identical prompt seconds apart, so `query_structurer` memoises for `QUERY_STRUCTURE_MEMO_SECONDS`. Failures are not memoised — a degraded fallback is worth retrying.
+- **The extractor is not sent the methods section.** Its context block already carries the design, population and sample size the normalizer distilled from it, and its prompt tells it to skip the introduction, so `pdf.CLAIM_SECTIONS` sends results, conclusion, discussion and limitations. A paper with no abstract, TLDR or full text is skipped entirely: a title is not evidence, and asking about one costs a call and returns nothing.
 - **LLM output schemas are flat.** Strict JSON-schema decoding is far more reliable with scalars than nested objects, so nested JSONB payloads are assembled in Python from flat agent output.
 - **Embedding cache is model-keyed.** Vectors from different models occupy different spaces; a provider swap discards stale vectors rather than comparing across them.
 - **`SEMANTIC_SCHOLAR_API_KEY` is optional but changes retrieval.** With it, relevance search; without it, bulk search. Outbound calls are throttled in-process (~1/s anonymous).
@@ -100,7 +103,9 @@ nodus/
 - **Never the transaction pooler (6543)** — it breaks asyncpg's prepared statements. Which of the other two endpoints to use depends on where the process runs:
   - **Locally: the direct connection**, `db.<project>.supabase.co:5432`.
   - **On a host without IPv6 egress (Vercel, AWS Lambda): the session pooler**, `aws-<n>-<region>.pooler.supabase.com:5432`, username `postgres.<project-ref>`. The direct host publishes an AAAA record and no A record, so from an IPv4-only runtime asyncpg fails at `connect()` with `OSError: [Errno 99] Cannot assign requested address`. Session mode holds one backend connection per client connection, so prepared statements still work — that is what separates it from 6543.
-  - Keep `DB_POOL_SIZE` small on serverless: every warm instance holds its own pool, and the sum has to stay under the pooler's client cap.
+  - **The pooler counts clients, and the number it counts is `DB_POOL_SIZE + DB_MAX_OVERFLOW`** — SQLAlchemy opens an overflow connection whenever the pool is empty rather than waiting. Past Supavisor's cap (15 by default) the connection is refused with `EMAXCONNSESSION: max clients reached in session mode`, which reaches the UI as papers failing one after another rather than as anything that looks like configuration. `DB_MAX_CLIENTS` is that cap and `resolve_pool_limits()` clamps the sum to it less `DB_CLIENT_HEADROOM`, so an oversized pool degrades into tasks waiting on each other; `/health/config` reports the clamp as `db_pool_warning`.
+  - Keep `DB_POOL_SIZE` small on serverless too: every warm instance holds its own pool, and the sum across instances also has to stay under that cap.
+  - **A session in an open transaction holds its connection.** The per-paper stage runs ten sessions at once and Stage 3 spans minutes of LLM calls, so the long-running services `commit()` once their reads are done and before the provider calls start — without that, one run pins connections it is not using.
 - `DATABASE_SSL=auto` supplies the TLS that hosted Postgres requires.
 - **pgvector must be enabled on the hosted database** (`create extension if not exists vector;`) before migrations run.
 - **asyncpg rejects multi-statement SQL.** Migrations that ship raw SQL must run statements one at a time via `app/db/sql_split.py`.
@@ -108,6 +113,9 @@ nodus/
 - **Workers AI models have fixed widths, and the wrong one is silent.** `bge-base-en-v1.5` is 768 and fits `vector(768)`; `bge-small` is 384 and `bge-large` is 1024, and every vector from those is discarded on write by the dimension check in `embedding_store`. `/health/config` reports the mismatch as `embedding_warning`.
 - **`EMBEDDING_PROVIDER` has to point at something reachable.** No vectors means no clusters, and no clusters means no report — so an unreachable embedder fails the run at the clustering step with a 503 naming the provider, rather than completing with an empty report screen. Locally `ollama` needs a running server (`docker compose up -d ollama`, then `docker compose exec ollama ollama pull nomic-embed-text`); `hash` needs nothing. **A serverless deployment cannot use the Compose service** — no sidecar, no volume, `docker-compose.yml` unread — which is what `EMBEDDING_PROVIDER=cloudflare` is for. A self-hosted Ollama reached over the network needs a token-checking proxy and `OLLAMA_AUTH_TOKEN`, because Ollama authenticates nothing itself. `/health/config` exposes `embedding_warning`, which is non-null exactly when the configuration cannot work.
 - **GPT-5.1 rejects non-default `temperature`.** Never set it; use `LLM_AZURE_REASONING_EFFORT` instead.
+- **Gemini's `responseSchema` is not JSON Schema.** It is OpenAPI-shaped: no `$ref`, no `$defs`, no `additionalProperties`, and nullability is a `nullable` flag rather than a `null` type. `to_gemini_schema` inlines and translates what Pydantic emits, and drops every key outside the accepted set — an unknown one is a 400 on every call that agent ever makes, so any new LLM output schema should be run through `test_every_agent_schema_survives_translation`.
+- **Gemini 3 bills thinking as output tokens** and `thinkingBudget` is rejected — `thinkingLevel` (`minimal` | `low` | `high`) is the knob. `GEMINI_THINKING_LEVEL=low` is the default here because these agents decode against a schema rather than reasoning in prose.
+- **The free tier is paced, not just capped.** `GEMINI_RPM_LIMIT` (14) is what enforces requests-per-minute; `GEMINI_MAX_CONCURRENCY` (4) alone cannot, because four calls that each take two seconds is 120 RPM. A twenty-paper run is roughly 60–70 calls, so expect about five minutes of pacing, shared between `MAX_ACTIVE_QUERIES` runs. Set both to 0 on a paid key.
 - **PDF export needs the Chromium binary**, not just the `playwright` package: `uv run playwright install chromium`. A missing browser surfaces as an `unavailable` error carrying the install command, never an import crash.
 - **`uv` fails on TLS-inspected networks.** Pass `--native-tls` (e.g. `uv sync --native-tls`) so it uses the OS trust store.
 
@@ -121,7 +129,7 @@ Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster 
 
 MVP (Phases 0–5) and post-MVP (Phases 6–10) are complete: retrieval, extraction, three-axis analysis, synthesis and export, human-in-the-loop editing, and follow-up queries. See the README for the phase table and known limitations.
 
-**v2 (frontend surface)** is complete: `/api/v2/ws` with 34 actions, fine-grained pipeline events, the rendered report document, and PDF export. Requires `uv run playwright install chromium` once, and a single API worker.
+**v2 (frontend surface)** is complete: `/api/v2/ws` with 35 actions, fine-grained pipeline events, the rendered report document, and PDF export. Requires `uv run playwright install chromium` once, and a single API worker.
 
 ## Conventions
 

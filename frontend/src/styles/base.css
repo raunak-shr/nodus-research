@@ -169,6 +169,9 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
   width: 100%; border: 0; background: transparent; color: var(--n-text);
   font-family: var(--font-body); resize: none; outline: none;
 }
+/* Instruction, not a draft: it has to read as prompt text rather than as
+   something already typed that a person could run by pressing the button. */
+.bare::placeholder { color: var(--n-faint); opacity: 1; }
 .title-input {
   width: 100%; background: transparent; border: 0; border-bottom: 1px solid transparent;
   color: var(--n-text); font-family: var(--font-heading); font-weight: 500;
@@ -226,6 +229,36 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
   background: var(--n-panel); border: 1px solid var(--n-line2);
   box-shadow: var(--shadow-lg); padding: 26px 28px;
 }
+/* A notice that does not take the screen: fixed to the corner, above the
+   source panel (z 40), and narrow enough to leave the run readable behind it. */
+.toast-stack {
+  position: fixed; right: 24px; bottom: 24px; z-index: 60;
+  display: flex; flex-direction: column; gap: 10px;
+  width: min(360px, calc(100vw - 48px));
+}
+.toast {
+  background: var(--n-panel); border: 1px solid var(--n-line2);
+  border-left: 3px solid var(--color-accent-400);
+  box-shadow: var(--shadow-lg); padding: 14px 16px 16px;
+  animation: toast-in .18s ease-out;
+}
+.toast-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px;
+}
+.toast-close {
+  border: 0; background: transparent; color: var(--n-faint); cursor: pointer;
+  font-size: 17px; line-height: 1; padding: 0 2px; margin: -2px -2px 0 0;
+}
+.toast-close:hover { color: var(--n-text); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
+
 .takeover { position: absolute; inset: 0; background: var(--n-bg); z-index: 15; padding: 120px 56px; display: flex; }
 
 /* Below 1200px there is not enough measure to reserve a 440px gutter, so the

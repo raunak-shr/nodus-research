@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 
 import { Sidebar } from './components/Sidebar'
 import { SourcePanel } from './components/SourcePanel'
+import { Toasts } from './components/Toasts'
 import { ClusterScreen } from './screens/ClusterScreen'
 import { EditsScreen } from './screens/EditsScreen'
 import { FollowupScreen } from './screens/FollowupScreen'
@@ -36,6 +37,10 @@ export function App(): ReactElement {
       {store.sourceClaimId ? (
         <SourcePanel source={store.source} claimRef={store.sourceRef} onClose={store.closeSource} />
       ) : null}
+
+      {/* App-level: a gap is a fact about the socket, not about the run screen,
+          and it can be detected while the report or a cluster is open. */}
+      <Toasts />
     </div>
   )
 }
