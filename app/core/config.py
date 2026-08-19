@@ -114,6 +114,20 @@ class Settings(BaseSettings):
     # one useless report section. 0.80 was the knee of the sweep — largest
     # cluster 22%, and 86% of claims still inside the max_clusters cap.
     bge_cluster_similarity_threshold: float = 0.80
+    # Second pass over the finished clusters: two whose centroids are this
+    # similar are the same assertion, split by the greedy pass never revisiting
+    # its own decisions.
+    #
+    # Swept against a real 196-claim run whose two largest clusters (47 and 37
+    # claims) scored 0.936 and were written up under the same heading. The bar
+    # has to sit above the per-claim threshold, because centroids are means and
+    # so sit closer together than the claims around them — and it is sharp:
+    #   0.95 -> nothing merges, the 0.936 split survives
+    #   0.92 -> that pair merges and nothing else (84 claims, 43%)
+    #   0.90 -> cascades into a third cluster (95 claims, 48%)
+    #   0.80 -> collapses the query (167 claims, 85%)
+    # 1.0 merges only identical centroids, i.e. effectively off.
+    cluster_merge_threshold: float = 0.92
     max_clusters_per_query: int = 25
     min_cluster_size: int = 1
 

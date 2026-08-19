@@ -40,6 +40,19 @@ def test_status_events_map_to_phases():
     assert hub.publish(query_id, "status", status="failed")["phase"] == "failed"
 
 
+def test_section_retitled_belongs_to_synthesis():
+    """A late heading correction must not knock the stepper out of its phase."""
+    hub = ProgressHub()
+    query_id = uuid4()
+
+    hub.publish(query_id, "section_ready", cluster_id="c1", heading="Shared")
+    event = hub.publish(
+        query_id, "section_retitled", cluster_id="c1", heading="Exercise in Inpatients"
+    )
+    assert event["phase"] == "synthesizing"
+    assert event["heading"] == "Exercise in Inpatients"
+
+
 def test_report_skipped_belongs_to_synthesis():
     """A run that writes no report still ends inside the synthesizing phase."""
     hub = ProgressHub()

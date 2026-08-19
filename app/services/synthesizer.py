@@ -24,8 +24,12 @@ from app.models.claim import Claim
 from app.models.cluster import ClaimCluster, ClusterClaim
 from app.models.paper import Paper
 from app.models.report import Report
-from app.schemas.analysis import ClusterNarrative, ReportSummary
-from app.services.prompts import SYNTHESIZER_SECTION_SYSTEM, SYNTHESIZER_SUMMARY_SYSTEM
+from app.schemas.analysis import ClusterNarrative, ReportSummary, SectionHeading
+from app.services.prompts import (
+    SYNTHESIZER_RETITLE_SYSTEM,
+    SYNTHESIZER_SECTION_SYSTEM,
+    SYNTHESIZER_SUMMARY_SYSTEM,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +67,7 @@ async def load_clusters(query_id: UUID, db: AsyncSession) -> list[ClaimCluster]:
     )
 
 
-async def section_claim_rows(
-    cluster: ClaimCluster, db: AsyncSession
-) -> list[dict[str, Any]]:
+async def section_claim_rows(cluster: ClaimCluster, db: AsyncSession) -> list[dict[str, Any]]:
     """The claim rows a report section carries for one cluster.
 
     Public because `report_edit.refresh_sources` rebuilds exactly these rows
@@ -109,7 +111,10 @@ async def section_claim_rows(
 
 
 def _render_cluster_prompt(
-    raw_query: str, cluster: ClaimCluster, claims: list[dict[str, Any]]
+    raw_query: str,
+    cluster: ClaimCluster,
+    claims: list[dict[str, Any]],
+    siblings: list[str] | None = None,
 ) -> str:
     claim_lines = "\n".join(
         f"- [{c['stance']}] ({c['citation']}) {c['claim_text']}"
@@ -125,8 +130,14 @@ def _render_cluster_prompt(
     drivers = "\n".join(
         f"- {d.get('type')}: {d.get('description')}" for d in (cluster.disagreement_drivers or [])
     )
+    # Sections are narrated concurrently, so no call can see what its siblings
+    # produced — but it can see what they are *about*, which is enough to write a
+    # heading that distinguishes. Without this, every cluster on a corpus's dominant
+    # finding came back under the same title.
+    others = "\n".join(f"- {theme}" for theme in (siblings or []))
     return (
         f"RESEARCH QUESTION: {raw_query}\n\n"
+        f"OTHER SECTIONS IN THIS REPORT:\n{others or 'none - this is the only section'}\n\n"
         f"CENTRAL THEME: {cluster.central_theme}\n"
         f"CONSENSUS SUMMARY: {cluster.consensus_summary or 'not available'}\n"
         f"STANCES: {cluster.support_count} supporting, "
@@ -138,13 +149,18 @@ def _render_cluster_prompt(
     )
 
 
-async def _narrate(raw_query: str, cluster: ClaimCluster, claims: list[dict[str, Any]]):
+async def _narrate(
+    raw_query: str,
+    cluster: ClaimCluster,
+    claims: list[dict[str, Any]],
+    siblings: list[str] | None = None,
+):
     try:
         agent = get_structured_llm(ClusterNarrative, task="synthesis")
         return await agent.ainvoke(
             [
                 SystemMessage(content=SYNTHESIZER_SECTION_SYSTEM),
-                HumanMessage(content=_render_cluster_prompt(raw_query, cluster, claims)),
+                HumanMessage(content=_render_cluster_prompt(raw_query, cluster, claims, siblings)),
             ]
         )
     except Exception as exc:  # noqa: BLE001 - a section may degrade, not the report
@@ -153,6 +169,102 @@ async def _narrate(raw_query: str, cluster: ClaimCluster, claims: list[dict[str,
             heading=cluster.central_theme[:120],
             narrative=cluster.consensus_summary or "Narrative generation unavailable.",
             caveats=["Section narrative could not be generated; showing extracted data only."],
+        )
+
+
+def _heading_key(heading: str) -> str:
+    """Headings collide on meaning, not on punctuation or case."""
+    return " ".join(heading.lower().split()).strip(" .:-")
+
+
+async def _retitle(
+    raw_query: str,
+    cluster: ClaimCluster,
+    claims: list[dict[str, Any]],
+    collided_with: str,
+) -> str | None:
+    """Ask for a heading that separates this cluster from the one it collided with.
+
+    Only the heading is regenerated. Re-narrating would rewrite prose the reader
+    has no complaint about and cost a full section call.
+    """
+    try:
+        agent = get_structured_llm(SectionHeading, task="synthesis")
+        result = await agent.ainvoke(
+            [
+                SystemMessage(content=SYNTHESIZER_RETITLE_SYSTEM),
+                HumanMessage(
+                    content=(
+                        f"COLLIDED HEADING: {collided_with}\n\n"
+                        f"{_render_cluster_prompt(raw_query, cluster, claims)}"
+                    )
+                ),
+            ]
+        )
+        return result.heading
+    except Exception as exc:  # noqa: BLE001 - a duplicate heading is not worth failing over
+        logger.warning("Retitle failed for cluster %s: %s", cluster.id, exc)
+        return None
+
+
+async def _disambiguate_headings(
+    raw_query: str,
+    clusters: list[ClaimCluster],
+    claim_rows: list[list[dict[str, Any]]],
+    narratives: list[ClusterNarrative],
+    emit: ProgressCallback,
+) -> None:
+    """Make every section heading distinguishable, in place.
+
+    The sibling themes in the section prompt reduce collisions but cannot rule
+    them out: the calls run concurrently, so two can independently pick the same
+    title. Clusters are already sorted best-evidence-first, so the earliest
+    occurrence keeps the heading and the later ones are retitled — which also
+    means the strongest section keeps the cleanest name.
+
+    Failures leave the duplicate in place. An indistinguishable heading is a
+    blemish; refusing to produce a report over one would be worse.
+    """
+    groups: dict[str, list[int]] = {}
+    for index, narrative in enumerate(narratives):
+        groups.setdefault(_heading_key(narrative.heading), []).append(index)
+
+    contested = [indices for indices in groups.values() if len(indices) > 1]
+    if not contested:
+        return
+
+    taken = {key for key, indices in groups.items() if len(indices) == 1}
+    jobs: list[tuple[int, str]] = []
+    for indices in contested:
+        keeper = indices[0]
+        taken.add(_heading_key(narratives[keeper].heading))
+        for index in indices[1:]:
+            jobs.append((index, narratives[keeper].heading))
+
+    logger.info("Retitling %d section(s) whose headings collided", len(jobs))
+    results = await asyncio.gather(
+        *(
+            _retitle(raw_query, clusters[index], claim_rows[index], collided)
+            for index, collided in jobs
+        )
+    )
+
+    for (index, _), heading in zip(jobs, results, strict=True):
+        if not heading:
+            continue
+        key = _heading_key(heading)
+        if not key or key in taken:
+            # The model returned the same title again, or one already used. Leave
+            # the original rather than write a worse duplicate.
+            continue
+        taken.add(key)
+        narratives[index].heading = heading
+        # The panel already showed the old heading against this cluster id, and
+        # its section list is keyed by that id — so this corrects in place.
+        emit(
+            "section_retitled",
+            cluster_id=str(clusters[index].id),
+            heading=heading,
         )
 
 
@@ -212,10 +324,15 @@ async def generate_report(
     written = 0
     lock = asyncio.Lock()
 
-    async def narrate(cluster: ClaimCluster, claims: list[dict[str, Any]]):
+    # Every cluster's theme except its own, so a section can be titled against
+    # what the report already covers rather than in isolation.
+    themes = [str(c.central_theme or "").strip() for c in clusters]
+
+    async def narrate(index: int, cluster: ClaimCluster, claims: list[dict[str, Any]]):
         nonlocal written
+        siblings = [theme for position, theme in enumerate(themes) if position != index and theme]
         async with semaphore:
-            narrative = await _narrate(raw_query, cluster, claims)
+            narrative = await _narrate(raw_query, cluster, claims, siblings)
         async with lock:
             written += 1
             emit(
@@ -229,9 +346,18 @@ async def generate_report(
             )
         return narrative
 
-    narratives = await asyncio.gather(
-        *(narrate(cluster, claims) for cluster, claims in zip(clusters, claim_rows, strict=True))
+    narratives = list(
+        await asyncio.gather(
+            *(
+                narrate(index, cluster, claims)
+                for index, (cluster, claims) in enumerate(zip(clusters, claim_rows, strict=True))
+            )
+        )
     )
+
+    # Concurrent calls can still land on the same title even knowing the sibling
+    # themes, so the collisions are repaired before the sections are assembled.
+    await _disambiguate_headings(raw_query, clusters, claim_rows, narratives, emit)
 
     sections: list[dict[str, Any]] = []
     for cluster, claims, narrative in zip(clusters, claim_rows, narratives, strict=True):

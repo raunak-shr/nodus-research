@@ -58,6 +58,19 @@ class ClusterNarrative(BaseModel):
     caveats: list[str] = Field(description="Explicit caveats a skeptical reviewer would raise")
 
 
+class SectionHeading(BaseModel):
+    """synthesizer_agent output — a replacement heading for a collided section.
+
+    Its own schema rather than reusing `ClusterNarrative`: only the heading is in
+    question, and regenerating the prose would rewrite a section the reader has
+    no complaint about, at the cost of a full narration call.
+    """
+
+    heading: str = Field(
+        description="Short section heading, under 12 words, specific to this cluster"
+    )
+
+
 class ReportSummary(BaseModel):
     """synthesizer_agent output — the report's front matter."""
 

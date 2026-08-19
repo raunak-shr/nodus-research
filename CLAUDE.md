@@ -34,7 +34,7 @@ Every graph node opens its own DB session: the graph runs as a detached backgrou
 
 **Retrieval details:** Relevance search (`/graph/v1/paper/search`) is preferred; bulk search (`/graph/v1/paper/search/bulk`) is the fallback. Relevance search 429s on every anonymous call, so without `SEMANTIC_SCHOLAR_API_KEY` the pipeline runs on bulk — the outcome is latched per process. A key grants a dedicated quota and relevance search, but not a higher ceiling: 1 request/second cumulative across all endpoints either way, enforced in-process by `SEMANTIC_SCHOLAR_MIN_INTERVAL`. Bulk ANDs every term and rejects the `tldr` field, so `StructuredQuery.core_concepts` supplies 2–4 distinct concepts to AND (never synonyms), and TLDRs are backfilled from `/graph/v1/paper/batch`. Papers are re-ranked with `0.4 × normalized_citations + 0.3 × influential_citations + 0.2 × recency + 0.1 × relevance_rank`, keeping the top 20.
 
-**Clustering:** greedy leader clustering with running centroids, seeded in descending extraction confidence. The similarity threshold is provider-aware, because cosine similarity is not comparable across models: lexical (hash) embeddings score paraphrases far lower than semantic ones, and BGE packs its vectors into a narrower cone than nomic-embed-text (0.72 put 75% of one real 169-claim query into a single cluster; 0.80 is the measured knee). `settings.active_cluster_threshold` picks the right bar. `max_clusters_per_query` then **truncates** to the largest clusters, so claims in smaller ones reach no report section — `clusters_formed` carries `claims_clustered` and `claims_dropped` so that gap is visible rather than implied away.
+**Clustering:** greedy leader clustering with running centroids, seeded in descending extraction confidence. The similarity threshold is provider-aware, because cosine similarity is not comparable across models: lexical (hash) embeddings score paraphrases far lower than semantic ones, and BGE packs its vectors into a narrower cone than nomic-embed-text (0.72 put 75% of one real 169-claim query into a single cluster; 0.80 is the measured knee). `settings.active_cluster_threshold` picks the right bar. A second pass then merges clusters whose *centroids* exceed `cluster_merge_threshold` (0.92), because the greedy pass never revisits a split: a growing cluster's centroid drifts, so one assertion can seed two clusters that finish almost on top of each other — on a real run the two largest scored 0.936 and were written up under the same heading. That bar sits above the per-claim threshold on purpose, since centroids are means and sit closer together than claims. `max_clusters_per_query` then **truncates** to the largest clusters, so claims in smaller ones reach no report section — `clusters_formed` carries `claims_clustered` and `claims_dropped` so that gap is visible rather than implied away.
 
 ## Project Structure
 
@@ -83,6 +83,7 @@ nodus/
 - **Cache aggressively.** Normalized papers and extracted claims are reused on cache hit, across queries.
 - **Quality weighting is deterministic, not LLM-judged**, and every input is exposed in `quality_rationale` so a user can see and override the tier.
 - **One LLM call per cluster** produces theme, stances, and disagreement drivers together — they are the same judgement.
+- **A section heading names its cluster, not the report's topic.** Sections are narrated concurrently, so each call is given its siblings' central themes and is told a heading that would fit any of them is wrong. Concurrency means two can still collide, so `_disambiguate_headings` retitles the later ones (heading only — re-narrating would rewrite prose nobody complained about) and publishes `section_retitled`, which the live panel applies over the row it already showed. A failed or still-duplicate retitle leaves the original: an indistinguishable heading is a blemish, not a reason to withhold a report.
 - **User edits are pinned.** Clusters with `user_edited=true` survive re-analysis.
 - **Failures are isolated.** A dead PDF, an unparseable paper, or a failed cluster analysis degrades that unit only; the run continues.
 - **Async everywhere.** The bottleneck is I/O wait on LLM calls. `asyncio.Semaphore` caps concurrent processing (default 10).
@@ -114,13 +115,13 @@ nodus/
 
 PostgreSQL with pgvector. Core tables: queries, papers, query_papers, normalized_papers, claims, claim_embeddings (vector(768), HNSW), claim_clusters, cluster_claims, reports.
 
-Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster analysis columns, reports table, follow-up query linkage).
+Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster analysis columns, reports table, follow-up query linkage), `003_claim_provenance` (source text and match quality per claim).
 
 ## Status
 
 MVP (Phases 0–5) and post-MVP (Phases 6–10) are complete: retrieval, extraction, three-axis analysis, synthesis and export, human-in-the-loop editing, and follow-up queries. See the README for the phase table and known limitations.
 
-**v2 (frontend surface)** is complete: `/api/v2/ws` with 31 actions, fine-grained pipeline events, the rendered report document, and PDF export. Requires `uv run playwright install chromium` once, and a single API worker.
+**v2 (frontend surface)** is complete: `/api/v2/ws` with 34 actions, fine-grained pipeline events, the rendered report document, and PDF export. Requires `uv run playwright install chromium` once, and a single API worker.
 
 ## Conventions
 
@@ -132,3 +133,17 @@ MVP (Phases 0–5) and post-MVP (Phases 6–10) are complete: retrieval, extract
 - ruff for linting and formatting (line length 100)
 - Tests in tests/ mirroring the app/ structure, and hermetic — mock the LLM, the network, and the database
 - Environment variables via .env, never hardcoded secrets
+
+## Git workflow
+
+`dev` is the working branch and `main` is production — Vercel deploys Production from `main` and Preview from `dev`.
+
+**Always ship this way. Do not create feature branches.**
+
+1. **Verify local against remote first.** `git fetch origin --prune`, then compare each branch to its remote (`git rev-list --left-right --count main...origin/main`, same for `dev`). A stale local ref has already caused a wrong conclusion about what a PR would contain and produced a PR body describing commits that had shipped weeks earlier. Never reason about branch topology from an unfetched ref.
+2. **Commit on `dev` directly**, in logical units — one commit per separable concern, not one per file and not one giant commit. Match the existing history's style: a prose subject line saying what changed and why, no conventional-commit prefixes.
+3. **Check nothing secret is staged.** `.env` is git-ignored; confirm it, and grep the diff and any new files for live tokens before pushing.
+4. **Push to `dev`**, then open the PR **`dev` → `main`** with `gh pr create --base main --head dev`.
+5. **Confirm the PR's real contents** (`gh pr view --json commits,changedFiles,additions`) and make sure the body describes those commits, not what you assumed would be in it.
+
+A merge to `main` deploys to Production. Setting an environment variable that only new code understands, before that code is on `main`, takes the API down for the length of the build — `Settings()` is constructed at import, so an unrecognised value fails the import and every route with it. Deploy the code first, then change the config.
