@@ -49,11 +49,22 @@ export class RunFeed {
   private readonly startedAt = Date.now()
 
   constructor(
-    private readonly queryId: string | null,
+    private queryId: string | null,
     private readonly question: string,
     /** Used only until the server reports a real total. */
     private readonly expectedPapers: number,
   ) {}
+
+  /** Name the run once `queries.create` answers.
+   *
+   *  `subscribe: true` attaches the stream before the reply comes back, so the
+   *  first events land while the id is still unknown. Adopting the id keeps
+   *  them, where replacing the feed with a freshly constructed one threw away
+   *  everything up to `papers_stored`.
+   */
+  adopt(queryId: string): void {
+    this.queryId = queryId
+  }
 
   apply(frame: EventFrame): void {
     this.phase = frame.phase
@@ -132,6 +143,17 @@ export class RunFeed {
         const clusterId = str(frame.cluster_id)
         if (clusterId) this.sections.set(clusterId, str(frame.heading) ?? 'section ready')
         if (typeof frame.total === 'number') this.clusterCount = frame.total
+        break
+      }
+      case 'section_retitled': {
+        // Sections are narrated concurrently, so two can land on the same
+        // heading; the server settles it afterwards. Keyed by cluster id, so this
+        // corrects the row already on screen rather than adding another.
+        const clusterId = str(frame.cluster_id)
+        const heading = str(frame.heading)
+        if (clusterId && heading && this.sections.has(clusterId)) {
+          this.sections.set(clusterId, heading)
+        }
         break
       }
       case 'report_ready':

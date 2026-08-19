@@ -152,7 +152,7 @@ function eventDetail(frame: EventFrame): string {
   const bits: string[] = [frame.event]
   // `reason` and `error` carry why a step produced nothing, which is the one
   // thing worth reading in the stream when a run ends without a report.
-  const keys = ['paper_id', 'cluster_id', 'claims', 'count', 'total', 'endpoint', 'title', 'stored', 'reason', 'error']
+  const keys = ['paper_id', 'cluster_id', 'claims', 'count', 'total', 'endpoint', 'title', 'heading', 'stored', 'reason', 'error']
   for (const key of keys) {
     const value = frame[key]
     if (value === undefined || value === null) continue

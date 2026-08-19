@@ -228,6 +228,9 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const socketRef = useRef<NodusSocket | null>(null)
   const tickRef = useRef<number | null>(null)
   const feedRef = useRef<RunFeed | null>(null)
+  /** Topic the run screen is showing. `null` while a submission is in flight and
+   *  its id is not back yet. */
+  const activeTopicRef = useRef<string | null>(null)
 
   // -- theme ---------------------------------------------------------------
 
@@ -322,6 +325,18 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const applyLiveEvent = useCallback((frame: EventFrame) => {
     const feed = feedRef.current
     if (!feed) return
+
+    // Only the run on screen. The server admits concurrent runs and the socket
+    // stays subscribed to each, so without this both streams reduce into one
+    // feed: two 25-cluster runs eight seconds apart produced a panel of 50
+    // sections, one run's headings interleaved with the other's.
+    //
+    // `null` means the run was only just submitted and its id has not come back.
+    // The previous run is unsubscribed before a new one starts, so nothing else
+    // is streaming by then and those first frames can only be its own.
+    const topic = activeTopicRef.current
+    if (topic !== null && frame.topic !== topic) return
+
     feed.apply(frame)
     setRun(feed.view())
 
@@ -443,6 +458,20 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     if (!tooBroad) setStructured(DEMO_QUERIES[0].structured_query)
   }, [mode, question])
 
+  /** Stop the run currently on screen from streaming.
+   *
+   *  Ignoring its events client-side is not enough: a live run keeps publishing,
+   *  and every frame still crosses the socket and gets buffered per subscriber.
+   *  Dropping the subscription is what makes the previous run go quiet.
+   */
+  const releaseRun = useCallback(() => {
+    const previous = activeTopicRef.current
+    activeTopicRef.current = null
+    if (previous && socketRef.current) {
+      void socketRef.current.unsubscribe(previous.replace(/^query:/, ''))
+    }
+  }, [])
+
   const startRun = useCallback(() => {
     setFlag(null)
     setScreen('run')
@@ -454,6 +483,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     }
 
     const expected = config?.top_k_papers ?? 20
+    releaseRun()
     feedRef.current = new RunFeed(null, question, expected)
     setRun(feedRef.current.view())
 
@@ -461,11 +491,14 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       .request<{ query: QueryRead }>('queries.create', { query: question, subscribe: true })
       .then((created) => {
         // The reply wraps the query; `subscribe: true` has already attached the
-        // stream, so re-subscribing here would only duplicate it.
+        // stream, so re-subscribing here would only duplicate it. The feed is
+        // adopted rather than replaced, which keeps the events that arrived
+        // while the id was still unknown.
         const id = created.query.id
+        activeTopicRef.current = `query:${id}`
         setActiveQueryId(id)
-        feedRef.current = new RunFeed(id, question, expected)
-        setRun(feedRef.current.view())
+        feedRef.current?.adopt(id)
+        setRun((current) => feedRef.current?.view() ?? current)
       })
       .catch((error: unknown) => {
         const code = (error as { code?: string }).code
@@ -537,15 +570,27 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       if (record?.status === 'processing') {
         setScreen('run')
         setFlag(null)
-        if (mode === 'demo') runDemoClock(48)
-        else void socketRef.current?.subscribe(queryId)
+        if (mode === 'demo') {
+          runDemoClock(48)
+          return
+        }
+        // A feed to reduce into, and the topic to accept — without both, the
+        // events arrive and the run screen has nowhere to put them.
+        releaseRun()
+        feedRef.current = new RunFeed(queryId, record.raw_query, config?.top_k_papers ?? 20)
+        setRun(feedRef.current.view())
+        activeTopicRef.current = `query:${queryId}`
+        void socketRef.current?.subscribe(queryId)
         return
       }
+      // Reading a finished run, not watching one: let go of whatever was
+      // streaming rather than leaving it attached for the rest of the session.
+      if (mode === 'live') releaseRun()
       setScreen('report')
       setFlag(null)
       if (mode === 'live') void loadQueryArtifacts(queryId)
     },
-    [loadQueryArtifacts, mode, queries, runDemoClock],
+    [config, loadQueryArtifacts, mode, queries, releaseRun, runDemoClock],
   )
 
   const openCluster = useCallback(
@@ -769,21 +814,26 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       runDemoClock(0)
       return
     }
+    const parentId = activeQueryId
+    releaseRun()
+    feedRef.current = new RunFeed(null, followupQuestion, config?.top_k_papers ?? 20)
+    setRun(feedRef.current.view())
     void socketRef.current
       .request<{ query: QueryRead }>('queries.followup', {
-        query_id: activeQueryId,
+        query_id: parentId,
         query: followupQuestion,
         subscribe: true,
       })
       .then((created) => {
         const id = created.query.id
+        activeTopicRef.current = `query:${id}`
         setActiveQueryId(id)
         setQuestion(followupQuestion)
-        feedRef.current = new RunFeed(id, followupQuestion, config?.top_k_papers ?? 20)
-        setRun(feedRef.current.view())
+        feedRef.current?.adopt(id)
+        setRun((current) => feedRef.current?.view() ?? current)
       })
       .catch(() => setFlag('busy'))
-  }, [activeQueryId, config, followupQuestion, mode, runDemoClock])
+  }, [activeQueryId, config, followupQuestion, mode, releaseRun, runDemoClock])
 
 
   // -- export --------------------------------------------------------------
