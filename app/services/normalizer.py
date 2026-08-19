@@ -52,7 +52,10 @@ async def normalize_paper(
         db.add(record)
     await db.commit()
 
-    document = await pdf.fetch_pdf_document(paper.open_access_pdf_url)
+    # The DOI is a second way in: Semantic Scholar supplies no PDF url for more
+    # than half the papers a query retrieves, and the publisher page a DOI
+    # resolves to usually advertises the file anyway.
+    document = await pdf.fetch_pdf_document(paper.open_access_pdf_url, doi=paper.doi)
     full_text = document.text if document else None
     # Page starts are only knowable at parse time; nothing downstream can
     # reconstruct them without fetching the PDF again.

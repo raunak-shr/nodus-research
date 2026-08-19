@@ -268,6 +268,20 @@ export class NodusSocket {
     await this.request('queries.subscribe', { query_id: queryId, since })
   }
 
+  /** Record a subscription the *server* attached on our behalf.
+   *
+   *  `queries.create` takes `subscribe: true` and attaches the stream before
+   *  the reply comes back, so nothing is missed while the id is unknown. That
+   *  path never calls `subscribe()`, so without this the topic is unknown to
+   *  this client — and the resume loop above, which is the only thing that
+   *  survives a dropped connection, iterates an empty set. On a host that caps
+   *  a socket's lifetime that means every run longer than the cap goes silent
+   *  and stays silent.
+   */
+  adopt(queryId: string): void {
+    this.subscriptions.add(`query:${queryId}`)
+  }
+
   async unsubscribe(queryId: string): Promise<void> {
     const topic = `query:${queryId}`
     this.subscriptions.delete(topic)

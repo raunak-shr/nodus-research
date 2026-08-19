@@ -70,31 +70,111 @@ def page_for_offset(offset: int | None, page_offsets: list[int] | None) -> int |
     return bisect.bisect_right(page_offsets, offset)
 
 
-async def fetch_pdf_document(url: str | None) -> PdfDocument | None:
-    """Download an open-access PDF and return its text, or None on any failure."""
-    if not url or not settings.fetch_pdfs:
+#: The tag publishers put on an article page to point at the file itself. It is
+#: the Highwire convention Google Scholar indexes, so it is present far more
+#: often than a direct link is — including on arXiv abstract pages.
+_CITATION_PDF_URL = re.compile(
+    r"""<meta[^>]+?name=["']citation_pdf_url["'][^>]+?content=["']([^"']+)""",
+    re.IGNORECASE,
+)
+
+
+def _headers() -> dict[str, str]:
+    return {
+        "User-Agent": settings.pdf_user_agent,
+        # Some servers content-negotiate and hand back the article page unless
+        # the file is asked for by name.
+        "Accept": "application/pdf,text/html;q=0.9,*/*;q=0.8",
+    }
+
+
+def _is_pdf(response: httpx.Response) -> bool:
+    content_type = response.headers.get("content-type", "").lower()
+    return "pdf" in content_type or response.content[:5].startswith(b"%PDF")
+
+
+def _landing_page_pdf(response: httpx.Response) -> str | None:
+    """The file a publisher's article page advertises, if it advertises one."""
+    if not settings.pdf_follow_landing_page:
+        return None
+    if "html" not in response.headers.get("content-type", "").lower():
+        return None
+    match = _CITATION_PDF_URL.search(response.text[:200_000])
+    if not match:
+        return None
+    return str(httpx.URL(response.url).join(match.group(1)))
+
+
+async def _fetch(
+    client: httpx.AsyncClient, url: str, *, allow_landing: bool = True
+) -> bytes | None:
+    """The bytes of a PDF at `url`, following one article page if that is what
+    the URL turns out to be."""
+    response = await client.get(url, headers=_headers())
+    response.raise_for_status()
+
+    if _is_pdf(response):
+        if len(response.content) > settings.pdf_max_bytes:
+            logger.debug("PDF too large (%d bytes): %s", len(response.content), url)
+            return None
+        return response.content
+
+    if allow_landing:
+        advertised = _landing_page_pdf(response)
+        # Once, not recursively: a page that points at itself would loop, and a
+        # second hop has never been the difference between a file and no file.
+        if advertised and advertised != url:
+            logger.debug("Following citation_pdf_url from %s to %s", url, advertised)
+            return await _fetch(client, advertised, allow_landing=False)
+
+    logger.debug(
+        "Not a PDF (content-type=%s): %s", response.headers.get("content-type", ""), url
+    )
+    return None
+
+
+async def fetch_pdf_document(url: str | None, doi: str | None = None) -> PdfDocument | None:
+    """Download a paper's PDF and return its text, or None on any failure.
+
+    Two things this has to cope with, both measured rather than assumed. The
+    URL Semantic Scholar supplies is often an article page rather than a file,
+    and it is absent altogether for more than half the papers a query retrieves
+    — for those, `doi` resolves to the same publisher page, which advertises the
+    file in a meta tag. Full text is still best-effort: every failure here
+    leaves the paper to be read from its abstract.
+    """
+    if not settings.fetch_pdfs:
         return None
 
+    candidates = [candidate for candidate in (url,) if candidate]
+    if doi and settings.pdf_resolve_doi:
+        resolved = doi if doi.startswith("http") else f"https://doi.org/{doi.strip()}"
+        if resolved not in candidates:
+            candidates.append(resolved)
+    if not candidates:
+        return None
+
+    # Everything is inside the guard, the client included: building it can fail
+    # too, and a paper losing its full text must never fail the run.
     try:
         async with httpx.AsyncClient(
             timeout=60.0, follow_redirects=True, verify=outbound_verify()
         ) as client:
-            response = await client.get(url, headers={"User-Agent": "Nodus/0.1 (research tool)"})
-            response.raise_for_status()
-
-            content_type = response.headers.get("content-type", "")
-            if "pdf" not in content_type.lower() and not response.content[:5].startswith(b"%PDF"):
-                logger.debug("Not a PDF (content-type=%s): %s", content_type, url)
-                return None
-            if len(response.content) > settings.pdf_max_bytes:
-                logger.debug("PDF too large (%d bytes): %s", len(response.content), url)
-                return None
-
-            # pypdf is CPU-bound and synchronous — keep it off the event loop.
-            return await asyncio.to_thread(_extract_document, response.content)
+            for candidate in candidates:
+                try:
+                    data = await _fetch(client, candidate)
+                except Exception as exc:  # noqa: BLE001 - full text is best-effort
+                    logger.info("PDF fetch failed for %s: %s", candidate, exc)
+                    continue
+                if data is None:
+                    continue
+                # pypdf is CPU-bound and synchronous — keep it off the event loop.
+                document = await asyncio.to_thread(_extract_document, data)
+                if document is not None:
+                    return document
     except Exception as exc:  # noqa: BLE001 - full text is best-effort
-        logger.info("PDF fetch failed for %s: %s", url, exc)
-        return None
+        logger.info("PDF fetch failed for %s: %s", url or doi, exc)
+    return None
 
 
 def _extract_document(data: bytes) -> PdfDocument | None:

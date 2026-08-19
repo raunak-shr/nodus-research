@@ -1,10 +1,15 @@
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from app.services import pdf
 from app.services.pdf import build_paper_text, split_sections
+
+#: Captured before any test patches the name the module under test reads.
+_REAL_ASYNC_CLIENT = httpx.AsyncClient
 
 SAMPLE = """Title of the paper
 
@@ -206,3 +211,157 @@ def test_a_paper_split_into_only_unwanted_sections_still_gets_its_text():
     )
 
     assert "FULL TEXT BODY" in text
+
+
+# -- reaching the file a publisher actually serves ---------------------------
+
+#: Enough to be recognised as a PDF. These tests are about which URL gets
+#: fetched, so pypdf is stubbed rather than fed a hand-built file.
+MINIMAL_PDF = b"%PDF-1.4 pretend this parses"
+
+LANDING = (
+    '<html><head><meta name="citation_title" content="A paper">'
+    '<meta name="citation_pdf_url" content="https://publisher.example/article/9/pdf">'
+    "</head><body>the article page</body></html>"
+)
+
+
+def _transport(routes, seen):
+    """An httpx transport serving `routes`, recording every request."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((str(request.url), request.headers.get("user-agent", "")))
+        body, content_type = routes.get(str(request.url), (b"nope", "text/plain"))
+        if body == "404":
+            return httpx.Response(404, request=request)
+        if isinstance(body, str):
+            body = body.encode()
+        return httpx.Response(200, content=body, headers={"content-type": content_type})
+
+    return httpx.MockTransport(handler)
+
+
+@contextmanager
+def _fetching(routes, seen):
+    """Serve `routes` over httpx and let anything PDF-shaped extract cleanly."""
+    with (
+        patch.object(pdf.httpx, "AsyncClient", _client_factory(routes, seen)),
+        patch.object(
+            pdf,
+            "_extract_document",
+            lambda data: pdf.PdfDocument(text="body text", page_offsets=[0]),
+        ),
+    ):
+        yield
+
+
+def _client_factory(routes, seen):
+    """Stand in for `httpx.AsyncClient`, serving `routes` and nothing else.
+
+    The real class is captured at import: this factory replaces the name the
+    module under test reads, so constructing through that name here would
+    re-enter the factory instead of building a client.
+    """
+
+    def build(**kwargs):
+        kwargs.pop("verify", None)  # a MockTransport has nothing to verify
+        return _REAL_ASYNC_CLIENT(transport=_transport(routes, seen), **kwargs)
+
+    return build
+
+
+@pytest.mark.asyncio
+async def test_an_article_page_is_followed_to_the_file_it_advertises():
+    """Semantic Scholar's `openAccessPdf` is often the article page, not the
+    file. Publishers name the file in the tag Google Scholar indexes."""
+    seen: list[tuple[str, str]] = []
+    routes = {
+        "https://publisher.example/article/9/full": (LANDING, "text/html; charset=utf-8"),
+        "https://publisher.example/article/9/pdf": (MINIMAL_PDF, "application/pdf"),
+    }
+
+    with _fetching(routes, seen):
+        document = await pdf.fetch_pdf_document("https://publisher.example/article/9/full")
+
+    assert document is not None
+    assert [url for url, _ in seen] == [
+        "https://publisher.example/article/9/full",
+        "https://publisher.example/article/9/pdf",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_doi_is_tried_when_there_is_no_pdf_url():
+    """More than half the papers a query retrieves arrive with no PDF url at
+    all, and the page their DOI resolves to advertises one anyway."""
+    seen: list[tuple[str, str]] = []
+    routes = {
+        "https://doi.org/10.1234/abcd": (LANDING, "text/html"),
+        "https://publisher.example/article/9/pdf": (MINIMAL_PDF, "application/pdf"),
+    }
+
+    with _fetching(routes, seen):
+        document = await pdf.fetch_pdf_document(None, doi="10.1234/abcd")
+
+    assert document is not None
+    assert seen[0][0] == "https://doi.org/10.1234/abcd"
+
+
+@pytest.mark.asyncio
+async def test_the_doi_is_a_fallback_not_a_replacement():
+    """A working PDF url must not cost an extra request to doi.org."""
+    seen: list[tuple[str, str]] = []
+    routes = {"https://direct.example/a.pdf": (MINIMAL_PDF, "application/pdf")}
+
+    with _fetching(routes, seen):
+        document = await pdf.fetch_pdf_document(
+            "https://direct.example/a.pdf", doi="10.1234/abcd"
+        )
+
+    assert document is not None
+    assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_browser_user_agent_is_sent():
+    """One journal answered a tool-shaped agent with 403 and a browser with the
+    file. Nothing here reads anything a browser could not."""
+    seen: list[tuple[str, str]] = []
+    routes = {"https://direct.example/a.pdf": (MINIMAL_PDF, "application/pdf")}
+
+    with patch.object(pdf.httpx, "AsyncClient", _client_factory(routes, seen)):
+        await pdf.fetch_pdf_document("https://direct.example/a.pdf")
+
+    assert seen[0][1] == pdf.settings.pdf_user_agent
+
+
+@pytest.mark.asyncio
+async def test_a_page_advertising_itself_does_not_loop():
+    seen: list[tuple[str, str]] = []
+    page = (
+        '<html><head><meta name="citation_pdf_url" '
+        'content="https://publisher.example/loop"></head></html>'
+    )
+    routes = {"https://publisher.example/loop": (page, "text/html")}
+
+    with _fetching(routes, seen):
+        document = await pdf.fetch_pdf_document("https://publisher.example/loop")
+
+    assert document is None
+    assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_relative_citation_pdf_url_resolves_against_the_page():
+    seen: list[tuple[str, str]] = []
+    page = '<html><head><meta name="citation_pdf_url" content="/files/9.pdf"></head></html>'
+    routes = {
+        "https://publisher.example/article/9": (page, "text/html"),
+        "https://publisher.example/files/9.pdf": (MINIMAL_PDF, "application/pdf"),
+    }
+
+    with _fetching(routes, seen):
+        document = await pdf.fetch_pdf_document("https://publisher.example/article/9")
+
+    assert document is not None
+    assert seen[-1][0] == "https://publisher.example/files/9.pdf"

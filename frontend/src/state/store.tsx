@@ -30,7 +30,9 @@ import type {
   EventFrame,
   QualityTier,
   QueryInterpretation,
+  Phase,
   QueryRead,
+  QueryStats,
   QueryWithPapers,
   ReportRead,
   ReportSection,
@@ -123,7 +125,9 @@ interface Store {
   interpret(draft?: string): void
   useSuggestedQuestion(question: string): void
   editQuestion(): void
-  startRun(): void
+  /** Start the run. `draft` runs that text instead of what is in the box —
+   *  for a suggestion applied and run in one click. */
+  startRun(draft?: string): void
   cancelRun(): void
   skipToEnd(): void
   reloadRun(): void
@@ -199,6 +203,25 @@ function demoPaperRows(): PaperRow[] {
 
 const DEMO_ENV = import.meta.env.VITE_NODUS_DEMO === '1'
 
+/** The stored status of a run, as a phase the run screen understands. It is the
+ *  coarser of the two vocabularies — there is no `synthesizing` row in the
+ *  database — which is why `RunFeed.reconcile` only ever moves forward. */
+const statusPhase: Record<string, Phase> = {
+  pending: 'queued',
+  structuring: 'structuring',
+  retrieving: 'retrieving',
+  processing: 'processing',
+  clustering: 'clustering',
+  completed: 'completed',
+  failed: 'failed',
+}
+
+/** How often to check on a run the stream has gone quiet about, and how long
+ *  the silence has to last first. A healthy run publishes every few seconds, so
+ *  neither timer fires while the socket is doing its job. */
+const RECONCILE_EVERY_MS = 10_000
+const STREAM_QUIET_MS = 20_000
+
 export function StoreProvider({ children }: { children: ReactNode }): ReactElement {
   const [mode, setMode] = useState<Mode>(DEMO_ENV ? 'demo' : 'live')
   const [theme, setThemeState] = useState<'light' | 'dark'>('light')
@@ -242,6 +265,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const socketRef = useRef<NodusSocket | null>(null)
   const tickRef = useRef<number | null>(null)
   const feedRef = useRef<RunFeed | null>(null)
+  /** When the live stream last delivered anything. A run whose socket was cut
+   *  and re-made somewhere else goes quiet without closing, so silence — not a
+   *  disconnect — is the signal that the screen has stopped being told. */
+  const lastEventAtRef = useRef(0)
   /** Topic the run screen is showing. `null` while a submission is in flight and
    *  its id is not back yet. */
   const activeTopicRef = useRef<string | null>(null)
@@ -294,9 +321,16 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       setSocketStatus(status)
       if (info) setSeq(info.seq)
       if (status === 'open') {
+        const reconnected = everOpened
         everOpened = true
         setMode('live')
         setConnectionNote(null)
+        // A reconnect re-subscribes, but the instance that answers may never
+        // have seen this run. Ask the database where it actually got to.
+        if (reconnected) {
+          const resumed = feedRef.current?.id
+          if (resumed) void reconcileRun(resumed)
+        }
         void socket
           .request<ServerConfig>('meta.config')
           .then(setConfig)
@@ -323,6 +357,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
 
     const offEvent = socket.onEventFrame((frame) => {
       setSeq(frame.seq)
+      lastEventAtRef.current = Date.now()
       applyLiveEvent(frame)
     })
 
@@ -406,6 +441,45 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     }
   }, [])
 
+  /** Catch the run screen up from the database.
+   *
+   *  The progress hub lives in the process that is running the pipeline, and a
+   *  deployment that runs more than one instance can hand a reconnected socket
+   *  to a different one — which has no history to replay and will publish this
+   *  run's remaining events somewhere this client is not listening. The stored
+   *  status and counts are the same on every instance, so they are what the
+   *  screen falls back to. `RunFeed.reconcile` only moves forward, so this can
+   *  never undo something the events already showed.
+   */
+  const reconcileRun = useCallback(
+    async (queryId: string) => {
+      const socket = socketRef.current
+      const feed = feedRef.current
+      if (!socket || !feed || feed.id !== queryId) return
+
+      const stats = await socket
+        .request<QueryStats>('queries.stats', { query_id: queryId })
+        .catch(() => null)
+      if (!stats || feedRef.current !== feed) return
+
+      const status = String(stats.status)
+      const finished = status === 'completed' || status === 'failed'
+      feed.reconcile({
+        // `phase` is present only when this instance is the one running the
+        // pipeline. Otherwise the stored status stands in, which is coarser.
+        phase: (stats.phase as Phase | undefined) ?? (statusPhase[status] ?? undefined),
+        paperTotal: stats.paper_count,
+        claims: stats.claim_count,
+        clusters: stats.cluster_count,
+        reportAvailable: (stats.report_sections ?? 0) > 0,
+      })
+      setRun(feed.view())
+
+      if (finished) void loadQueryArtifacts(queryId)
+    },
+    [loadQueryArtifacts],
+  )
+
   /** Pull a cluster's member claims when it is opened, if they are not in hand. */
   const ensureClusterClaims = useCallback(async (clusterId: string) => {
     const socket = socketRef.current
@@ -434,10 +508,13 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   }, [])
 
   const runDemoClock = useCallback(
-    (fromTick: number) => {
+    (fromTick: number, text?: string) => {
+      // `text` for a run started from a question that was set this tick — the
+      // state update is not visible to this callback yet.
+      const asked = text ?? question
       stopClock()
       let tick = fromTick
-      setRun(simulateRun(tick, question, 'running'))
+      setRun(simulateRun(tick, asked, 'running'))
       tickRef.current = window.setInterval(() => {
         tick += 1
         if (tick >= DEMO_RUN_TICKS) {
@@ -452,6 +529,27 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   )
 
   useEffect(() => stopClock, [stopClock])
+
+  // -- keeping a live run on screen ----------------------------------------
+
+  // A socket that is cut and re-made — a host that caps how long one may live
+  // does this to every run longer than the cap — resumes its subscriptions, but
+  // the replay is only as good as the instance that answers. So a run that has
+  // heard nothing for a while is checked against the database instead of being
+  // left on the last frame that arrived. While the stream is healthy this
+  // costs nothing: `lastEventAtRef` is refreshed every few seconds and the
+  // check never fires.
+  useEffect(() => {
+    if (mode !== 'live') return
+    const queryId = run.queryId
+    if (!queryId || run.complete) return
+
+    const timer = window.setInterval(() => {
+      if (Date.now() - lastEventAtRef.current < STREAM_QUIET_MS) return
+      void reconcileRun(queryId)
+    }, RECONCILE_EVERY_MS)
+    return () => window.clearInterval(timer)
+  }, [mode, reconcileRun, run.complete, run.queryId])
 
   // -- actions -------------------------------------------------------------
 
@@ -523,49 +621,64 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     }
   }, [])
 
-  const startRun = useCallback(() => {
-    setFlag(null)
-    setScreen('run')
+  const startRun = useCallback(
+    (draft?: string) => {
+      const asked = (draft ?? question).trim()
+      if (!asked) return
+      // A run started from one of Nodus's own suggestions passes the text
+      // directly, because the question was set in this same tick.
+      if (draft !== undefined) setQuestion(asked)
 
-    if (mode === 'demo' || !socketRef.current) {
-      feedRef.current = null
-      runDemoClock(0)
-      return
-    }
+      setFlag(null)
+      setScreen('run')
+      // The quiet check measures silence since the last frame; without this the
+      // first tick would count from the epoch and reconcile a healthy run.
+      lastEventAtRef.current = Date.now()
 
-    const expected = config?.top_k_papers ?? 20
-    releaseRun()
-    feedRef.current = new RunFeed(null, question, expected)
-    setRun(feedRef.current.view())
+      if (mode === 'demo' || !socketRef.current) {
+        feedRef.current = null
+        runDemoClock(0, asked)
+        return
+      }
 
-    void socketRef.current
-      .request<{ query: QueryRead }>('queries.create', { query: question, subscribe: true })
-      .then((created) => {
-        // The reply wraps the query; `subscribe: true` has already attached the
-        // stream, so re-subscribing here would only duplicate it. The feed is
-        // adopted rather than replaced, which keeps the events that arrived
-        // while the id was still unknown.
-        const id = created.query.id
-        activeTopicRef.current = `query:${id}`
-        setActiveQueryId(id)
-        feedRef.current?.adopt(id)
-        setRun((current) => feedRef.current?.view() ?? current)
-      })
-      .catch((error: unknown) => {
-        const code = (error as { code?: string }).code
-        if (code === 'too_many_requests' || code === 'busy' || code === 'unavailable') {
-          setFlag('busy')
-          return
-        }
-        setLastError(describe('queries.create', error))
-        setRun((current) => ({
-          ...current,
-          outcome: 'failed',
-          errorMessage: error instanceof Error ? error.message : String(error),
-        }))
-        setFlag('failed')
-      })
-  }, [config, mode, question, runDemoClock])
+      const expected = config?.top_k_papers ?? 20
+      releaseRun()
+      feedRef.current = new RunFeed(null, asked, expected)
+      setRun(feedRef.current.view())
+
+      void socketRef.current
+        .request<{ query: QueryRead }>('queries.create', { query: asked, subscribe: true })
+        .then((created) => {
+          // The reply wraps the query; `subscribe: true` has already attached the
+          // stream, so re-subscribing here would only duplicate it. The feed is
+          // adopted rather than replaced, which keeps the events that arrived
+          // while the id was still unknown.
+          const id = created.query.id
+          activeTopicRef.current = `query:${id}`
+          setActiveQueryId(id)
+          // The server attached the stream, but this client has to record it
+          // too: a reconnect resumes only the subscriptions it knows about.
+          socketRef.current?.adopt(id)
+          feedRef.current?.adopt(id)
+          setRun((current) => feedRef.current?.view() ?? current)
+        })
+        .catch((error: unknown) => {
+          const code = (error as { code?: string }).code
+          if (code === 'too_many_requests' || code === 'busy' || code === 'unavailable') {
+            setFlag('busy')
+            return
+          }
+          setLastError(describe('queries.create', error))
+          setRun((current) => ({
+            ...current,
+            outcome: 'failed',
+            errorMessage: error instanceof Error ? error.message : String(error),
+          }))
+          setFlag('failed')
+        })
+    },
+    [config, mode, question, runDemoClock],
+  )
 
   const cancelRun = useCallback(() => {
     stopClock()
@@ -880,6 +993,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         activeTopicRef.current = `query:${id}`
         setActiveQueryId(id)
         setQuestion(followupQuestion)
+        socketRef.current?.adopt(id)
         feedRef.current?.adopt(id)
         setRun((current) => feedRef.current?.view() ?? current)
       })
@@ -977,12 +1091,26 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       },
       setFollowupQuestion,
       interpret,
+      // Applying a suggestion leaves the question runnable. Sending it straight
+      // back to be interpreted would spend a second call asking the model about
+      // a question it just wrote to be specific enough to run — and would leave
+      // the person who took the advice one step further from a report than the
+      // person who ignored it.
       useSuggestedQuestion: (next: string) => {
+        const asked = interpretation?.question
         setQuestion(next)
-        // The suggestion has not been interpreted either — it is the server's
-        // wording, not the server's verdict on it.
-        setInterpretation(null)
+        // The old reading describes the old question, so it goes.
         setStructured(null)
+        setInterpretation({
+          question: next,
+          verdict: 'suggested',
+          worth_running: true,
+          reason: asked
+            ? `Nodus offered this instead of “${asked}”, written to name an outcome and a population, so it has not been checked again.`
+            : 'This is one of Nodus’s own suggestions, written to be specific enough to run, so it has not been checked again.',
+          suggestions: [],
+          structured_query: { topic: next, search_keywords: [next] },
+        })
       },
       editQuestion: () => {
         setStructured(null)

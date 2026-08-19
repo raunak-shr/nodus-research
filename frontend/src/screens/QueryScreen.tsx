@@ -17,6 +17,7 @@ const PLACEHOLDER =
  *  leads to a button that runs the question as typed. */
 const VERDICTS: Record<QueryVerdict, { kicker: string; headline: string; accent: boolean }> = {
   ready: { kicker: 'worth running', headline: 'This is a question the literature can answer.', accent: false },
+  suggested: { kicker: 'nodus suggested this', headline: 'Ready to run.', accent: false },
   workable: { kicker: 'runnable, but loose', headline: 'This will run, and the report will be vague.', accent: true },
   unsuitable: { kicker: 'not worth a run', headline: 'No body of papers answers this one.', accent: true },
   unassessed: { kicker: 'not assessed', headline: 'Nodus could not check this question.', accent: false },
@@ -213,22 +214,29 @@ function Verdict(): ReactElement | null {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {interpretation.suggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                className="row-btn"
-                onClick={() => store.useSuggestedQuestion(suggestion)}
-              >
-                <span className="pretty">{suggestion}</span>
-                <span className="faint" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                  use this
-                </span>
-              </button>
+              <div key={suggestion} className="suggestion">
+                <button
+                  type="button"
+                  className="suggestion-text pretty"
+                  onClick={() => store.useSuggestedQuestion(suggestion)}
+                  title="Put this in the box"
+                >
+                  {suggestion}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary suggestion-run"
+                  onClick={() => store.startRun(suggestion)}
+                >
+                  Run
+                </button>
+              </div>
             ))}
           </div>
           <div className="faint" style={{ fontSize: 11.5, marginTop: 10 }}>
-            Picking one puts it in the box unrun and uninterpreted — interpret it too, or edit it
-            first.
+            Run starts the analysis on that question straight away. Clicking the question itself
+            puts it in the box instead, still ready to run — Nodus wrote these to be specific
+            enough, so neither path asks it to interpret one of its own suggestions.
           </div>
         </>
       ) : null}
@@ -263,7 +271,7 @@ function RunControls(): ReactElement | null {
       <button
         type="button"
         className={interpretation.worth_running ? 'btn btn-primary' : 'btn btn-secondary'}
-        onClick={store.startRun}
+        onClick={() => store.startRun()}
         style={{
           whiteSpace: 'nowrap',
           fontSize: interpretation.worth_running ? 14 : 13,

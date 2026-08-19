@@ -56,6 +56,7 @@ def _paper():
         abstract="An abstract.",
         tldr={"text": "Exercise helps."},
         open_access_pdf_url="https://example.org/a.pdf",
+        doi=None,
     )
 
 

@@ -92,8 +92,12 @@ export interface StructuredQuery {
 }
 
 /** What the Interpret button gets back. A verdict other than `ready` is advice:
- *  the pipeline still accepts the question exactly as typed. */
-export type QueryVerdict = 'ready' | 'workable' | 'unsuitable' | 'unassessed'
+ *  the pipeline still accepts the question exactly as typed.
+ *
+ *  `suggested` is the one the client sets itself and the server never returns:
+ *  it marks a question taken from Nodus's own list of alternatives, which was
+ *  written to be runnable and so is not sent back to be judged again. */
+export type QueryVerdict = 'ready' | 'workable' | 'unsuitable' | 'unassessed' | 'suggested'
 
 export interface QueryInterpretation {
   question: string
