@@ -33,6 +33,15 @@ const STAGE_BY_EVENT: Record<string, { stage: PaperStage; label: string }> = {
   paper_failed: { stage: 'failed', label: 'failed' },
 }
 
+/** What the database can say about a run, for `RunFeed.reconcile`. */
+export interface RunSnapshot {
+  phase?: Phase
+  paperTotal?: number
+  claims?: number
+  clusters?: number
+  reportAvailable?: boolean
+}
+
 /** Mutable state accumulated across one run's events. */
 export class RunFeed {
   private phase: Phase = 'queued'
@@ -64,6 +73,36 @@ export class RunFeed {
    */
   adopt(queryId: string): void {
     this.queryId = queryId
+  }
+
+  /** The run id this feed is following, once it is known. */
+  get id(): string | null {
+    return this.queryId
+  }
+
+  /** Fold in what the database says, for when the event stream cannot be heard.
+   *
+   *  The progress hub is in-process: on a host that runs more than one instance
+   *  a reconnected socket can land somewhere that never saw this run, and the
+   *  replay comes back empty. The database is the one account of the run every
+   *  instance shares, so it is what the screen falls back to.
+   *
+   *  Everything here moves forward only. The stored status is coarser than the
+   *  phases the events carry — there is no `synthesizing` row in the database —
+   *  so taking it at face value would walk a run backwards on screen.
+   */
+  reconcile(snapshot: RunSnapshot): void {
+    if (snapshot.phase && PHASE_ORDER.indexOf(snapshot.phase) > PHASE_ORDER.indexOf(this.phase)) {
+      this.phase = snapshot.phase
+    }
+    if (typeof snapshot.paperTotal === 'number' && snapshot.paperTotal > 0) {
+      this.totalCount = Math.max(this.totalCount ?? 0, snapshot.paperTotal)
+    }
+    if (typeof snapshot.claims === 'number') this.claims = Math.max(this.claims, snapshot.claims)
+    if (typeof snapshot.clusters === 'number' && snapshot.clusters > 0) {
+      this.clusterCount = Math.max(this.clusterCount ?? 0, snapshot.clusters)
+    }
+    if (snapshot.reportAvailable) this.reportAvailable = true
   }
 
   apply(frame: EventFrame): void {
