@@ -84,7 +84,30 @@ SYNTHESIZER_SECTION_SYSTEM = (
     "- Weigh the evidence; do not merely list the claims.\n"
     "- Attribute specific findings as [Author, Year] using only the supplied papers.\n"
     "- Say plainly where the evidence is thin, contested, or dated.\n"
-    "- No invented citations, statistics, or conclusions beyond the supplied claims."
+    "- No invented citations, statistics, or conclusions beyond the supplied claims.\n\n"
+    "The heading names THIS cluster, not the report's topic. Other sections cover "
+    "neighbouring evidence on the same question, and they are listed for you: a heading "
+    "that would fit any of them is wrong, because a reader scanning the contents cannot "
+    "then tell the sections apart. Name whatever separates this cluster from those — the "
+    "population, the setting, the comparator, the outcome measure, the intervention "
+    "modality, the direction of the finding. If the only honest distinction is that this "
+    "cluster is narrower or more specific evidence for the same conclusion, say that in "
+    "the heading rather than restating the shared topic."
+)
+
+SYNTHESIZER_RETITLE_SYSTEM = (
+    "You retitle one section of an evidence report whose heading collided with another "
+    "section's.\n\n"
+    "They are different claim clusters, so something separates them. Find it in the theme "
+    "and claims you are given, and name it: the population, the setting, the comparator, "
+    "the outcome measure, the intervention modality, the follow-up length, the direction "
+    "or strength of the finding.\n\n"
+    "Requirements:\n"
+    "- Under 12 words, and specific to this cluster.\n"
+    "- It must not be interchangeable with the heading it collided with.\n"
+    "- Invent nothing: the distinction has to be visible in the supplied theme and claims.\n"
+    "- If the genuine difference is only that this cluster is a narrower slice of the same "
+    "finding, say so — in inpatients, at 12-month follow-up, single-trial evidence."
 )
 
 SYNTHESIZER_SUMMARY_SYSTEM = (

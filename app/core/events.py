@@ -68,6 +68,7 @@ _PHASE_BY_EVENT = {
     "cluster_analyzed": "clustering",
     "clustering_complete": "clustering",
     "section_ready": "synthesizing",
+    "section_retitled": "synthesizing",
     "report_ready": "synthesizing",
     "report_skipped": "synthesizing",
     "cancelled": "failed",
