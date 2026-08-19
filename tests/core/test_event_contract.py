@@ -40,6 +40,16 @@ def test_status_events_map_to_phases():
     assert hub.publish(query_id, "status", status="failed")["phase"] == "failed"
 
 
+def test_report_skipped_belongs_to_synthesis():
+    """A run that writes no report still ends inside the synthesizing phase."""
+    hub = ProgressHub()
+    query_id = uuid4()
+
+    event = hub.publish(query_id, "report_skipped", reason="No clusters were formed.")
+    assert event["phase"] == "synthesizing"
+    assert event["reason"] == "No clusters were formed."
+
+
 def test_unknown_events_inherit_the_current_phase():
     """An event the table does not know must not reset the UI to 'queued'."""
     hub = ProgressHub()

@@ -6,8 +6,9 @@ import pytest
 
 from app.models.cluster import ClaimCluster
 from app.schemas.analysis import ClaimStance, ClusterAnalysis, DisagreementDriver
-from app.services import cross_paper
+from app.services import cross_paper, embedding_store
 from app.services.cross_paper import ClaimContext, _analyze_cluster, _render_claims, _stance_map
+from app.services.errors import Unavailable
 
 
 def _analysis(stances: list[ClaimStance], drivers: list[DisagreementDriver] | None = None):
@@ -160,3 +161,82 @@ def test_recompute_quality_updates_tier_and_rationale():
     assert str(tier) == "high"
     assert cluster.quality_score > 0.7
     assert cluster.quality_rationale["inputs"]["paper_count"] == 3
+
+
+# ------------------------------------------------------- unembeddable claims
+
+
+@pytest.mark.asyncio
+async def test_claims_without_embeddings_fail_the_run_and_say_why():
+    """Silently returning no clusters here ends the run as a report-less success."""
+    contexts = [_context(), _context(claim_text="Exercise reduced BDI scores")]
+    events: list[tuple[str, dict]] = []
+
+    with (
+        patch.object(cross_paper, "load_claim_contexts", AsyncMock(return_value=contexts)),
+        patch.object(embedding_store, "load_embeddings", AsyncMock(return_value={})),
+    ):
+        with pytest.raises(Unavailable) as excinfo:
+            await cross_paper.analyze_query(
+                uuid4(),
+                "does exercise help?",
+                AsyncMock(),
+                on_progress=lambda event, **payload: events.append((event, payload)),
+            )
+
+    assert excinfo.value.detail["claims"] == 2
+    # The clustering phase still gets its count, so the UI does not sit blank.
+    assert events == [("clusters_formed", {"clusters": 0, "claims": 0, "reason": "no embeddings"})]
+
+
+@pytest.mark.asyncio
+async def test_claims_dropped_by_the_cluster_cap_are_counted():
+    """The cap keeps the largest clusters and discards the rest — say how many."""
+    contexts = [_context(claim_text=f"claim {i}", confidence=0.5) for i in range(4)]
+    vectors = {ctx.claim.id: [1.0, 0.0] for ctx in contexts}
+    events: list[tuple[str, dict]] = []
+
+    # Two clusters form, the cap keeps one, so the other cluster's claims vanish.
+    def fake_cluster(items, **kwargs):
+        from app.services.clustering import Cluster, ClusterMember
+
+        kept = Cluster(
+            members=[ClusterMember(claim_id=items[i][0], similarity=1.0) for i in range(3)],
+            centroid=[1.0, 0.0],
+        )
+        return [kept]
+
+    with (
+        patch.object(cross_paper, "load_claim_contexts", AsyncMock(return_value=contexts)),
+        patch.object(embedding_store, "load_embeddings", AsyncMock(return_value=vectors)),
+        patch.object(cross_paper.clustering, "cluster_claims", fake_cluster),
+        patch.object(cross_paper, "_analyze_cluster", AsyncMock(return_value=_analysis([]))),
+        patch.object(cross_paper, "_preserved_clusters", AsyncMock(return_value=[])),
+        patch.object(cross_paper, "_clear_generated_clusters", AsyncMock()),
+        patch.object(cross_paper, "_persist_cluster", AsyncMock()),
+    ):
+        await cross_paper.analyze_query(
+            uuid4(),
+            "does exercise help?",
+            AsyncMock(),
+            on_progress=lambda event, **payload: events.append((event, payload)),
+        )
+
+    formed = next(payload for event, payload in events if event == "clusters_formed")
+    assert (formed["claims"], formed["claims_clustered"], formed["claims_dropped"]) == (4, 3, 1)
+
+
+@pytest.mark.asyncio
+async def test_no_claims_at_all_is_reported_but_not_an_error():
+    events: list[tuple[str, dict]] = []
+
+    with patch.object(cross_paper, "load_claim_contexts", AsyncMock(return_value=[])):
+        clusters = await cross_paper.analyze_query(
+            uuid4(),
+            "does exercise help?",
+            AsyncMock(),
+            on_progress=lambda event, **payload: events.append((event, payload)),
+        )
+
+    assert clusters == []
+    assert events[0][0] == "clusters_formed"
