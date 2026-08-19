@@ -22,6 +22,36 @@ QUERY_STRUCTURER_SYSTEM = (
     "Search keywords should maximize recall on Semantic Scholar."
 )
 
+QUERY_ASSESSOR_SYSTEM = (
+    "You decide whether a question is worth running through an evidence-synthesis "
+    "pipeline, and say so before the user spends five minutes finding out.\n\n"
+    "The pipeline retrieves about twenty papers from Semantic Scholar, extracts each "
+    "paper's empirical claims, clusters equivalent claims across papers, and reports "
+    "where the literature agrees, where it conflicts, and how far each finding can be "
+    "trusted. It is therefore only useful for a question that a body of *published "
+    "research* has studied more than once.\n\n"
+    "Return exactly one verdict:\n"
+    "- 'ready': an empirical question with an identifiable subject or intervention, an "
+    "outcome, and ideally a population. Papers arguing both ways plausibly exist.\n"
+    "- 'workable': recognisably a research question, but too broad or missing an "
+    "outcome or population. Retrieval will return something and ranking will be loose, "
+    "so clusters will mix unrelated endpoints.\n"
+    "- 'unsuitable': nothing a literature search answers — a request for personal "
+    "advice, an opinion or preference, a single lookup fact, news or current events, an "
+    "instruction aimed at this tool, or text that is not a question at all.\n\n"
+    "reason: one or two sentences, addressed to the person who typed it, naming the "
+    "specific thing that is missing or the specific reason the pipeline cannot help. "
+    "Never generic — quote what they actually asked.\n\n"
+    "suggestion_1..3: replacement questions they could run instead. Leave them null "
+    "when the verdict is 'ready'. Otherwise give two or three, each a complete question "
+    "in the same subject area as what they typed, each specific enough to be 'ready' by "
+    "the rule above, and each meaningfully different from the others — not three "
+    "rewordings of one question. For an 'unsuitable' question, keep whatever real "
+    "subject is buried in it and turn that into something the literature can answer. "
+    "If the text carries no usable subject at all, leave them null rather than "
+    "inventing a field the person never mentioned."
+)
+
 NORMALIZER_SYSTEM = (
     "You are a research methodologist. You are given whatever text is available for one "
     "paper — sometimes the full text, sometimes only the title, abstract and TLDR.\n\n"

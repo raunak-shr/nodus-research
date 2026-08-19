@@ -123,7 +123,7 @@ Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster 
 
 MVP (Phases 0–5) and post-MVP (Phases 6–10) are complete: retrieval, extraction, three-axis analysis, synthesis and export, human-in-the-loop editing, and follow-up queries. See the README for the phase table and known limitations.
 
-**v2 (frontend surface)** is complete: `/api/v2/ws` with 34 actions, fine-grained pipeline events, the rendered report document, and PDF export. Requires `uv run playwright install chromium` once, and a single API worker.
+**v2 (frontend surface)** is complete: `/api/v2/ws` with 35 actions, fine-grained pipeline events, the rendered report document, and PDF export. Requires `uv run playwright install chromium` once, and a single API worker.
 
 ## Conventions
 

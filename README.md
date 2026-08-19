@@ -299,6 +299,7 @@ Building a frontend? Skip to [API v2](#api-v2--the-whole-api-on-one-websocket) â
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `/api/v1/queries/` | Submit a query. Runs in the background; add `?wait=true` to block. |
+| `POST` | `/api/v1/queries/interpret` | Read a draft question back and say whether running it is worth the five minutes. Stores nothing, starts nothing. |
 | `GET` | `/api/v1/queries/` | List queries, newest first |
 | `GET` | `/api/v1/queries/{id}` | Status, structured query, ranked papers |
 | `GET` | `/api/v1/queries/{id}/stats` | Counts across every pipeline stage |
@@ -403,7 +404,7 @@ Heartbeats continue for as long as the connection is open, including after a run
 | Group | Actions |
 |---|---|
 | meta | `meta.describe`, `meta.health`, `meta.config` |
-| queries | `queries.create`, `queries.list`, `queries.get`, `queries.stats`, `queries.delete`, `queries.cancel`, `queries.followup`, `queries.followups` |
+| queries | `queries.interpret`, `queries.create`, `queries.list`, `queries.get`, `queries.stats`, `queries.delete`, `queries.cancel`, `queries.followup`, `queries.followups` |
 | stream | `queries.subscribe`, `queries.unsubscribe`, `queries.events` |
 | papers | `papers.list`, `papers.get`, `papers.normalized` |
 | claims | `claims.list`, `clusters.list`, `clusters.get`, `clusters.update`, `clusters.set_stance`, `clusters.add_claim`, `clusters.remove_claim` |

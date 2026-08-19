@@ -183,6 +183,11 @@ class Settings(BaseSettings):
     # Cluster and report edits.
     rate_limit_edits_per_minute: int = 30
     rate_limit_edits_burst: int = 10
+    # The Interpret button: two LLM calls, no run slot and no database write, so
+    # neither of the buckets above fits. Loose enough to redraft a question a
+    # few times, tight enough that a script cannot spend the day's budget on it.
+    rate_limit_interprets_per_minute: int = 6
+    rate_limit_interprets_burst: int = 3
     # Only enable behind a proxy that rewrites X-Forwarded-For (Cloudflare,
     # nginx). With nothing in front, the header is caller-controlled and every
     # request can claim a fresh identity, which defeats per-IP limiting.

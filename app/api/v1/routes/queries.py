@@ -10,14 +10,27 @@ from fastapi import Query as QueryParam
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.v1.deps import AdminCaller, DBSession, EditRateLimit, PageParams, RunRateLimit
+from app.api.v1.deps import (
+    AdminCaller,
+    DBSession,
+    EditRateLimit,
+    InterpretRateLimit,
+    PageParams,
+    RunRateLimit,
+)
 from app.core.events import hub
 from app.models.paper import QueryPaper
 from app.models.query import Query, QueryStatus
 from app.schemas.paper import QueryPaperRead
-from app.schemas.query import QueryCreate, QueryRead, QueryWithPapersRead
+from app.schemas.query import (
+    QueryCreate,
+    QueryInterpret,
+    QueryInterpretation,
+    QueryRead,
+    QueryWithPapersRead,
+)
 from app.schemas.report import FollowUpCreate, ReportRead, ReportUpdate, SectionNarrativeUpdate
-from app.services import export, report_edit, runner, synthesizer
+from app.services import export, query_assessor, report_edit, runner, synthesizer
 from app.services.errors import Forbidden
 from app.services.pipeline import run_pipeline_safe
 
@@ -77,6 +90,21 @@ async def create_query(
             reserved.launch(query.id, body.query)
 
     return QueryRead.model_validate(query)
+
+
+@router.post(
+    "/interpret",
+    response_model=QueryInterpretation,
+    dependencies=[InterpretRateLimit],
+)
+async def interpret_query(body: QueryInterpret) -> QueryInterpretation:
+    """Read a question back and say whether running it is worth the five minutes.
+
+    Nothing is stored and no run is started: this is the check a caller makes
+    *before* POST /queries. A verdict other than `ready` is advice, not a
+    refusal — the question can still be submitted exactly as typed.
+    """
+    return await query_assessor.interpret(body.query)
 
 
 @router.get("/", response_model=list[QueryRead])

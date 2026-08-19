@@ -169,6 +169,9 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
   width: 100%; border: 0; background: transparent; color: var(--n-text);
   font-family: var(--font-body); resize: none; outline: none;
 }
+/* Instruction, not a draft: it has to read as prompt text rather than as
+   something already typed that a person could run by pressing the button. */
+.bare::placeholder { color: var(--n-faint); opacity: 1; }
 .title-input {
   width: 100%; background: transparent; border: 0; border-bottom: 1px solid transparent;
   color: var(--n-text); font-family: var(--font-heading); font-weight: 500;

@@ -29,6 +29,7 @@ import type {
   ClusterClaimRead,
   EventFrame,
   QualityTier,
+  QueryInterpretation,
   QueryRead,
   QueryWithPapers,
   ReportRead,
@@ -88,7 +89,11 @@ interface Store {
 
   question: string
   structured: StructuredQuery | null
-  clarify: boolean
+  /** The last verdict on the question in the box, or null before Interpret has
+   *  been pressed on it. Cleared the moment the question is edited: a verdict
+   *  on text that is no longer there is worse than no verdict. */
+  interpretation: QueryInterpretation | null
+  interpreting: boolean
 
   queries: QueryRead[]
   activeQueryId: string | null
@@ -111,7 +116,11 @@ interface Store {
   setFlag(flag: Flag): void
   setQuestion(value: string): void
   setFollowupQuestion(value: string): void
-  interpret(): void
+  /** Ask the server how it reads the question and whether running it is worth
+   *  the five minutes. Never starts a run. `draft` overrides the box, for a
+   *  caller that is setting the question and interpreting it in one go — the
+   *  state update would not be visible to this callback yet. */
+  interpret(draft?: string): void
   useSuggestedQuestion(question: string): void
   editQuestion(): void
   startRun(): void
@@ -201,11 +210,16 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const [lastError, setLastError] = useState<{ action: string; message: string } | null>(null)
   const [config, setConfig] = useState<ServerConfig | null>(null)
 
-  const [question, setQuestion] = useState(DEMO_QUESTION)
-  const [structured, setStructured] = useState<StructuredQuery | null>(
-    DEMO_QUERIES[0].structured_query,
-  )
-  const [clarify, setClarify] = useState(false)
+  // Empty, deliberately: a question already in the box is a question somebody
+  // is one click away from running by accident. The demo build is the exception
+  // — there the corpus *is* one question, so pre-filling it is the demo.
+  const [question, setQuestion] = useState(DEMO_ENV ? DEMO_QUESTION : '')
+  // Null until Interpret has been pressed, in every mode: the reading of a
+  // question is a thing the server produced, and showing one nobody asked for
+  // makes the box look like it has already been submitted.
+  const [structured, setStructured] = useState<StructuredQuery | null>(null)
+  const [interpretation, setInterpretation] = useState<QueryInterpretation | null>(null)
+  const [interpreting, setInterpreting] = useState(false)
 
   const [queries, setQueries] = useState<QueryRead[]>(DEMO_ENV ? DEMO_QUERIES : [])
   const [activeQueryId, setActiveQueryId] = useState<string | null>(DEMO_ENV ? DEMO_QUERY_ID : null)
@@ -249,7 +263,9 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     setClusters(DEMO_CLUSTERS)
     setActiveClusterId((current) => current ?? 'c2')
     setPapers(demoPaperRows())
-    setStructured(DEMO_QUERIES[0].structured_query)
+    // The demo corpus answers exactly one question, so falling back to it with
+    // an empty box would offer screens that do not match what was asked.
+    setQuestion((current) => current.trim() || DEMO_QUESTION)
   }, [])
 
   // -- socket --------------------------------------------------------------
@@ -444,19 +460,54 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     setFlag(nextFlag)
   }, [])
 
-  const interpret = useCallback(() => {
-    const socket = socketRef.current
-    const tooBroad = question.trim().length < 30
-    if (mode === 'demo' || !socket) {
-      setClarify(tooBroad)
-      setStructured(tooBroad ? null : DEMO_QUERIES[0].structured_query)
-      return
-    }
-    // The live pipeline structures as its first phase; there is no separate
-    // "interpret" action, so this only guards the obviously unanswerable.
-    setClarify(tooBroad)
-    if (!tooBroad) setStructured(DEMO_QUERIES[0].structured_query)
-  }, [mode, question])
+  /** Ask the server to read the question back and judge it.
+   *
+   *  This is the whole point of the button: a run is twenty papers and several
+   *  minutes, and the pipeline refuses nothing, so "is exercise good?" produces
+   *  a report just as readily as a question that names an outcome — and the
+   *  reader only finds out how loose it was at the end. The verdict is advice,
+   *  never a gate: every path from here still leads to Run analysis.
+   */
+  const interpret = useCallback(
+    (override?: string) => {
+      const draft = (override ?? question).trim()
+      if (draft.length < 3) return
+
+      const socket = socketRef.current
+      if (mode === 'demo' || !socket) {
+        const verdict = demoInterpretation(draft)
+        setInterpretation(verdict)
+        setStructured(verdict.structured_query)
+        return
+      }
+
+      setInterpreting(true)
+      setLastError(null)
+      socket
+        .request<QueryInterpretation>('queries.interpret', { query: draft })
+        .then((result) => {
+          setInterpretation(result)
+          setStructured(result.structured_query)
+        })
+        .catch((error: unknown) => {
+          const described = describe('queries.interpret', error)
+          setLastError(described)
+          // The check failing is not a verdict on the question. Say what happened
+          // and leave the run available rather than showing a warning the server
+          // never gave.
+          setInterpretation({
+            question: draft,
+            verdict: 'unassessed',
+            worth_running: true,
+            reason: `The suitability check did not run (${described.message}), so this question has not been assessed. You can still run it.`,
+            suggestions: [],
+            structured_query: { topic: draft, search_keywords: [draft] },
+          })
+        })
+        .finally(() => setInterpreting(false))
+    },
+    [mode, question],
+  )
 
   /** Stop the run currently on screen from streaming.
    *
@@ -899,7 +950,8 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       config,
       question,
       structured,
-      clarify,
+      interpretation,
+      interpreting,
       queries,
       activeQueryId,
       run,
@@ -916,17 +968,25 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       setTheme: setThemeState,
       go,
       setFlag,
-      setQuestion,
+      // Editing the question invalidates the verdict on it, so the panel goes
+      // rather than sitting under text it no longer describes.
+      setQuestion: (value: string) => {
+        setQuestion(value)
+        setInterpretation(null)
+        setStructured(null)
+      },
       setFollowupQuestion,
       interpret,
       useSuggestedQuestion: (next: string) => {
         setQuestion(next)
-        setClarify(false)
-        setStructured(DEMO_QUERIES[0].structured_query)
+        // The suggestion has not been interpreted either — it is the server's
+        // wording, not the server's verdict on it.
+        setInterpretation(null)
+        setStructured(null)
       },
       editQuestion: () => {
         setStructured(null)
-        setClarify(false)
+        setInterpretation(null)
       },
       startRun,
       cancelRun,
@@ -950,7 +1010,6 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       activeClusterId,
       activeQueryId,
       cancelRun,
-      clarify,
       clearTierOverride,
       clusters,
       config,
@@ -966,6 +1025,8 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       gap,
       go,
       interpret,
+      interpretation,
+      interpreting,
       mode,
       openCluster,
       openQuery,
@@ -1145,6 +1206,47 @@ function reportToMarkdown(report: ReportRead, question: string): string {
 }
 
 /** A failed action as a screen can show it: which call, and what it said. */
+/** The verdict the demo build shows, since there is no server to ask.
+ *
+ *  It is a heuristic and says so: the real check is an LLM reading the question
+ *  against what the pipeline can actually do. This exists so the screen can be
+ *  seen and reviewed without a backend, not so it can judge anything.
+ */
+/** Words that, in a research question, usually introduce the population or the
+ *  setting — the part "is exercise good?" is missing. */
+const QUALIFIERS = new Set(['in', 'among', 'for', 'on', 'with'])
+
+function demoInterpretation(draft: string): QueryInterpretation {
+  const words = draft.trim().split(/\s+/).filter(Boolean)
+  const qualified = words.some((word) => QUALIFIERS.has(word.toLowerCase().replace(/[^a-z]/g, '')))
+  const specific = words.length >= 6 && qualified
+
+  if (specific) {
+    return {
+      question: draft,
+      verdict: 'ready',
+      worth_running: true,
+      reason:
+        'Names a subject, an outcome and a population, so retrieval has three concepts to AND and clusters will land on comparable endpoints.',
+      suggestions: [],
+      structured_query: DEMO_QUERIES[0].structured_query as StructuredQuery,
+    }
+  }
+
+  return {
+    question: draft,
+    verdict: 'workable',
+    worth_running: false,
+    reason: `“${draft}” fixes no outcome measure and no population, so ranking will be close to arbitrary and one cluster will mix unrelated endpoints.`,
+    suggestions: [
+      'Does aerobic exercise reduce depression severity in adults with major depressive disorder?',
+      'Does resistance training improve HbA1c in adults with type 2 diabetes?',
+      'Does exercise reduce all-cause mortality in adults over 60?',
+    ],
+    structured_query: DEMO_QUERIES[0].structured_query as StructuredQuery,
+  }
+}
+
 function describe(action: string, error: unknown): { action: string; message: string } {
   if (error instanceof NodusError) return { action, message: `${error.code} — ${error.message}` }
   return { action, message: error instanceof Error ? error.message : String(error) }

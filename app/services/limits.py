@@ -376,9 +376,23 @@ edits_limiter = RateLimiter(
     enabled=lambda: settings.rate_limit_enabled,
 )
 
+#: Interpreting a draft question — two LLM calls, no run slot and no write. It
+#: is the one LLM path a visitor can reach without submitting anything, so it
+#: gets its own bucket rather than borrowing the runs budget it does not spend.
+interprets_limiter = RateLimiter(
+    "interprets",
+    rate_per_second=lambda: max(0, settings.rate_limit_interprets_per_minute) / 60.0,
+    capacity=lambda: settings.rate_limit_interprets_burst,
+    enabled=lambda: settings.rate_limit_enabled,
+)
+
 #: Cost classes used by the v2 action registry, mapped to the bucket that
 #: governs them. Anything absent (i.e. a read) is not rate limited.
-_LIMITER_BY_COST = {"run": runs_limiter, "edit": edits_limiter}
+_LIMITER_BY_COST = {
+    "run": runs_limiter,
+    "edit": edits_limiter,
+    "interpret": interprets_limiter,
+}
 
 
 def limiter_for_cost(cost: str) -> RateLimiter | None:
@@ -397,7 +411,7 @@ def budgets_for(key: str) -> dict[str, dict[str, object]]:
             "capacity": budget.capacity,
             "refill_seconds": budget.refill_seconds,
         }
-        for limiter in (runs_limiter, edits_limiter)
+        for limiter in (runs_limiter, edits_limiter, interprets_limiter)
         for budget in (limiter.peek(key),)
     }
 

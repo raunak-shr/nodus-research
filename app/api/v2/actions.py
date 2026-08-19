@@ -42,6 +42,7 @@ from app.services import (
     limits,
     pdf_export,
     provenance,
+    query_assessor,
     report_edit,
     report_render,
     runner,
@@ -220,6 +221,21 @@ async def queries_create(ctx: ActionContext, params: frames.CreateQuery) -> dict
             reserved.launch(query_id, params.query)
 
     return {"query": payload, "subscription": subscription}
+
+
+@action(
+    "queries.interpret",
+    frames.InterpretQuery,
+    "Read a draft question back and say whether it is worth running",
+    cost="interpret",
+)
+async def queries_interpret(ctx: ActionContext, params: frames.InterpretQuery) -> dict[str, Any]:
+    """Pre-submission only: nothing is stored and no run is started.
+
+    A verdict other than `ready` is advice. `queries.create` still accepts the
+    question exactly as typed — the point is that the caller knows first.
+    """
+    return _dump(await query_assessor.interpret(params.query))
 
 
 @action("queries.list", frames.Page, "List queries, newest first")

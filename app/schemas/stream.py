@@ -128,6 +128,10 @@ class CreateQuery(BaseModel):
     )
 
 
+class InterpretQuery(BaseModel):
+    query: str = Field(min_length=3, description="A draft research question to assess")
+
+
 class Subscribe(BaseModel):
     query_id: UUID
     since: int = Field(

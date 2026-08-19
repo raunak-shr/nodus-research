@@ -91,6 +91,19 @@ export interface StructuredQuery {
   clarification_message?: string | null
 }
 
+/** What the Interpret button gets back. A verdict other than `ready` is advice:
+ *  the pipeline still accepts the question exactly as typed. */
+export type QueryVerdict = 'ready' | 'workable' | 'unsuitable' | 'unassessed'
+
+export interface QueryInterpretation {
+  question: string
+  verdict: QueryVerdict
+  worth_running: boolean
+  reason: string
+  suggestions: string[]
+  structured_query: StructuredQuery
+}
+
 export interface QueryRead {
   id: string
   raw_query: string

@@ -69,11 +69,17 @@ async def rate_limit_edits(request: Request) -> None:
     limits.edits_limiter.check(_client_key(request))
 
 
+async def rate_limit_interprets(request: Request) -> None:
+    """Throttle the Interpret check: LLM calls without a run to pay for them."""
+    limits.interprets_limiter.check(_client_key(request))
+
+
 # Applied per route rather than per router: reads stay unthrottled, and these run
 # after the router-level auth dependency, so a rejected caller never spends a
 # legitimate caller's budget.
 RunRateLimit = Depends(rate_limit_runs)
 EditRateLimit = Depends(rate_limit_edits)
+InterpretRateLimit = Depends(rate_limit_interprets)
 
 
 class Pagination:
