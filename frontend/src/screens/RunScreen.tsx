@@ -475,7 +475,7 @@ function FailedTakeover(): ReactElement {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={store.startRun}
+            onClick={() => store.startRun()}
             style={{ whiteSpace: 'nowrap', fontSize: 13 }}
           >
             Retry run
@@ -515,7 +515,7 @@ function CancelledTakeover(): ReactElement {
           <button
             type="button"
             className="btn btn-primary"
-            onClick={store.startRun}
+            onClick={() => store.startRun()}
             style={{ whiteSpace: 'nowrap', fontSize: 13 }}
           >
             Resume from {run.processedCount} papers

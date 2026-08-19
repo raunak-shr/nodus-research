@@ -125,7 +125,9 @@ interface Store {
   interpret(draft?: string): void
   useSuggestedQuestion(question: string): void
   editQuestion(): void
-  startRun(): void
+  /** Start the run. `draft` runs that text instead of what is in the box —
+   *  for a suggestion applied and run in one click. */
+  startRun(draft?: string): void
   cancelRun(): void
   skipToEnd(): void
   reloadRun(): void
@@ -506,10 +508,13 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   }, [])
 
   const runDemoClock = useCallback(
-    (fromTick: number) => {
+    (fromTick: number, text?: string) => {
+      // `text` for a run started from a question that was set this tick — the
+      // state update is not visible to this callback yet.
+      const asked = text ?? question
       stopClock()
       let tick = fromTick
-      setRun(simulateRun(tick, question, 'running'))
+      setRun(simulateRun(tick, asked, 'running'))
       tickRef.current = window.setInterval(() => {
         tick += 1
         if (tick >= DEMO_RUN_TICKS) {
@@ -616,49 +621,64 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     }
   }, [])
 
-  const startRun = useCallback(() => {
-    setFlag(null)
-    setScreen('run')
+  const startRun = useCallback(
+    (draft?: string) => {
+      const asked = (draft ?? question).trim()
+      if (!asked) return
+      // A run started from one of Nodus's own suggestions passes the text
+      // directly, because the question was set in this same tick.
+      if (draft !== undefined) setQuestion(asked)
 
-    if (mode === 'demo' || !socketRef.current) {
-      feedRef.current = null
-      runDemoClock(0)
-      return
-    }
+      setFlag(null)
+      setScreen('run')
+      // The quiet check measures silence since the last frame; without this the
+      // first tick would count from the epoch and reconcile a healthy run.
+      lastEventAtRef.current = Date.now()
 
-    const expected = config?.top_k_papers ?? 20
-    releaseRun()
-    feedRef.current = new RunFeed(null, question, expected)
-    setRun(feedRef.current.view())
+      if (mode === 'demo' || !socketRef.current) {
+        feedRef.current = null
+        runDemoClock(0, asked)
+        return
+      }
 
-    void socketRef.current
-      .request<{ query: QueryRead }>('queries.create', { query: question, subscribe: true })
-      .then((created) => {
-        // The reply wraps the query; `subscribe: true` has already attached the
-        // stream, so re-subscribing here would only duplicate it. The feed is
-        // adopted rather than replaced, which keeps the events that arrived
-        // while the id was still unknown.
-        const id = created.query.id
-        activeTopicRef.current = `query:${id}`
-        setActiveQueryId(id)
-        feedRef.current?.adopt(id)
-        setRun((current) => feedRef.current?.view() ?? current)
-      })
-      .catch((error: unknown) => {
-        const code = (error as { code?: string }).code
-        if (code === 'too_many_requests' || code === 'busy' || code === 'unavailable') {
-          setFlag('busy')
-          return
-        }
-        setLastError(describe('queries.create', error))
-        setRun((current) => ({
-          ...current,
-          outcome: 'failed',
-          errorMessage: error instanceof Error ? error.message : String(error),
-        }))
-        setFlag('failed')
-      })
-  }, [config, mode, question, runDemoClock])
+      const expected = config?.top_k_papers ?? 20
+      releaseRun()
+      feedRef.current = new RunFeed(null, asked, expected)
+      setRun(feedRef.current.view())
+
+      void socketRef.current
+        .request<{ query: QueryRead }>('queries.create', { query: asked, subscribe: true })
+        .then((created) => {
+          // The reply wraps the query; `subscribe: true` has already attached the
+          // stream, so re-subscribing here would only duplicate it. The feed is
+          // adopted rather than replaced, which keeps the events that arrived
+          // while the id was still unknown.
+          const id = created.query.id
+          activeTopicRef.current = `query:${id}`
+          setActiveQueryId(id)
+          // The server attached the stream, but this client has to record it
+          // too: a reconnect resumes only the subscriptions it knows about.
+          socketRef.current?.adopt(id)
+          feedRef.current?.adopt(id)
+          setRun((current) => feedRef.current?.view() ?? current)
+        })
+        .catch((error: unknown) => {
+          const code = (error as { code?: string }).code
+          if (code === 'too_many_requests' || code === 'busy' || code === 'unavailable') {
+            setFlag('busy')
+            return
+          }
+          setLastError(describe('queries.create', error))
+          setRun((current) => ({
+            ...current,
+            outcome: 'failed',
+            errorMessage: error instanceof Error ? error.message : String(error),
+          }))
+          setFlag('failed')
+        })
+    },
+    [config, mode, question, runDemoClock],
+  )
 
   const cancelRun = useCallback(() => {
     stopClock()
@@ -1071,12 +1091,26 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       },
       setFollowupQuestion,
       interpret,
+      // Applying a suggestion leaves the question runnable. Sending it straight
+      // back to be interpreted would spend a second call asking the model about
+      // a question it just wrote to be specific enough to run — and would leave
+      // the person who took the advice one step further from a report than the
+      // person who ignored it.
       useSuggestedQuestion: (next: string) => {
+        const asked = interpretation?.question
         setQuestion(next)
-        // The suggestion has not been interpreted either — it is the server's
-        // wording, not the server's verdict on it.
-        setInterpretation(null)
+        // The old reading describes the old question, so it goes.
         setStructured(null)
+        setInterpretation({
+          question: next,
+          verdict: 'suggested',
+          worth_running: true,
+          reason: asked
+            ? `Nodus offered this instead of “${asked}”, written to name an outcome and a population, so it has not been checked again.`
+            : 'This is one of Nodus’s own suggestions, written to be specific enough to run, so it has not been checked again.',
+          suggestions: [],
+          structured_query: { topic: next, search_keywords: [next] },
+        })
       },
       editQuestion: () => {
         setStructured(null)
