@@ -1,6 +1,12 @@
 """asyncpg rejects multi-statement SQL, so migrations split before executing."""
 
-from app.db.session import build_connect_args
+from sqlalchemy.pool import NullPool
+
+from app.db.session import (
+    build_connect_args,
+    build_engine_kwargs,
+    is_transaction_pooled,
+)
 from app.db.sql_split import split_statements
 
 
@@ -77,3 +83,42 @@ def test_disable_mode_never_adds_tls():
 def test_require_mode_forces_tls_even_locally():
     url = "postgresql+asyncpg://postgres:postgres@localhost:5432/nodus"
     assert "ssl" in build_connect_args(url, "require")
+
+
+# ------------------------------------------------------- Supabase endpoints
+
+DIRECT = "postgresql+asyncpg://postgres:pw@db.example.supabase.co:5432/postgres"
+SESSION_POOLER = (
+    "postgresql+asyncpg://postgres.example:pw@aws-0-eu-west-2.pooler.supabase.com:5432/postgres"
+)
+TRANSACTION_POOLER = (
+    "postgresql+asyncpg://postgres.example:pw@aws-0-eu-west-2.pooler.supabase.com:6543/postgres"
+)
+
+
+def test_only_the_transaction_pooler_is_treated_as_pooled():
+    assert is_transaction_pooled(TRANSACTION_POOLER)
+    assert not is_transaction_pooled(SESSION_POOLER)
+    assert not is_transaction_pooled(DIRECT)
+    # 6543 on a host that is not a pooler is somebody's own Postgres.
+    assert not is_transaction_pooled("postgresql+asyncpg://u:p@db.example.com:6543/postgres")
+
+
+def test_transaction_pooler_disables_prepared_statement_names():
+    args = build_connect_args(TRANSACTION_POOLER, "auto")
+    assert args["statement_cache_size"] == 0
+    assert args["prepared_statement_name_func"]() == ""
+    # TLS is still applied: the endpoint is remote.
+    assert "ssl" in args
+
+
+def test_session_pooler_keeps_prepared_statements():
+    args = build_connect_args(SESSION_POOLER, "auto")
+    assert "statement_cache_size" not in args
+    assert "prepared_statement_name_func" not in args
+
+
+def test_transaction_pooler_lets_supavisor_do_the_pooling():
+    assert build_engine_kwargs(TRANSACTION_POOLER) == {"poolclass": NullPool}
+    assert "pool_size" in build_engine_kwargs(SESSION_POOLER)
+    assert "pool_size" in build_engine_kwargs(DIRECT)

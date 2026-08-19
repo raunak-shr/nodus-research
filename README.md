@@ -176,11 +176,26 @@ Point `DATABASE_URL` at a hosted Postgres and enable pgvector there once:
 create extension if not exists vector;
 ```
 
-In Supabase that is the SQL editor, or **Database → Extensions → vector**. The connection string needs the `+asyncpg` driver and the direct connection (port 5432), not the transaction pooler — the pooler breaks asyncpg's prepared statements:
+In Supabase that is the SQL editor, or **Database → Extensions → vector**. The connection string needs the `+asyncpg` driver and never the transaction pooler on port 6543, which breaks asyncpg's prepared statements:
 
 ```
 DATABASE_URL=postgresql+asyncpg://postgres:<password>@db.<project>.supabase.co:5432/postgres
 ```
+
+That is the direct connection, and it is the right one from a machine with IPv6.
+`db.<project>.supabase.co` publishes an AAAA record and no A record, so from an
+IPv4-only runtime — a Vercel function, AWS Lambda — asyncpg never gets a socket
+and fails with `OSError: [Errno 99] Cannot assign requested address`. There, use
+the **session pooler**, which has IPv4 and, unlike port 6543, keeps one backend
+connection per client connection so prepared statements still work:
+
+```
+DATABASE_URL=postgresql+asyncpg://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+```
+
+Copy the exact host from **Supabase → Connect → Session pooler**; the `aws-<n>`
+prefix and region vary by project, and the username carries the project ref.
+Lower `DB_POOL_SIZE` to 1–2 on serverless: each warm instance holds its own pool.
 
 `DATABASE_SSL=auto` turns TLS on for any non-local host, which hosted Postgres requires. Then:
 

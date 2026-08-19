@@ -96,7 +96,11 @@ nodus/
 
 ## Environment gotchas
 
-- **Use the direct Supabase connection (5432), not the transaction pooler (6543).** The pooler breaks asyncpg's prepared statements. `DATABASE_SSL=auto` supplies the TLS that hosted Postgres requires.
+- **Never the transaction pooler (6543)** — it breaks asyncpg's prepared statements. Which of the other two endpoints to use depends on where the process runs:
+  - **Locally: the direct connection**, `db.<project>.supabase.co:5432`.
+  - **On a host without IPv6 egress (Vercel, AWS Lambda): the session pooler**, `aws-<n>-<region>.pooler.supabase.com:5432`, username `postgres.<project-ref>`. The direct host publishes an AAAA record and no A record, so from an IPv4-only runtime asyncpg fails at `connect()` with `OSError: [Errno 99] Cannot assign requested address`. Session mode holds one backend connection per client connection, so prepared statements still work — that is what separates it from 6543.
+  - Keep `DB_POOL_SIZE` small on serverless: every warm instance holds its own pool, and the sum has to stay under the pooler's client cap.
+- `DATABASE_SSL=auto` supplies the TLS that hosted Postgres requires.
 - **pgvector must be enabled on the hosted database** (`create extension if not exists vector;`) before migrations run.
 - **asyncpg rejects multi-statement SQL.** Migrations that ship raw SQL must run statements one at a time via `app/db/sql_split.py`.
 - **TLS interception.** Corporate proxies *and* antivirus HTTPS scanning re-sign traffic, so outbound HTTPS uses the OS trust store (`USE_SYSTEM_CA=true`). Apply it per httpx client — injecting truststore globally replaces `ssl.SSLContext` and breaks asyncpg's TLS.
