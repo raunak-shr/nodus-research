@@ -28,7 +28,6 @@ import type {
   ClaimSourceRead,
   ClusterClaimRead,
   EventFrame,
-  Phase,
   QualityTier,
   QueryRead,
   QueryWithPapers,
@@ -38,16 +37,8 @@ import type {
   Stance,
   StructuredQuery,
 } from '../lib/types'
-import { PHASE_ORDER } from '../lib/types'
-import {
-  claimRef,
-  eventLine,
-  type EditEntry,
-  type PaperProgress,
-  type PaperRow,
-  type PaperStage,
-  type RunView,
-} from '../lib/viewmodels'
+import { RunFeed } from '../lib/runFeed'
+import { claimRef, type EditEntry, type PaperRow, type RunView } from '../lib/viewmodels'
 import {
   DEMO_CLUSTERS,
   DEMO_FAILURES,
@@ -195,38 +186,6 @@ function demoPaperRows(): PaperRow[] {
   }))
 }
 
-// -- live view models -------------------------------------------------------
-
-interface LiveRunAccumulator {
-  phase: Phase
-  stages: Map<string, { stage: PaperStage; label: string }>
-  claims: number
-  sectionsReady: Set<string>
-  events: RunView['events']
-  startedAt: number
-}
-
-function emptyAccumulator(): LiveRunAccumulator {
-  return {
-    phase: 'queued',
-    stages: new Map(),
-    claims: 0,
-    sectionsReady: new Set(),
-    events: [],
-    startedAt: Date.now(),
-  }
-}
-
-const PAPER_STAGE_BY_EVENT: Record<string, { stage: PaperStage; label: string }> = {
-  paper_started: { stage: 'active', label: 'fetching full text' },
-  paper_pdf: { stage: 'active', label: 'fetching full text' },
-  paper_normalized: { stage: 'active', label: 'normalised' },
-  paper_claims_extracted: { stage: 'active', label: 'extracting claims' },
-  paper_claims_embedded: { stage: 'active', label: 'embedding claims' },
-  paper_processed: { stage: 'done', label: 'processed' },
-  paper_failed: { stage: 'failed', label: 'failed' },
-}
-
 // -- provider ---------------------------------------------------------------
 
 const DEMO_ENV = import.meta.env.VITE_NODUS_DEMO === '1'
@@ -268,7 +227,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
 
   const socketRef = useRef<NodusSocket | null>(null)
   const tickRef = useRef<number | null>(null)
-  const accRef = useRef<LiveRunAccumulator>(emptyAccumulator())
+  const feedRef = useRef<RunFeed | null>(null)
 
   // -- theme ---------------------------------------------------------------
 
@@ -361,57 +320,13 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   }, [fallToDemo])
 
   const applyLiveEvent = useCallback((frame: EventFrame) => {
-    const acc = accRef.current
-    acc.phase = frame.phase
-    const paperId = typeof frame.paper_id === 'string' ? frame.paper_id : null
-    const stage = PAPER_STAGE_BY_EVENT[frame.event]
-    if (paperId && stage) {
-      acc.stages.set(paperId, stage)
-    }
-    if (frame.event === 'paper_processed' && typeof frame.claims === 'number') {
-      acc.claims += frame.claims
-    }
-    if (frame.event === 'section_ready' && typeof frame.cluster_id === 'string') {
-      acc.sectionsReady.add(frame.cluster_id)
-    }
-    acc.events = [eventLine(frame), ...acc.events].slice(0, 9)
+    const feed = feedRef.current
+    if (!feed) return
+    feed.apply(frame)
+    setRun(feed.view())
 
-    setRun((current) => {
-      const stages = acc.stages
-      const papersView: PaperProgress[] = current.papers.map((paper) => {
-        const next = stages.get(paper.id)
-        return next ? { ...paper, stage: next.stage, label: next.label } : paper
-      })
-      const processed = papersView.filter((p) => p.stage === 'done' || p.stage === 'failed').length
-      const failedCount = papersView.filter((p) => p.stage === 'failed').length
-      const phaseIndex = Math.max(0, PHASE_ORDER.indexOf(acc.phase))
-      return {
-        ...current,
-        phase: acc.phase,
-        phaseIndex,
-        phases: current.phases.map((step) => {
-          const stepIndex = PHASE_ORDER.indexOf(step.name)
-          return {
-            ...step,
-            state: stepIndex < phaseIndex ? 'done' : stepIndex === phaseIndex ? 'active' : 'pending',
-          }
-        }),
-        elapsedSeconds: (Date.now() - acc.startedAt) / 1000,
-        papers: papersView,
-        processedCount: processed,
-        failedCount,
-        claimsExtracted: acc.claims,
-        sections: current.sections.map((slot, index) => ({
-          ...slot,
-          ready: index < acc.sectionsReady.size,
-        })),
-        events: acc.events,
-        complete: acc.phase === 'completed',
-        status: acc.phase === 'completed' ? 'completed' : 'processing',
-        outcome: acc.phase === 'failed' ? 'failed' : acc.phase === 'completed' ? 'completed' : 'running',
-      }
-    })
-
+    // The pipeline signals completion as a status event, and the artifacts are
+    // only queryable once it has.
     if (frame.phase === 'completed') {
       void loadQueryArtifacts(frame.topic.replace(/^query:/, ''))
     }
@@ -531,34 +446,34 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const startRun = useCallback(() => {
     setFlag(null)
     setScreen('run')
-    accRef.current = emptyAccumulator()
 
     if (mode === 'demo' || !socketRef.current) {
+      feedRef.current = null
       runDemoClock(0)
       return
     }
 
-    setRun({
-      ...EMPTY_RUN,
-      question,
-      status: 'pending',
-      paperTotal: config?.top_k_papers ?? 20,
-      sections: [],
-    })
+    const expected = config?.top_k_papers ?? 20
+    feedRef.current = new RunFeed(null, question, expected)
+    setRun(feedRef.current.view())
 
     void socketRef.current
-      .request<{ id: string }>('queries.create', { query: question, subscribe: true })
+      .request<{ query: QueryRead }>('queries.create', { query: question, subscribe: true })
       .then((created) => {
-        setActiveQueryId(created.id)
-        setRun((current) => ({ ...current, queryId: created.id }))
-        return socketRef.current?.subscribe(created.id)
+        // The reply wraps the query; `subscribe: true` has already attached the
+        // stream, so re-subscribing here would only duplicate it.
+        const id = created.query.id
+        setActiveQueryId(id)
+        feedRef.current = new RunFeed(id, question, expected)
+        setRun(feedRef.current.view())
       })
       .catch((error: unknown) => {
         const code = (error as { code?: string }).code
-        if (code === 'too_many_requests' || code === 'busy') {
+        if (code === 'too_many_requests' || code === 'busy' || code === 'unavailable') {
           setFlag('busy')
           return
         }
+        setLastError(describe('queries.create', error))
         setRun((current) => ({
           ...current,
           outcome: 'failed',
@@ -850,24 +765,25 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const runFollowup = useCallback(() => {
     setFlag(null)
     setScreen('run')
-    accRef.current = emptyAccumulator()
     if (mode === 'demo' || !socketRef.current || !activeQueryId) {
       runDemoClock(0)
       return
     }
     void socketRef.current
-      .request<{ id: string }>('queries.followup', {
+      .request<{ query: QueryRead }>('queries.followup', {
         query_id: activeQueryId,
         query: followupQuestion,
         subscribe: true,
       })
       .then((created) => {
-        setActiveQueryId(created.id)
+        const id = created.query.id
+        setActiveQueryId(id)
         setQuestion(followupQuestion)
-        setRun((current) => ({ ...current, queryId: created.id, question: followupQuestion }))
+        feedRef.current = new RunFeed(id, followupQuestion, config?.top_k_papers ?? 20)
+        setRun(feedRef.current.view())
       })
       .catch(() => setFlag('busy'))
-  }, [activeQueryId, followupQuestion, mode, runDemoClock])
+  }, [activeQueryId, config, followupQuestion, mode, runDemoClock])
 
 
   // -- export --------------------------------------------------------------
