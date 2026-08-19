@@ -14,8 +14,10 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored to the repo root: these are setuptools output here, but `lib/`
+# unanchored also swallowed frontend/src/lib/, and git gave no warning.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
