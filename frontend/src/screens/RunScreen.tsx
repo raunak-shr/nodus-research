@@ -1,0 +1,512 @@
+/** The live run.
+ *
+ *  Everything on this screen is something the pipeline actually reported: a
+ *  phase it entered, a paper it finished, a section it wrote. Nothing predicts
+ *  a finish time, and a failure is a designed screen rather than a thrown error.
+ */
+
+import { useState, type ReactElement } from 'react'
+
+import { clock } from '../lib/format'
+import { useStore } from '../state/store'
+
+export function RunScreen(): ReactElement {
+  const store = useStore()
+  const { run, flag } = store
+  const [showStream, setShowStream] = useState(true)
+
+  return (
+    <div style={{ padding: '0 0 80px' }}>
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 5,
+          background: 'var(--n-bg)',
+          borderBottom: '2px solid var(--n-line2)',
+          padding: '26px 56px 20px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: 30,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div className="kicker" style={{ marginBottom: 8 }}>
+              run {shortId(run.queryId)} · {run.phase}
+            </div>
+            <div style={{ fontSize: 23, letterSpacing: '-.015em', lineHeight: 1.25, maxWidth: 640 }}>
+              {run.question || store.question}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flex: '0 0 auto' }}>
+            <div style={{ textAlign: 'right', marginRight: 8 }}>
+              <div className="num" style={{ fontSize: 24, letterSpacing: '-.02em' }}>
+                {clock(run.elapsedSeconds)}
+              </div>
+              <div className="faint" style={{ fontSize: 11 }}>
+                elapsed
+              </div>
+            </div>
+            {store.mode === 'demo' ? (
+              <button
+                type="button"
+                className="btn btn-ghost dim"
+                onClick={store.skipToEnd}
+                style={{ whiteSpace: 'nowrap', fontSize: 12 }}
+              >
+                Skip to end
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={store.cancelRun}
+              disabled={run.complete}
+              style={{
+                color: 'var(--n-text)',
+                whiteSpace: 'nowrap',
+                fontSize: 12,
+                borderColor: 'var(--n-line2)',
+              }}
+            >
+              Cancel run
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', marginTop: 22, alignItems: 'stretch' }}>
+          {run.phases.map((phase) => (
+            <div
+              key={phase.name}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                paddingRight: 10,
+              }}
+            >
+              <div
+                style={{
+                  height: 3,
+                  background:
+                    phase.state === 'done'
+                      ? 'var(--color-accent-600)'
+                      : phase.state === 'active'
+                        ? 'var(--color-accent)'
+                        : 'var(--n-line2)',
+                  animation: phase.state === 'active' ? 'n-pulse 1.4s ease-in-out infinite' : undefined,
+                }}
+              />
+              <div
+                style={{
+                  fontSize: 11.5,
+                  letterSpacing: '.02em',
+                  color:
+                    phase.state === 'active'
+                      ? 'var(--n-text)'
+                      : phase.state === 'done'
+                        ? 'var(--n-dim)'
+                        : 'var(--n-faint)',
+                }}
+              >
+                {phase.name}
+              </div>
+              <div className="faint num" style={{ fontSize: 10, height: 12 }}>
+                {phase.detail}
+              </div>
+            </div>
+          ))}
+        </div>
+      </header>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 400px', alignItems: 'start' }}>
+        <div style={{ padding: '30px 40px 0 56px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              marginBottom: 16,
+              gap: 16,
+            }}
+          >
+            <div className="kicker">
+              processing · {run.processedCount} of {run.paperTotal} papers
+            </div>
+            <div className="dim num" style={{ fontSize: 12 }}>
+              {run.claimsExtracted} claims extracted · {run.failedCount} failed
+            </div>
+          </div>
+
+          {run.papers.length === 0 ? (
+            <div className="dim" style={{ fontSize: 13.5, lineHeight: 1.6, maxWidth: 520 }}>
+              Nothing to show yet. Papers appear here one at a time as retrieval lands and each is
+              normalised, extracted and embedded — the run reports per paper, not in a single jump.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1px 26px' }}>
+              {run.papers.map((paper) => (
+                <div
+                  key={paper.id}
+                  style={{
+                    display: 'flex',
+                    gap: 11,
+                    minWidth: 0,
+                    padding: '9px 0',
+                    borderBottom: '2px solid var(--n-line2)',
+                    opacity: paper.stage === 'queued' ? 0.42 : 1,
+                    transition: 'opacity .3s',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 7,
+                      height: 7,
+                      marginTop: 6,
+                      flex: '0 0 7px',
+                      background:
+                        paper.stage === 'failed'
+                          ? 'var(--n-con)'
+                          : paper.stage === 'done'
+                            ? 'var(--color-accent-500)'
+                            : paper.stage === 'active'
+                              ? 'var(--color-accent)'
+                              : 'var(--n-line2)',
+                      animation: paper.stage === 'active' ? 'n-pulse 1s ease-in-out infinite' : undefined,
+                    }}
+                  />
+                  <div style={{ minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        lineHeight: 1.35,
+                        marginBottom: 3,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={paper.title}
+                    >
+                      {paper.title}
+                    </div>
+                    <div
+                      className="faint num"
+                      style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11 }}
+                    >
+                      <span
+                        style={{
+                          color:
+                            paper.stage === 'failed'
+                              ? 'var(--n-con)'
+                              : paper.stage === 'active'
+                                ? 'var(--color-accent-400)'
+                                : 'var(--n-faint)',
+                        }}
+                      >
+                        {paper.label}
+                      </span>
+                      <span>{paper.meta}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: '30px 56px 0 0', position: 'sticky', top: 210 }}>
+          <div className="panel" style={{ padding: '18px 20px', marginBottom: 16 }}>
+            <div className="kicker" style={{ marginBottom: 14 }}>
+              Report assembling
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {(run.sections.length ? run.sections : placeholderSlots()).map((slot, index) => (
+                <div
+                  key={index}
+                  style={{
+                    display: 'flex',
+                    gap: 10,
+                    alignItems: 'flex-start',
+                    opacity: slot.ready ? 1 : 0.38,
+                    animation: slot.ready ? 'n-in .35s ease both' : undefined,
+                  }}
+                >
+                  <div
+                    className="num"
+                    style={{
+                      flex: '0 0 18px',
+                      fontSize: 11,
+                      paddingTop: 2,
+                      color: slot.ready ? 'var(--color-accent-400)' : 'var(--n-faint)',
+                    }}
+                  >
+                    {slot.ready ? '✓' : String(index + 1).padStart(2, '0')}
+                  </div>
+                  <div style={{ minWidth: 0, fontSize: 13, lineHeight: 1.35 }}>
+                    {slot.ready ? slot.heading : '—'}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {run.complete ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-block"
+                onClick={() => store.go('report')}
+                style={{ marginTop: 18, fontSize: 13 }}
+              >
+                Open report
+              </button>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            className="linkish"
+            onClick={() => setShowStream((value) => !value)}
+            style={{ marginBottom: 8 }}
+          >
+            {showStream ? 'Hide event stream' : 'Show event stream'}
+          </button>
+
+          {showStream ? (
+            <div
+              className="inset num"
+              style={{
+                padding: '14px 16px',
+                fontSize: 11.5,
+                lineHeight: 1.7,
+                color: 'var(--n-dim)',
+                maxHeight: 250,
+                overflow: 'hidden',
+              }}
+            >
+              <div className="kicker" style={{ fontSize: 10, marginBottom: 8 }}>
+                Event stream
+              </div>
+              {run.events.length === 0 ? (
+                <div className="faint">no events yet</div>
+              ) : (
+                run.events.map((event, index) => (
+                  <div key={`${event.seq}-${index}`} style={{ display: 'flex', gap: 8 }}>
+                    <span className="faint" style={{ flex: '0 0 42px' }}>
+                      {event.seq}
+                    </span>
+                    <span
+                      style={{
+                        color:
+                          event.kind === 'fail'
+                            ? 'var(--n-con)'
+                            : event.kind === 'high'
+                              ? 'var(--n-text)'
+                              : 'var(--n-dim)',
+                      }}
+                    >
+                      {event.text}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {flag === 'seqgap' ? <SeqGapDialog /> : null}
+      {flag === 'busy' ? <BusyDialog /> : null}
+      {flag === 'failed' ? <FailedTakeover /> : null}
+      {flag === 'cancelled' ? <CancelledTakeover /> : null}
+    </div>
+  )
+}
+
+function placeholderSlots(): { ready: boolean; heading: string }[] {
+  return Array.from({ length: 6 }, () => ({ ready: false, heading: '—' }))
+}
+
+function shortId(id: string | null): string {
+  if (!id) return '—'
+  return id.replace(/-/g, '').slice(0, 6)
+}
+
+function SeqGapDialog(): ReactElement {
+  const store = useStore()
+  const gap = store.gap
+
+  return (
+    <div className="scrim">
+      <div className="dialog-box" style={{ width: 520 }}>
+        <div className="kicker" style={{ color: 'var(--color-accent-400)', marginBottom: 10 }}>
+          Event gap detected
+        </div>
+        <div style={{ fontSize: 19, letterSpacing: '-.01em', marginBottom: 8 }}>
+          {gap ? `Missed events ${gap.lastApplied + 1} – ${gap.received - 1}.` : 'Events were dropped.'}
+        </div>
+        <p className="dim" style={{ fontSize: 14, margin: '0 0 16px' }}>
+          {gap
+            ? `The socket delivered seq ${gap.received} after ${gap.lastApplied}. ${gap.missed} events never arrived, so what is on screen may be behind or out of order.`
+            : 'The socket reported a break in the sequence, so what is on screen may be behind or out of order.'}{' '}
+          Nodus will not guess the difference.
+        </p>
+        {gap ? (
+          <div className="mono-block" style={{ marginBottom: 18 }}>
+            {`last_applied_seq  ${gap.lastApplied}\nreceived_seq      ${gap.received}\ngap               ${gap.missed} events`}
+          </div>
+        ) : null}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={store.reloadRun}
+            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+          >
+            Reload run state
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost dim"
+            onClick={() => store.setFlag(null)}
+            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BusyDialog(): ReactElement {
+  const store = useStore()
+  const [retrying, setRetrying] = useState(false)
+  const runs = store.config?.runs
+
+  return (
+    <div className="scrim">
+      <div className="dialog-box" style={{ width: 540 }}>
+        <div className="kicker" style={{ marginBottom: 12 }}>
+          429 · every pipeline slot busy
+        </div>
+        <div style={{ fontSize: 21, letterSpacing: '-.015em', marginBottom: 8 }}>
+          Both slots are busy.
+        </div>
+        <p className="dim" style={{ fontSize: 14, margin: '0 0 18px' }}>
+          This deployment runs a fixed number of analyses at a time on purpose — one more would slow
+          every other and spend the day&rsquo;s LLM budget faster than it earns. Your question was
+          not queued and not lost; it is sitting in the box, ready to send.
+        </p>
+        <div className="mono-block" style={{ marginBottom: 18 }}>
+          {`active_runs   ${runs?.active ?? '—'} of ${runs?.limit ?? '—'}\nruns_today    ${runs?.runs_today ?? '—'} of ${runs?.daily_limit ?? '—'}`}
+        </div>
+        <div className="faint" style={{ fontSize: 11.5, lineHeight: 1.5, marginBottom: 18 }}>
+          Phase and per-paper progress only — the questions in the other slots are not shown, and
+          nothing here predicts a finish time.
+        </div>
+        <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => setRetrying((value) => !value)}
+            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+          >
+            {retrying ? 'Stop retrying' : 'Keep my question and retry automatically'}
+          </button>
+          <span className="dim num" style={{ fontSize: 11.5 }}>
+            {retrying
+              ? 'Retrying when a slot frees · nothing is sent until then'
+              : 'Your question stays in the box. Nothing is queued server-side.'}
+          </span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FailedTakeover(): ReactElement {
+  const store = useStore()
+  return (
+    <div className="takeover">
+      <div style={{ maxWidth: 640 }}>
+        <div className="kicker" style={{ color: 'var(--n-con)', marginBottom: 14 }}>
+          Run failed · phase {store.run.phase}
+        </div>
+        <h2 style={{ fontSize: 30, letterSpacing: '-.02em', margin: '0 0 12px' }}>
+          The run stopped before it could produce a report.
+        </h2>
+        <p className="dim" style={{ margin: '0 0 22px' }}>
+          Nodus stops rather than spending the LLM budget on a partial retrieval. The structured
+          query is kept, so re-running costs one call.
+        </p>
+        <div className="mono-block" style={{ marginBottom: 26 }}>
+          {`error       RunFailed\nmessage     ${store.run.errorMessage ?? 'no message recorded'}\nfailed_at   phase=${store.run.phase}\npapers_stored ${store.run.processedCount}`}
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={store.startRun}
+            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+          >
+            Retry run
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost dim"
+            onClick={() => store.go('history')}
+            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+          >
+            Back to history
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CancelledTakeover(): ReactElement {
+  const store = useStore()
+  const { run } = store
+  return (
+    <div className="takeover">
+      <div style={{ maxWidth: 640 }}>
+        <div className="kicker" style={{ marginBottom: 14 }}>
+          Cancelled at {clock(run.elapsedSeconds)} · phase {run.phase}
+        </div>
+        <h2 style={{ fontSize: 30, letterSpacing: '-.02em', margin: '0 0 12px' }}>
+          You stopped this run after {run.processedCount} of {run.paperTotal} papers.
+        </h2>
+        <p className="dim" style={{ margin: '0 0 22px' }}>
+          Papers already normalised and their {run.claimsExtracted} claims are kept in storage, so a
+          re-run reuses them instead of paying for extraction twice. No clusters were formed and no
+          report was written.
+        </p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={store.startRun}
+            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+          >
+            Resume from {run.processedCount} papers
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost dim"
+            onClick={() => store.go('history')}
+            style={{ whiteSpace: 'nowrap', fontSize: 13 }}
+          >
+            Back to history
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
