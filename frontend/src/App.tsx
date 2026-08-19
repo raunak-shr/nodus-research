@@ -7,6 +7,7 @@ import { ClusterScreen } from './screens/ClusterScreen'
 import { EditsScreen } from './screens/EditsScreen'
 import { FollowupScreen } from './screens/FollowupScreen'
 import { HistoryScreen } from './screens/HistoryScreen'
+import { LandingScreen } from './screens/LandingScreen'
 import { PapersScreen } from './screens/PapersScreen'
 import { PrintScreen } from './screens/PrintScreen'
 import { QueryScreen } from './screens/QueryScreen'
@@ -17,6 +18,10 @@ import { useStore } from './state/store'
 
 export function App(): ReactElement {
   const store = useStore()
+
+  // Outside the shell, deliberately: the landing page is for a visitor with
+  // nothing to navigate to yet, and it carries its own header instead.
+  if (store.screen === 'landing') return <LandingScreen />
 
   return (
     <div className="shell">

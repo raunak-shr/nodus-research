@@ -3,6 +3,7 @@ import type { ReactElement } from 'react'
 import { useStore, type Screen } from '../state/store'
 
 const ICONS: Record<Screen, string> = {
+  landing: 'M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6',
   query: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 8v8M8 12h8',
   run: 'M3 12h4l3-8 4 16 3-8h4',
   report: 'M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6',
@@ -17,6 +18,7 @@ const ICONS: Record<Screen, string> = {
 }
 
 const ITEMS: { id: Screen; label: string }[] = [
+  { id: 'landing', label: 'Landing' },
   { id: 'query', label: 'New query' },
   { id: 'run', label: 'Live run' },
   { id: 'report', label: 'Report' },
