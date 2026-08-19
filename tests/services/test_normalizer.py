@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 from app.models.paper import ProcessingStatus, StudyType
 from app.schemas.extraction import NormalizationOutput
-from app.services import normalizer, pdf
+from app.services import arxiv, normalizer, pdf
 
 PAGES = ["Methods\nWe randomised 240 adults.", "Results\nThe effect was moderate."]
 BODY = "\n".join(PAGES)
@@ -57,15 +57,24 @@ def _paper():
         tldr={"text": "Exercise helps."},
         open_access_pdf_url="https://example.org/a.pdf",
         doi=None,
+        arxiv_id=None,
+        authors=[{"name": "A Researcher"}],
     )
 
 
-async def _normalize(document, db=None):
+async def _normalize(document, db=None, *, from_arxiv=None):
+    """Normalize one paper with the PDF routes stubbed.
+
+    `from_arxiv` is what the fallback would find. It defaults to nothing, so a
+    test that says nothing about arXiv gets no arXiv — the alternative is every
+    short stub document silently going out to the network.
+    """
     db = db or _StubDb()
     agent = AsyncMock()
     agent.ainvoke.return_value = OUTPUT
     with (
         patch.object(pdf, "fetch_pdf_document", AsyncMock(return_value=document)),
+        patch.object(arxiv, "fetch_document", AsyncMock(return_value=from_arxiv)),
         patch.object(normalizer, "get_structured_llm", return_value=agent),
         patch.object(normalizer, "get_llm_name", return_value="stub-model"),
     ):
@@ -110,6 +119,7 @@ async def test_a_failed_llm_call_still_keeps_the_parsed_text():
 
     with (
         patch.object(pdf, "fetch_pdf_document", AsyncMock(return_value=document)),
+        patch.object(arxiv, "fetch_document", AsyncMock(return_value=None)),
         patch.object(normalizer, "get_structured_llm", return_value=agent),
     ):
         record = await normalizer.normalize_paper(_paper(), _StubDb())
@@ -129,3 +139,63 @@ async def test_sections_are_verbatim_slices_of_the_stored_text():
         body = record.sections.get(name)
         if body:
             assert body in record.full_text
+
+
+async def test_a_paper_with_no_reachable_pdf_falls_back_to_arxiv():
+    """More than half the papers a query retrieves arrive with no usable PDF
+    url. A preprint of the same work is often on arXiv."""
+    record = await _normalize(
+        None, from_arxiv=pdf.PdfDocument(text=BODY, page_offsets=OFFSETS, source="arxiv")
+    )
+
+    assert record.full_text == BODY
+    assert record.full_text_source == "arxiv"
+
+
+async def test_an_abstract_only_pdf_is_not_mistaken_for_full_text():
+    """Several publishers serve a one-page cover sheet to a client without a
+    subscription. It parses perfectly and says nothing the abstract did not."""
+    cover_sheet = pdf.PdfDocument(text="Abstract only. Buy access.", page_offsets=[0])
+
+    record = await _normalize(
+        cover_sheet,
+        from_arxiv=pdf.PdfDocument(text=BODY, page_offsets=OFFSETS, source="arxiv"),
+    )
+
+    assert record.full_text == BODY
+    assert record.full_text_source == "arxiv"
+
+
+async def test_the_fallback_never_trades_away_text_it_cannot_beat():
+    """arXiv is there to add full text. A shorter document from it would be a
+    regression dressed as a fallback."""
+    real = pdf.PdfDocument(text=BODY, page_offsets=OFFSETS, source="doi")
+
+    with patch.object(pdf.settings, "pdf_min_full_text_chars", len(BODY) + 1):
+        record = await _normalize(
+            real, from_arxiv=pdf.PdfDocument(text="tiny", page_offsets=[0], source="arxiv")
+        )
+
+    assert record.full_text == BODY
+    assert record.full_text_source == "doi"
+
+
+async def test_a_paper_that_reaches_full_text_normally_costs_no_arxiv_call():
+    """The fallback is throttled to one request every three seconds; spending
+    that on papers already covered would pace the whole run for nothing."""
+    document = pdf.PdfDocument(text=BODY, page_offsets=OFFSETS, source="open_access")
+    fallback = AsyncMock(return_value=None)
+    agent = AsyncMock()
+    agent.ainvoke.return_value = OUTPUT
+
+    with (
+        patch.object(pdf, "fetch_pdf_document", AsyncMock(return_value=document)),
+        patch.object(arxiv, "fetch_document", fallback),
+        patch.object(normalizer, "get_structured_llm", return_value=agent),
+        patch.object(normalizer, "get_llm_name", return_value="stub-model"),
+        patch.object(pdf.settings, "pdf_min_full_text_chars", len(BODY)),
+    ):
+        record = await normalizer.normalize_paper(_paper(), _StubDb())
+
+    fallback.assert_not_awaited()
+    assert record.full_text_source == "open_access"

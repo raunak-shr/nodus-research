@@ -11,6 +11,7 @@ class PaperRead(BaseModel):
     id: UUID
     semantic_scholar_id: str
     doi: str | None
+    arxiv_id: str | None = None
     title: str
     abstract: str | None
     authors: list[dict[str, Any]]
@@ -33,6 +34,7 @@ class NormalizedPaperRead(BaseModel):
     methodology: dict[str, Any] | None = None
     sections: dict[str, Any] | None = None
     has_full_text: bool = False
+    full_text_source: str | None = None
     processing_status: ProcessingStatus
     llm_model_used: str | None
     processed_at: datetime | None

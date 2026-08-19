@@ -160,6 +160,32 @@ class Settings(BaseSettings):
     # following these took full-text coverage from 25% to 60%.
     pdf_follow_landing_page: bool = True
     pdf_resolve_doi: bool = True
+    # Below this many characters a "PDF" is an abstract page, an error page or a
+    # cover sheet, not a paper — several publishers serve exactly that to a
+    # client without a subscription. Such a document is worth no more to the
+    # extractor than the abstract already is, so it is what triggers the arXiv
+    # fallback rather than being quietly accepted as full text.
+    pdf_min_full_text_chars: int = 3000
+
+    # arXiv fallback. When the routes above yield nothing (or nothing longer
+    # than an abstract), a preprint of the same work is often on arXiv, where
+    # the PDF is a file and never behind a login.
+    arxiv_fallback: bool = True
+    # The identifier route is exact. The title search is not, so it can be
+    # turned off separately: it costs an extra throttled call per paper and is
+    # the only path that could ever match the wrong paper.
+    arxiv_search_by_title: bool = True
+    # arXiv asks callers to "play nice and incorporate a 3 second delay in your
+    # code". Every outbound arxiv.org call — searches and downloads alike —
+    # waits this long behind the previous one, process-wide. Papers process ten
+    # at a time, so without it a run would burst twenty requests at once.
+    arxiv_min_interval: float = 3.0
+    arxiv_max_results: int = 5
+    # How close a search hit's title must be to the one Semantic Scholar gave
+    # before its PDF is accepted as this paper's full text. Extracting claims
+    # from the wrong paper is worse than extracting them from an abstract.
+    arxiv_title_match_threshold: float = 0.87
+    arxiv_timeout_seconds: float = 30.0
     llm_timeout_seconds: float = 180.0
     llm_max_retries: int = 2
     # How long a structured question stays reusable. The Interpret button and
