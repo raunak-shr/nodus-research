@@ -15,8 +15,26 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/nodus"
     # auto = TLS for every non-local host (Supabase, RDS, …), none for localhost
     database_ssl: Literal["auto", "require", "disable"] = "auto"
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
+    # Pool sizing is bounded by the *provider's* client cap, not by what this
+    # process can keep busy. Supavisor session mode refuses the connection past
+    # its cap outright (`EMAXCONNSESSION`), and SQLAlchemy opens an overflow
+    # connection rather than waiting whenever the pool is empty — so the number
+    # the provider sees is pool_size + max_overflow. Keep that sum under
+    # db_max_clients; `app/db/session.py` clamps it if it is not.
+    db_pool_size: int = 5
+    db_max_overflow: int = 5
+    # Seconds a task waits for a pooled connection before giving up. Waiting is
+    # the point: the alternative is opening one the provider will refuse.
+    db_pool_timeout: float = 30.0
+    # Hand back idle connections rather than holding a client slot forever.
+    db_pool_recycle: int = 1800
+    # The provider's ceiling on concurrent *client* connections. Supabase's
+    # session pooler defaults to 15; the direct connection allows far more.
+    # 0 disables the clamp.
+    db_max_clients: int = 15
+    # Slots this pool leaves for everything else that connects: Alembic, psql,
+    # Supabase Studio, a second API instance during a deploy.
+    db_client_headroom: int = 3
 
     # LLM
     llm_provider: Literal["azure", "anthropic", "ollama"] = "azure"

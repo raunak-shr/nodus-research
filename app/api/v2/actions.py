@@ -25,7 +25,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.events import PHASE_ORDER, hub
 from app.core.llm_provider import get_embedder_name, get_llm_name
-from app.db.session import AsyncSessionLocal
+from app.db.session import AsyncSessionLocal, pool_warning
 from app.models.claim import Claim
 from app.models.cluster import ClaimCluster
 from app.models.paper import NormalizedPaper, Paper, QueryPaper
@@ -168,6 +168,7 @@ async def meta_config(ctx: ActionContext, params: frames.Empty) -> dict[str, Any
         "embedding_provider": settings.embedding_provider,
         "embedding_model": get_embedder_name(),
         "embedding_dim": settings.embedding_dim,
+        "db_pool_warning": pool_warning,
         "auth_enabled": bool(settings.api_key),
         "max_concurrent_papers": settings.max_concurrent_papers,
         "top_k_papers": settings.top_k_papers,

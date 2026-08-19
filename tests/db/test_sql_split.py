@@ -2,10 +2,12 @@
 
 from sqlalchemy.pool import NullPool
 
+from app.core.config import settings
 from app.db.session import (
     build_connect_args,
     build_engine_kwargs,
     is_transaction_pooled,
+    resolve_pool_limits,
 )
 from app.db.sql_split import split_statements
 
@@ -122,3 +124,42 @@ def test_transaction_pooler_lets_supavisor_do_the_pooling():
     assert build_engine_kwargs(TRANSACTION_POOLER) == {"poolclass": NullPool}
     assert "pool_size" in build_engine_kwargs(SESSION_POOLER)
     assert "pool_size" in build_engine_kwargs(DIRECT)
+
+
+def test_pool_stays_under_the_provider_client_cap(monkeypatch):
+    """pool_size + max_overflow is what a pooler counts, so that is what is capped."""
+    monkeypatch.setattr(settings, "db_pool_size", 10)
+    monkeypatch.setattr(settings, "db_max_overflow", 20)
+    monkeypatch.setattr(settings, "db_max_clients", 15)
+    monkeypatch.setattr(settings, "db_client_headroom", 3)
+
+    pool_size, overflow, warning = resolve_pool_limits()
+    assert pool_size + overflow == 12
+    assert warning and "EMAXCONNSESSION" not in warning
+    assert "clamped" in warning
+
+
+def test_pool_within_the_cap_is_left_alone(monkeypatch):
+    monkeypatch.setattr(settings, "db_pool_size", 5)
+    monkeypatch.setattr(settings, "db_max_overflow", 5)
+    monkeypatch.setattr(settings, "db_max_clients", 15)
+    monkeypatch.setattr(settings, "db_client_headroom", 3)
+
+    assert resolve_pool_limits() == (5, 5, None)
+
+
+def test_zero_max_clients_disables_the_clamp(monkeypatch):
+    monkeypatch.setattr(settings, "db_pool_size", 40)
+    monkeypatch.setattr(settings, "db_max_overflow", 40)
+    monkeypatch.setattr(settings, "db_max_clients", 0)
+
+    assert resolve_pool_limits() == (40, 40, None)
+
+
+def test_pooled_engine_waits_rather_than_opening_a_refused_connection(monkeypatch):
+    monkeypatch.setattr(settings, "db_pool_size", 5)
+    monkeypatch.setattr(settings, "db_max_overflow", 5)
+    kwargs = build_engine_kwargs(SESSION_POOLER)
+    assert kwargs["pool_timeout"] == settings.db_pool_timeout
+    assert kwargs["pool_recycle"] == settings.db_pool_recycle
+    assert kwargs["pool_use_lifo"] is True

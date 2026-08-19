@@ -221,6 +221,12 @@ async def analyze_query(
         threshold=settings.active_cluster_threshold,
     )
 
+    # Reads are done and nothing is pending, so end the transaction here: a
+    # session that stays in one keeps its connection checked out, and the stage
+    # that follows is minutes of LLM calls. Under a pooler that counts clients,
+    # a connection held across that is a slot no other run can use.
+    await db.commit()
+
     semaphore = asyncio.Semaphore(concurrency or settings.max_concurrent_papers)
     total_groups = len(grouped_contexts)
     analyzed = 0
