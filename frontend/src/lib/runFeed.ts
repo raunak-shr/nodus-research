@@ -43,6 +43,8 @@ export class RunFeed {
   private completedCount: number | null = null
   private totalCount: number | null = null
   private clusterCount: number | null = null
+  private reportAvailable = false
+  private reportNote: string | null = null
   private errorMessage: string | null = null
   private readonly startedAt = Date.now()
 
@@ -120,6 +122,10 @@ export class RunFeed {
         if (typeof frame.claims === 'number') this.claims = frame.claims
         break
       case 'clusters_formed':
+      case 'clustering_complete':
+        // `clusters_formed` is the clustering step's own count; the pipeline
+        // republishes it as `clustering_complete`. Reading both means the phase
+        // shows a number even if the first was missed.
         if (typeof frame.clusters === 'number') this.clusterCount = frame.clusters
         break
       case 'section_ready': {
@@ -128,6 +134,17 @@ export class RunFeed {
         if (typeof frame.total === 'number') this.clusterCount = frame.total
         break
       }
+      case 'report_ready':
+        this.reportAvailable = true
+        this.reportNote = null
+        break
+      case 'report_skipped':
+        // A run can finish with nothing to write about. Saying so is the whole
+        // point of the event: without it the panel waits on sections that are
+        // never coming, and offers to open a report that was never written.
+        this.reportAvailable = false
+        this.reportNote = str(frame.reason) ?? 'This run produced no report.'
+        break
       case 'failed':
         this.errorMessage = str(frame.error) ?? 'The run failed.'
         break
@@ -176,6 +193,9 @@ export class RunFeed {
       failedCount,
       claimsExtracted: this.claims,
       sections,
+      sectionTotal: slotCount,
+      reportAvailable: this.reportAvailable,
+      reportNote: this.reportNote,
       events: this.events,
       complete: this.phase === 'completed',
       outcome:

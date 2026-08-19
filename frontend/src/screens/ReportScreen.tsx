@@ -20,17 +20,23 @@ export function ReportScreen(): ReactElement {
   const [openClaims, setOpenClaims] = useState<Record<string, boolean>>({})
 
   if (!report) {
+    // A finished run with no clusters has no report and never will, which is a
+    // different thing from not having run yet — and the reader needs to be told
+    // which of the two they are looking at.
+    const active = store.queries.find((query) => query.id === store.activeQueryId)
+    const ranAndFoundNothing = active?.status === 'completed' && store.clusters.length === 0
     return (
       <div className="screen">
         <div className="kicker" style={{ marginBottom: 14 }}>
           Report
         </div>
         <h2 style={{ fontSize: 30, letterSpacing: '-.022em', margin: '0 0 8px' }}>
-          No report yet.
+          {ranAndFoundNothing ? 'Nothing to report.' : 'No report yet.'}
         </h2>
         <p className="dim" style={{ maxWidth: 560 }}>
-          A report is written at the end of a run, one section per cluster. Start a query, or open a
-          completed run from history.
+          {ranAndFoundNothing
+            ? 'This run finished without forming any claim clusters, so there was no section to write. Its papers and claims are still on the papers screen.'
+            : 'A report is written at the end of a run, one section per cluster. Start a query, or open a completed run from history.'}
         </p>
         <button type="button" className="btn btn-primary" onClick={() => store.go('query')} style={{ fontSize: 13 }}>
           New query

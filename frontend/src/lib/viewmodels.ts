@@ -77,6 +77,12 @@ export interface RunView {
   failedCount: number
   claimsExtracted: number
   sections: SectionSlot[]
+  /** How many sections the server said to expect; 0 while that is unknown. */
+  sectionTotal: number
+  /** Whether a report was actually written, and so is there to open. */
+  reportAvailable: boolean
+  /** Why there is no report, when the run finished without writing one. */
+  reportNote: string | null
   events: EventLine[]
   complete: boolean
   /** Set when the run stopped early; drives the failure and cancel takeovers. */
@@ -135,6 +141,7 @@ const HIGHLIGHT_EVENTS = new Set([
   'paper_processed',
   'section_ready',
   'report_ready',
+  'report_skipped',
   'clusters_formed',
   'run_completed',
   'pipeline_started',
@@ -143,7 +150,10 @@ const HIGHLIGHT_EVENTS = new Set([
 
 function eventDetail(frame: EventFrame): string {
   const bits: string[] = [frame.event]
-  for (const key of ['paper_id', 'cluster_id', 'claims', 'count', 'total', 'endpoint', 'title']) {
+  // `reason` and `error` carry why a step produced nothing, which is the one
+  // thing worth reading in the stream when a run ends without a report.
+  const keys = ['paper_id', 'cluster_id', 'claims', 'count', 'total', 'endpoint', 'title', 'stored', 'reason', 'error']
+  for (const key of keys) {
     const value = frame[key]
     if (value === undefined || value === null) continue
     if (typeof value === 'object') continue
