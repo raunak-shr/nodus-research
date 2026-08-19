@@ -181,6 +181,7 @@ async def analyze_query(
         threshold=settings.active_cluster_threshold,
         max_clusters=settings.max_clusters_per_query,
         min_cluster_size=settings.min_cluster_size,
+        merge_threshold=settings.cluster_merge_threshold,
     )
     vector_map = {claim_id: vector for claim_id, vector, _ in items}
     for group in groups:
