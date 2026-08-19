@@ -8,6 +8,10 @@ Starts nothing: point it at a running server.
 Exercises the full lifecycle — submit, stream progress, read clusters, edit a
 cluster (Phase 9), regenerate and export the report (Phase 8), and open a
 follow-up query (Phase 10) — asserting each step.
+
+Submitting inline (`wait=true`) is admin-only, so both keys default to whatever
+the local .env holds and are sent only when set. Point `--admin-key` at the
+server's ADMIN_API_KEY if it differs from this machine's.
 """
 
 from __future__ import annotations
@@ -18,6 +22,8 @@ import json
 import sys
 
 import httpx
+
+from app.core.config import settings
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -36,13 +42,22 @@ def check(label: str, condition: bool, detail: str = "") -> bool:
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://localhost:8000")
-    parser.add_argument("--api-key", default=None)
+    parser.add_argument("--api-key", default=settings.api_key or None)
+    parser.add_argument(
+        "--admin-key",
+        default=settings.admin_api_key or None,
+        help="Required for the inline run below; the server refuses wait=true without it",
+    )
     parser.add_argument("--query", default="Does aerobic exercise reduce depression severity?")
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=1800.0)
     args = parser.parse_args()
 
-    headers = {"X-API-Key": args.api_key} if args.api_key else {}
+    headers = {}
+    if args.api_key:
+        headers["X-API-Key"] = args.api_key
+    if args.admin_key:
+        headers["X-Admin-Key"] = args.admin_key
 
     async with httpx.AsyncClient(
         base_url=args.base_url, headers=headers, timeout=args.timeout
@@ -58,6 +73,12 @@ async def main() -> int:
         created = await client.post(
             "/api/v1/queries/", json={"query": args.query}, params={"wait": "true"}
         )
+        if created.status_code == 403:
+            check("POST /api/v1/queries/", False, "wait=true needs ADMIN_API_KEY — see --admin-key")
+            return 1
+        if created.status_code == 429:
+            check("POST /api/v1/queries/", False, f"throttled: {created.text[:160]}")
+            return 1
         if not check("POST /api/v1/queries/", created.status_code == 201, created.text[:200]):
             return 1
         query_id = created.json()["id"]

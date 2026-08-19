@@ -43,7 +43,12 @@ def _citation(paper: Paper) -> str:
     return f"{surname}, {paper.publication_year or 'n.d.'}"
 
 
-async def _load_clusters(query_id: UUID, db: AsyncSession) -> list[ClaimCluster]:
+async def load_clusters(query_id: UUID, db: AsyncSession) -> list[ClaimCluster]:
+    """A query's clusters with their claim links eagerly loaded.
+
+    Public alongside `section_claim_rows`: `report_edit.refresh_sources` needs the
+    same two pieces this module uses to build a section.
+    """
     return list(
         (
             await db.execute(
@@ -58,7 +63,14 @@ async def _load_clusters(query_id: UUID, db: AsyncSession) -> list[ClaimCluster]
     )
 
 
-async def _claim_rows(cluster: ClaimCluster, db: AsyncSession) -> list[dict[str, Any]]:
+async def section_claim_rows(
+    cluster: ClaimCluster, db: AsyncSession
+) -> list[dict[str, Any]]:
+    """The claim rows a report section carries for one cluster.
+
+    Public because `report_edit.refresh_sources` rebuilds exactly these rows
+    without re-synthesising the prose around them.
+    """
     claim_ids = [cc.claim_id for cc in cluster.cluster_claims]
     if not claim_ids:
         return []
@@ -84,6 +96,13 @@ async def _claim_rows(cluster: ClaimCluster, db: AsyncSession) -> list[dict[str,
             "effect_size": claim.effect_size,
             "confidence_score": claim.confidence_score,
             "stance": stance_by_claim.get(claim.id, "supports"),
+            # Carried into report sections so a citation chip in the rendered
+            # document has the same provenance the cluster view does.
+            "source_match": claim.source_match,
+            "source_quote": claim.source_quote,
+            "source_origin": claim.source_origin,
+            "source_section": claim.source_section,
+            "source_page": claim.source_page,
         }
         for claim, paper in rows
     ]
@@ -173,7 +192,7 @@ async def generate_report(
     """Generate (or regenerate) the report for a query."""
     emit: ProgressCallback = on_progress or _no_progress
 
-    clusters = await _load_clusters(query_id, db)
+    clusters = await load_clusters(query_id, db)
     if not clusters:
         logger.info("No clusters for query %s — nothing to synthesize", query_id)
         return None
@@ -186,7 +205,7 @@ async def generate_report(
         )
     )
 
-    claim_rows = [await _claim_rows(cluster, db) for cluster in clusters]
+    claim_rows = [await section_claim_rows(cluster, db) for cluster in clusters]
 
     semaphore = asyncio.Semaphore(settings.max_concurrent_papers)
     total = len(clusters)

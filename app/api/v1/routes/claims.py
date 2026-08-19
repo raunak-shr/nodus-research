@@ -13,9 +13,9 @@ from uuid import UUID
 from fastapi import APIRouter, Response
 from sqlalchemy import select
 
-from app.api.v1.deps import DBSession, PageParams
+from app.api.v1.deps import DBSession, EditRateLimit, PageParams
 from app.models.claim import Claim
-from app.schemas.claim import ClaimRead
+from app.schemas.claim import ClaimRead, ClaimSourceRead
 from app.schemas.cluster import (
     ClaimClusterDetail,
     ClaimClusterRead,
@@ -23,7 +23,7 @@ from app.schemas.cluster import (
     ClusterClaimUpdate,
     ClusterUpdate,
 )
-from app.services import cluster_edit
+from app.services import cluster_edit, provenance
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -43,6 +43,17 @@ async def list_claims_for_paper(
     return [ClaimRead.model_validate(c) for c in result.scalars().all()]
 
 
+@router.get("/{claim_id}/source", response_model=ClaimSourceRead)
+async def get_claim_source(claim_id: UUID, db: DBSession) -> ClaimSourceRead:
+    """The passage a claim was extracted from, with the quote located in it.
+
+    A read, so it is not rate limited. `available: false` is a normal answer —
+    abstract-only papers and truncated PDFs leave nothing to point at, and the
+    caller is told which it was rather than shown a chip that guesses.
+    """
+    return await provenance.load_claim_source(claim_id, db)
+
+
 @router.get("/clusters/queries/{query_id}", response_model=list[ClaimClusterRead])
 async def list_clusters_for_query(query_id: UUID, db: DBSession) -> list[ClaimClusterRead]:
     """List claim clusters produced for a query, best evidence first."""
@@ -56,7 +67,9 @@ async def get_cluster(cluster_id: UUID, db: DBSession) -> ClaimClusterDetail:
     return await cluster_edit.get_detail(cluster_id, db)
 
 
-@router.patch("/clusters/{cluster_id}", response_model=ClaimClusterDetail)
+@router.patch(
+    "/clusters/{cluster_id}", response_model=ClaimClusterDetail, dependencies=[EditRateLimit]
+)
 async def update_cluster(
     cluster_id: UUID, body: ClusterUpdate, db: DBSession
 ) -> ClaimClusterDetail:
@@ -67,7 +80,11 @@ async def update_cluster(
     return await cluster_edit.update_cluster(cluster_id, body, db)
 
 
-@router.patch("/clusters/{cluster_id}/claims/{claim_id}", response_model=ClaimClusterDetail)
+@router.patch(
+    "/clusters/{cluster_id}/claims/{claim_id}",
+    response_model=ClaimClusterDetail,
+    dependencies=[EditRateLimit],
+)
 async def update_cluster_claim(
     cluster_id: UUID, claim_id: UUID, body: ClusterClaimUpdate, db: DBSession
 ) -> ClaimClusterDetail:
@@ -75,7 +92,12 @@ async def update_cluster_claim(
     return await cluster_edit.set_stance(cluster_id, claim_id, body.stance, db)
 
 
-@router.post("/clusters/{cluster_id}/claims", response_model=ClaimClusterDetail, status_code=201)
+@router.post(
+    "/clusters/{cluster_id}/claims",
+    response_model=ClaimClusterDetail,
+    status_code=201,
+    dependencies=[EditRateLimit],
+)
 async def add_claim_to_cluster(
     cluster_id: UUID, body: ClusterClaimAdd, db: DBSession
 ) -> ClaimClusterDetail:
@@ -83,7 +105,9 @@ async def add_claim_to_cluster(
     return await cluster_edit.add_claim(cluster_id, body.claim_id, body.stance, db)
 
 
-@router.delete("/clusters/{cluster_id}/claims/{claim_id}", status_code=204)
+@router.delete(
+    "/clusters/{cluster_id}/claims/{claim_id}", status_code=204, dependencies=[EditRateLimit]
+)
 async def remove_claim_from_cluster(cluster_id: UUID, claim_id: UUID, db: DBSession) -> Response:
     """Phase 9 — drop a claim that does not belong in this cluster."""
     await cluster_edit.remove_claim(cluster_id, claim_id, db)

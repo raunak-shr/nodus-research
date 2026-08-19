@@ -21,6 +21,83 @@ _TIER_LABEL = {
 }
 
 
+#: Mirrors `report_render.prov_kind` — the same four states, the same precedence,
+#: so a markdown export and the PDF cannot disagree about a claim.
+_PROV_MARK = {
+    "verified": "verified",
+    "approximate": "approximate span",
+    "abstract": "abstract only",
+    "unavailable": "not locatable",
+}
+_PROV_NOTE = {
+    "approximate": "Span boundaries approximate; verify against the page.",
+    "abstract": "Quoted from the abstract; the paper body was never retrieved.",
+    "unavailable": "Quote recorded but not locatable in the retrieved text.",
+}
+_MARK_LETTERS = "abcdefghijklmnopqrstuvwxyz"
+
+
+def _mark(position: int, index: int) -> str:
+    return f"{index}{_MARK_LETTERS[position % len(_MARK_LETTERS)]}"
+
+
+def _has_provenance(claims: list[dict[str, Any]]) -> bool:
+    """Mirrors `report_render.has_provenance` — see it for why the key matters."""
+    return any("source_match" in claim for claim in claims)
+
+
+def _prov_kind(claim: dict[str, Any]) -> str:
+    """Origin before match: an abstract-only quote is not verified against the body."""
+    if claim.get("source_origin") == "abstract":
+        return "abstract"
+    match = claim.get("source_match") or "none"
+    if match in {"exact", "normalized"}:
+        return "verified"
+    if match == "fuzzy":
+        return "approximate"
+    return "unavailable"
+
+
+def _prov_cell(claim: dict[str, Any]) -> str:
+    kind = _prov_kind(claim)
+    if kind in {"unavailable", "abstract"}:
+        return _PROV_MARK[kind]
+    where = claim.get("source_section") or "source"
+    page = claim.get("source_page")
+    return f"{_PROV_MARK[kind]}, {where}" + (f", p. {page}" if page else "")
+
+
+def _source_lines(claims: list[dict[str, Any]], index: int) -> list[str]:
+    """The verbatim quote behind each claim, as a markdown list.
+
+    Markdown is the format most likely to be pasted into a manuscript, so the
+    quotes travel with it rather than being left behind in the app.
+    """
+    lines: list[str] = []
+    for position, claim in enumerate(claims):
+        quote = claim.get("source_quote")
+        if not quote:
+            continue
+        kind = _prov_kind(claim)
+        page = claim.get("source_page")
+        locus = ", ".join(
+            part
+            for part in (claim.get("source_section"), f"p. {page}" if page else None)
+            if part
+        )
+        note = _PROV_NOTE.get(kind)
+        lines.append(
+            f"- **{_mark(position, index)}** ({_PROV_MARK[kind]}) "
+            f"{claim.get('citation')}"
+            + (f" — {locus}" if locus else "")
+            + f": “{quote}”"
+            + (f" *{note}*" if note else "")
+        )
+    if not lines:
+        return []
+    return ["", f"**Sources for section {index}**", "", *lines, ""]
+
+
 def to_dict(report: Report, query: Query) -> dict[str, Any]:
     return {
         "query": {
@@ -98,7 +175,10 @@ def to_markdown(report: Report, query: Query) -> str:
             lines += [""]
 
         claims = section.get("claims") or []
-        if claims:
+        if claims and not _has_provenance(claims):
+            # Synthesised before provenance existed, so it renders as it did
+            # then. Marking these claims "not locatable" would report a search
+            # that never happened.
             lines += [
                 "### Underlying claims",
                 "",
@@ -111,6 +191,22 @@ def to_markdown(report: Report, query: Query) -> str:
                     f"| {claim.get('stance')} | {claim.get('citation')} | {text} | "
                     f"{claim.get('sample_size') or '—'} |"
                 )
+            lines += [""]
+        elif claims:
+            lines += [
+                "### Underlying claims",
+                "",
+                "| Ref | Stance | Source | Claim | Provenance | n |",
+                "|---|---|---|---|---|---|",
+            ]
+            for position, claim in enumerate(claims):
+                text = (claim.get("claim_text") or "").replace("|", "\\|")
+                mark = _mark(position, index) if claim.get("source_quote") else ""
+                lines.append(
+                    f"| {mark} | {claim.get('stance')} | {claim.get('citation')} | {text} | "
+                    f"{_prov_cell(claim)} | {claim.get('sample_size') or '—'} |"
+                )
+            lines += _source_lines(claims, index)
             lines += [""]
 
         caveats = section.get("caveats") or []

@@ -45,6 +45,23 @@ class Claim(Base):
     effect_size: Mapped[dict | None] = mapped_column(JSONB)
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     position_in_paper: Mapped[int | None] = mapped_column(Integer)
+
+    # Provenance — where in the paper this claim came from. Offsets index the
+    # paper's canonical source text, which `app/services/provenance.py` defines
+    # as parsed full text when a PDF was available and the abstract otherwise;
+    # they are meaningless without it. `source_match` records how the quote was
+    # located ("exact", "normalized", "fuzzy") or that it was not ("none"), so a
+    # citation chip can say "verified" or "approximate" instead of guessing.
+    source_quote: Mapped[str | None] = mapped_column(Text)
+    # Which text the quote was resolved against: "full_text", "abstract", or
+    # NULL when there was no quote or no text. A reader must be able to tell a
+    # sentence found in the paper body from one found only in the abstract.
+    source_origin: Mapped[str | None] = mapped_column(String(20))
+    source_section: Mapped[str | None] = mapped_column(String(50))
+    source_start: Mapped[int | None] = mapped_column(Integer)
+    source_end: Mapped[int | None] = mapped_column(Integer)
+    source_page: Mapped[int | None] = mapped_column(Integer)
+    source_match: Mapped[str] = mapped_column(String(20), nullable=False, default="none")
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

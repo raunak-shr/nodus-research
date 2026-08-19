@@ -1,0 +1,1733 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=1440">
+<link rel="stylesheet" href="_ds/modernist-46d9b75b-f3f8-4a35-be38-3c894aa658dd/styles.css">
+<script src="_ds/modernist-46d9b75b-f3f8-4a35-be38-3c894aa658dd/_ds_bundle.js"></script>
+<style>
+:root{
+  --n-bg:#201e1d;--n-panel:#2a2827;--n-panel2:#343130;--n-inset:#1a1918;
+  --n-line:rgba(243,242,242,.16);--n-line2:rgba(243,242,242,.34);
+  --n-text:#f3f2f2;--n-dim:rgba(243,242,242,.70);--n-faint:rgba(243,242,242,.46);
+  --n-sup:#f3f2f2;--n-con:#ff563c;--n-neu:#9a9694;
+  --n-sup-bg:rgba(243,242,242,.10);--n-con-bg:rgba(255,86,60,.14);--n-neu-bg:rgba(154,150,148,.12);
+}
+[data-theme="light"]{
+  --n-bg:#f3f2f2;--n-panel:#eae9e9;--n-panel2:#e1dfdf;--n-inset:#fbfafa;
+  --n-line:rgba(32,30,29,.18);--n-line2:rgba(32,30,29,.40);
+  --n-text:#201e1d;--n-dim:rgba(32,30,29,.72);--n-faint:rgba(32,30,29,.48);
+  --n-sup:#201e1d;--n-con:#ae1800;--n-neu:#6d6968;
+  --n-sup-bg:rgba(32,30,29,.07);--n-con-bg:rgba(174,24,0,.09);--n-neu-bg:rgba(109,105,104,.09);
+}
+body{margin:0;background:var(--n-bg);color:var(--n-text);font-family:var(--font-body);font-size:15px;-webkit-font-smoothing:antialiased}
+a{color:var(--color-accent)}
+/* Modernist grammar: strong 2px rules, zero radius, flush-left labels. */
+.btn,.btn-primary,.btn-secondary,.btn-ghost{justify-content:flex-start;border-radius:0}
+.card,.input,.tag,.seg,.dialog,.table{border-radius:0}
+h1,h2,h3,h4{letter-spacing:-.03em}
+@media (max-width:720px){
+  [data-src-panel]{top:auto !important;left:0 !important;width:auto !important;max-height:72vh;
+    border-left:0 !important;border-top:2px solid var(--n-text)}
+}
+a:hover{color:var(--color-accent-400)}
+@keyframes n-pulse{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes n-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes n-sweep{from{transform:translateX(-100%)}to{transform:translateX(300%)}}
+</style>
+</helmet>
+<div data-theme="{{ theme }}" style="display:flex;min-height:900px;width:1440px;background:var(--n-bg);color:var(--n-text)">
+
+  <nav style="width:196px;flex:0 0 196px;border-right:2px solid var(--n-line2);padding:22px 0 18px;display:flex;flex-direction:column;gap:26px;position:sticky;top:0;height:900px">
+    <div style="padding:0 18px;display:flex;align-items:center;gap:9px">
+      <div style="width:22px;height:22px;border:1px solid var(--color-accent);border-radius:0;position:relative;flex:0 0 22px">
+        <div style="position:absolute;left:4px;top:4px;width:5px;height:5px;border-radius:0;background:var(--color-accent)"></div>
+        <div style="position:absolute;right:4px;bottom:4px;width:5px;height:5px;border-radius:0;background:var(--color-accent)"></div>
+        <div style="position:absolute;left:6px;top:6px;width:12px;height:1px;background:var(--color-accent);transform:rotate(45deg);transform-origin:left center;opacity:.7"></div>
+      </div>
+      <div style="font-family:var(--font-heading);font-weight:500;font-size:16px;letter-spacing:-.01em">Nodus</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:1px">
+      <sc-for list="{{ nav }}" as="item" hint-placeholder-count="10">
+        <button onClick="{{ item.go }}" style="{{ item.style }}" style-hover="background:var(--n-panel2)">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 16px;opacity:.9" aria-hidden="true"><path d="{{ item.icon }}"></path></svg>
+          <span style="white-space:nowrap;flex:1 1 auto">{{ item.label }}</span>
+          <span style="{{ item.badgeStyle }}">{{ item.badge }}</span>
+        </button>
+      </sc-for>
+    </div>
+
+    <div style="margin-top:auto;padding:0 18px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--n-faint);letter-spacing:.06em;text-transform:uppercase">Appearance</div>
+      <div style="display:flex;border:1px solid var(--n-line2);border-radius:var(--radius-sm);overflow:hidden">
+        <button onClick="{{ setDark }}" style="{{ darkBtn }}">Dark</button>
+        <button onClick="{{ setLight }}" style="{{ lightBtn }}">Light</button>
+      </div>
+      <div style="font-size:11px;color:var(--n-faint);line-height:1.5;font-variant-numeric:tabular-nums">
+        ws /api/v2/ws · <span style="{{ socketColor }}">{{ socketLabel }}</span><br>seq {{ seq }}
+      </div>
+    </div>
+  </nav>
+
+  <main style="flex:1;min-width:0;position:relative">
+
+    <sc-if value="{{ isQuery }}" hint-placeholder-val="{{ true }}">
+    <div style="padding:0 0 90px">
+      <div style="padding:104px 88px 0;max-width:940px">
+        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:20px">New query</div>
+        <h1 style="font-size:38px;line-height:1.14;letter-spacing:-.02em;margin:0 0 10px;max-width:660px;text-wrap:pretty">Ask one question that a body of literature could answer.</h1>
+        <p style="color:var(--n-dim);max-width:560px;margin:0 0 34px">Nodus retrieves papers, extracts claims, clusters equivalent claims across papers, and reports where they agree, where they conflict, and how far each finding can be trusted.</p>
+
+        <div style="border:1px solid var(--n-line2);border-radius:var(--radius-md);background:var(--n-panel);padding:2px 2px 2px;box-shadow:var(--shadow-sm)">
+          <textarea value="{{ q }}" onChange="{{ onQ }}" rows="2" spellCheck="{{ false }}" style="width:100%;border:0;background:transparent;color:var(--n-text);font-family:var(--font-body);font-size:22px;line-height:1.4;letter-spacing:-.01em;padding:20px 22px 8px;resize:none;outline:none"></textarea>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px 12px 22px">
+            <div style="display:flex;gap:8px;align-items:center">
+              <sc-for list="{{ examples }}" as="ex" hint-placeholder-count="3">
+                <button onClick="{{ ex.go }}" style="border:1px solid var(--n-line);background:transparent;color:var(--n-dim);font-family:var(--font-body);font-size:12px;padding:5px 10px;border-radius:0;cursor:pointer" style-hover="border-color:var(--color-accent);color:var(--n-text)">{{ ex.label }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:10px;align-items:center">
+              <span style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ qLen }} / 400</span>
+              <button onClick="{{ structure }}" class="btn btn-primary" style="white-space:nowrap;font-size:13px;padding:8px 16px">Interpret</button>
+            </div>
+          </div>
+        </div>
+
+        <sc-if value="{{ showStructured }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:34px;animation:n-in .3s ease both">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:16px">
+            <span style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint)">query_structured</span>
+            <span style="font-size:11px;color:var(--n-faint)">received 1.2 s after submit</span>
+          </div>
+          <div style="display:grid;grid-template-columns:150px 1fr;gap:1px;border-top:2px solid var(--n-line2);font-size:14px">
+            <div style="padding:12px 0;color:var(--n-faint);font-size:12px;letter-spacing:.04em">topic</div>
+            <div style="padding:12px 0">Aerobic exercise as an intervention for depressive disorders</div>
+            <div style="padding:12px 0;color:var(--n-faint);font-size:12px;letter-spacing:.04em;border-top:2px solid var(--n-line2)">core_concepts</div>
+            <div style="padding:12px 0;border-top:2px solid var(--n-line2);display:flex;gap:6px;flex-wrap:wrap">
+              <span class="tag tag-outline">aerobic exercise</span><span class="tag tag-outline">depression severity</span><span class="tag tag-outline">randomised controlled trial</span><span class="tag tag-outline">symptom reduction</span>
+            </div>
+            <div style="padding:12px 0;color:var(--n-faint);font-size:12px;letter-spacing:.04em;border-top:2px solid var(--n-line2)">search_keywords</div>
+            <div style="padding:12px 0;border-top:2px solid var(--n-line2);color:var(--n-dim);font-size:13px">aerobic exercise depression RCT · exercise antidepressant effect · physical activity major depressive disorder · exercise dose response depression</div>
+            <div style="padding:12px 0;color:var(--n-faint);font-size:12px;letter-spacing:.04em;border-top:2px solid var(--n-line2)">outcome_measure</div>
+            <div style="padding:12px 0;border-top:2px solid var(--n-line2)">Change in depression severity score (HAM-D, BDI-II, PHQ-9), standardised mean difference</div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center;margin-top:26px">
+            <button onClick="{{ startRun }}" class="btn btn-primary" style="white-space:nowrap;font-size:14px;padding:10px 20px">Run analysis</button>
+            <button onClick="{{ goVague }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:13px">Edit question</button>
+            <span style="font-size:12px;color:var(--n-faint);margin-left:6px">~20 papers · est. 3–5 min · 1 of 2 pipeline slots free</span>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ showClarify }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:34px;animation:n-in .3s ease both;border:1px solid var(--n-line2);border-left:2px solid var(--color-accent);border-radius:var(--radius-md);background:var(--n-panel);padding:22px 24px;max-width:720px">
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-400);margin-bottom:10px">clarification_needed</div>
+          <div style="font-size:17px;line-height:1.45;margin-bottom:6px">“Is exercise good?” is too broad to retrieve against.</div>
+          <p style="color:var(--n-dim);font-size:14px;margin:0 0 18px">The structurer could not fix an outcome measure or a population. It will still run, but ranking will be near-random and clusters will mix unrelated endpoints. Three things would fix it:</p>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+            <div style="display:flex;gap:10px;font-size:14px"><span style="color:var(--n-faint);font-variant-numeric:tabular-nums">01</span><span>Name the outcome — mortality, depression severity, VO₂max?</span></div>
+            <div style="display:flex;gap:10px;font-size:14px"><span style="color:var(--n-faint);font-variant-numeric:tabular-nums">02</span><span>Name the population — adults with a diagnosis, athletes, older adults?</span></div>
+            <div style="display:flex;gap:10px;font-size:14px"><span style="color:var(--n-faint);font-variant-numeric:tabular-nums">03</span><span>Name the exposure — aerobic, resistance, any physical activity?</span></div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <button onClick="{{ useSuggested }}" class="btn btn-primary" style="white-space:nowrap;font-size:13px">Use “Does aerobic exercise reduce depression severity?”</button>
+            <button onClick="{{ startRun }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:13px">Run anyway</button>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isRun }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:0 0 80px">
+      <div style="position:sticky;top:0;z-index:5;background:var(--n-bg);border-bottom:2px solid var(--n-line2);padding:26px 56px 20px">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:30px">
+          <div style="min-width:0">
+            <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:8px">run_id 8f2c41 · {{ phaseLabel }}</div>
+            <div style="font-size:23px;letter-spacing:-.015em;line-height:1.25;max-width:640px">{{ q }}</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex:0 0 auto">
+            <div style="text-align:right;margin-right:8px">
+              <div style="font-size:24px;font-variant-numeric:tabular-nums;letter-spacing:-.02em">{{ elapsed }}</div>
+              <div style="font-size:11px;color:var(--n-faint)">elapsed</div>
+            </div>
+            <button onClick="{{ jumpDone }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:12px">Skip to end</button>
+            <button onClick="{{ cancelRun }}" class="btn btn-secondary" style="color:var(--n-text);white-space:nowrap;font-size:12px;border-color:var(--n-line2)">Cancel run</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:0;margin-top:22px;align-items:stretch">
+          <sc-for list="{{ phases }}" as="p" hint-placeholder-count="9">
+            <div style="{{ p.wrapStyle }}">
+              <div style="{{ p.barStyle }}"></div>
+              <div style="{{ p.labelStyle }}">{{ p.name }}</div>
+              <div style="font-size:10px;color:var(--n-faint);font-variant-numeric:tabular-nums;height:12px">{{ p.detail }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 400px;gap:0;align-items:start">
+        <div style="padding:30px 40px 0 56px">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:16px">
+            <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint)">processing · {{ procCount }} of 20 papers</div>
+            <div style="font-size:12px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ claimsSoFar }} claims extracted · {{ failCount }} failed</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:1px 26px">
+            <sc-for list="{{ paperCells }}" as="pc" hint-placeholder-count="20">
+              <div style="{{ pc.rowStyle }}">
+                <div style="{{ pc.dotStyle }}"></div>
+                <div style="min-width:0">
+                  <div style="{{ pc.titleStyle }}">{{ pc.title }}</div>
+                  <div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">
+                    <span style="{{ pc.statusStyle }}">{{ pc.status }}</span>
+                    <span>{{ pc.meta }}</span>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="padding:30px 56px 0 0;position:sticky;top:210px">
+          <div style="border:1px solid var(--n-line);border-radius:var(--radius-md);background:var(--n-panel);padding:18px 20px;margin-bottom:16px">
+            <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">Report assembling</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <sc-for list="{{ sectionSlots }}" as="s" hint-placeholder-count="6">
+                <div style="{{ s.style }}">
+                  <div style="{{ s.tickStyle }}">{{ s.tick }}</div>
+                  <div style="min-width:0;font-size:13px;line-height:1.35">{{ s.heading }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ runComplete }}" hint-placeholder-val="{{ false }}">
+              <button onClick="{{ goReport }}" class="btn btn-primary btn-block" style="margin-top:18px;font-size:13px">Open report</button>
+            </sc-if>
+          </div>
+          <sc-if value="{{ showStream }}" hint-placeholder-val="{{ true }}">
+          <div style="border:1px solid var(--n-line);border-radius:var(--radius-md);background:var(--n-inset);padding:14px 16px;font-size:11.5px;line-height:1.7;color:var(--n-dim);font-variant-numeric:tabular-nums;max-height:250px;overflow:hidden">
+            <div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:8px">Event stream</div>
+            <sc-for list="{{ events }}" as="e" hint-placeholder-count="8">
+              <div style="display:flex;gap:8px"><span style="color:var(--n-faint);flex:0 0 42px">{{ e.seq }}</span><span style="{{ e.style }}">{{ e.text }}</span></div>
+            </sc-for>
+          </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <sc-if value="{{ showSeqGap }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(10,11,18,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:20">
+        <div style="width:520px;background:var(--n-panel);border:1px solid var(--n-line2);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:26px 28px">
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-400);margin-bottom:10px">Event gap detected</div>
+          <div style="font-size:19px;letter-spacing:-.01em;margin-bottom:8px">Missed events 1841 – 1857.</div>
+          <p style="color:var(--n-dim);font-size:14px;margin:0 0 16px">The socket delivered seq 1858 after 1840. Sixteen events never arrived, so what is on screen may be behind or out of order. Nodus will not guess the difference.</p>
+          <div style="border:1px solid var(--n-line);border-radius:var(--radius-sm);background:var(--n-inset);padding:12px 14px;font-size:11.5px;font-variant-numeric:tabular-nums;color:var(--n-dim);margin-bottom:18px">
+            <div>last_applied_seq&nbsp;&nbsp;1840</div>
+            <div>received_seq&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1858</div>
+            <div style="color:var(--n-text)">gap&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;17 events</div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onClick="{{ reloadRun }}" class="btn btn-primary" style="white-space:nowrap;font-size:13px">Reload run state</button>
+            <button onClick="{{ clearFlag }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:13px">Dismiss</button>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ showFailed }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:var(--n-bg);z-index:15;padding:120px 56px;display:flex">
+        <div style="max-width:640px">
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-con);margin-bottom:14px">Run failed · phase retrieving</div>
+          <h2 style="font-size:30px;letter-spacing:-.02em;margin:0 0 12px">The search provider returned 502 four times in a row.</h2>
+          <p style="color:var(--n-dim);margin:0 0 22px">Nodus stopped after the fourth attempt rather than spending the LLM budget on a partial retrieval. Nothing was stored; no claims were extracted. The structured query is kept, so re-running costs one call.</p>
+          <div style="border:1px solid var(--n-line);border-radius:var(--radius-sm);background:var(--n-inset);padding:14px 16px;font-size:12px;font-variant-numeric:tabular-nums;color:var(--n-dim);margin-bottom:26px">
+            <div>error&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RetrievalUnavailable</div>
+            <div>message&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;upstream 502 from openalex after 4 attempts (backoff 1s, 2s, 4s, 8s)</div>
+            <div>failed_at&nbsp;&nbsp;&nbsp;&nbsp;phase=retrieving seq=214</div>
+            <div>papers_stored 0</div>
+          </div>
+          <div style="display:flex;gap:10px">
+            <button onClick="{{ restartRun }}" class="btn btn-primary" style="white-space:nowrap;font-size:13px">Retry run</button>
+            <button onClick="{{ goHistory }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:13px">Back to history</button>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ showCancelled }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:var(--n-bg);z-index:15;padding:120px 56px;display:flex">
+        <div style="max-width:640px">
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">Cancelled at 2 m 14 s · phase processing</div>
+          <h2 style="font-size:30px;letter-spacing:-.02em;margin:0 0 12px">You stopped this run after 12 of 20 papers.</h2>
+          <p style="color:var(--n-dim);margin:0 0 22px">Papers already normalised and their 71 claims are kept in storage, so a re-run will reuse them instead of paying for extraction twice. No clusters were formed and no report was written.</p>
+          <div style="display:flex;gap:10px">
+            <button onClick="{{ restartRun }}" class="btn btn-primary" style="white-space:nowrap;font-size:13px">Resume from 12 papers</button>
+            <button onClick="{{ goHistory }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:13px">Back to history</button>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ showBusy }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;background:rgba(10,11,18,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:20">
+        <div style="width:540px;background:var(--n-panel);border:1px solid var(--n-line2);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:26px 28px">
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:12px">429 · both pipeline slots busy</div>
+          <div style="font-size:21px;letter-spacing:-.015em;margin-bottom:8px">Both slots are busy.</div>
+          <p style="color:var(--n-dim);font-size:14px;margin:0 0 18px">This deployment runs two analyses at a time on purpose — a third would slow both and spend the day's LLM budget faster than it earns. Your question was not queued and not lost; it is sitting in the box, ready to send.</p>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px">
+            <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--n-line);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px">
+              <span>Slot 1</span>
+              <span style="color:var(--n-faint);font-variant-numeric:tabular-nums">synthesising · running 6 m 02 s</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;border:1px solid var(--n-line);border-radius:var(--radius-sm);padding:10px 12px;font-size:13px">
+              <span>Slot 2</span>
+              <span style="color:var(--n-faint);font-variant-numeric:tabular-nums">processing 9 of 18 papers · running 2 m 41 s</span>
+            </div>
+            <div style="font-size:11.5px;color:var(--n-faint);line-height:1.5">Phase and per-paper progress only — the questions in the other slots are not shown, and nothing here predicts a finish time.</div>
+          </div>
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <button onClick="{{ toggleRetry }}" class="btn btn-primary" style="white-space:nowrap;font-size:13px">{{ retryLabel }}</button>
+            <span style="font-size:11.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ retryStatus }}</span>
+          </div>
+          <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums;margin-top:12px;padding-top:12px;border-top:1px solid var(--n-line2);line-height:1.6">Retry-After 4 min · 7 of 10 submissions available, refilling 1 per minute · 14 of 40 runs today</div>
+        </div>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isReport }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:0 0 110px">
+      <div style="position:sticky;top:0;z-index:5;background:var(--n-bg);border-bottom:2px solid var(--n-line2);padding:14px 56px;display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums">run 8f2c41 · completed 09:45 · 4 m 12 s · 17 of 20 papers · 6 clusters · 143 claims</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span style="font-size:11px;color:var(--n-faint);margin-right:4px">Export</span>
+          <button class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:12px;padding:5px 10px">Markdown</button>
+          <button class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:12px;padding:5px 10px">JSON</button>
+          <button onClick="{{ goPrint }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:12px;padding:5px 10px">HTML</button>
+          <button onClick="{{ goPrint }}" class="btn btn-secondary" style="color:var(--n-text);white-space:nowrap;font-size:12px;padding:5px 10px;border-color:var(--n-line2)">PDF</button>
+        </div>
+      </div>
+
+      <div style="padding:64px 56px 0;max-width:1180px">
+        <div style="max-width:760px">
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:18px">Report</div>
+          <h1 style="font-size:40px;line-height:1.1;letter-spacing:-.025em;margin:0 0 14px;text-wrap:pretty">Aerobic exercise and depression severity: a moderate effect, contested at the method</h1>
+          <div style="font-size:13.5px;color:var(--n-dim);margin-bottom:34px">In answer to “Does aerobic exercise reduce depression severity?” · 17 papers, 1998–2024 · generated 18 Aug 2026</div>
+
+          <sc-if value="{{ degraded }}" hint-placeholder-val="{{ true }}">
+          <div style="border:1px solid var(--n-line2);border-left:2px solid var(--n-con);border-radius:var(--radius-sm);padding:16px 18px;margin-bottom:40px;background:var(--n-panel)">
+            <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--n-con);margin-bottom:8px">Built on 17 of 20 retrieved papers</div>
+            <div style="display:flex;flex-direction:column;gap:7px">
+              <sc-for list="{{ degradeDetail }}" as="d" hint-placeholder-count="3">
+                <div style="display:flex;gap:10px;font-size:12.5px;line-height:1.45">
+                  <span style="color:var(--n-faint);flex:0 0 30px;font-variant-numeric:tabular-nums">{{ d.id }}</span>
+                  <span style="flex:1">{{ d.title }}</span>
+                  <span style="color:var(--n-dim);flex:0 0 250px">{{ d.why }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-size:12px;color:var(--n-dim);margin-top:10px">Three papers failed extraction; the run continued on the rest. Every count in this report excludes them.</div>
+          </div>
+          </sc-if>
+
+          <div style="margin-bottom:44px">
+            <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+              <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint)">Executive summary</div>
+              <button onClick="{{ toggleProse }}" style="border:0;background:transparent;color:var(--color-accent-400);font-family:var(--font-body);font-size:11.5px;cursor:pointer;padding:0">{{ proseButton }}</button>
+              <span style="{{ proseEditedStyle }}">user_edited · pinned</span>
+            </div>
+            <sc-if value="{{ editingProse }}" hint-placeholder-val="{{ false }}">
+              <textarea value="{{ execProse }}" onChange="{{ onProse }}" rows="8" style="width:100%;background:var(--n-panel);color:var(--n-text);border:1px solid var(--color-accent);border-radius:var(--radius-sm);font-family:var(--font-body);font-size:17px;line-height:1.62;padding:14px 16px;outline:none;resize:vertical"></textarea>
+            </sc-if>
+            <sc-if value="{{ notEditingProse }}" hint-placeholder-val="{{ true }}">
+              <p style="font-size:17.5px;line-height:1.62;letter-spacing:-.005em;margin:0;text-wrap:pretty">{{ execProse }}</p>
+            </sc-if>
+          </div>
+
+          <div style="margin-bottom:52px">
+            <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">Key findings</div>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <sc-for list="{{ keyFindings }}" as="k" hint-placeholder-count="4">
+                <div style="display:flex;gap:14px;font-size:15.5px;line-height:1.55;padding-bottom:14px;border-bottom:2px solid var(--n-line2)">
+                  <span style="color:var(--color-accent-400);font-variant-numeric:tabular-nums;font-size:12px;padding-top:4px;flex:0 0 18px">{{ k.n }}</span>
+                  <span style="text-wrap:pretty">{{ k.text }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:26px">Sections · one per claim cluster</div>
+        <div style="display:flex;flex-direction:column;gap:0">
+          <sc-for list="{{ sections }}" as="s" hint-placeholder-count="6">
+            <div style="display:grid;grid-template-columns:760px 300px;gap:60px;padding:34px 0;border-top:2px solid var(--n-line2)">
+              <div style="min-width:0">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                  <span style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ s.id }}</span>
+                  <span style="{{ s.conflictStyle }}">{{ s.conflictNote }}</span>
+                  <span style="{{ s.editedStyle }}">{{ s.editedNote }}</span>
+                </div>
+                <h3 style="font-size:24px;line-height:1.2;letter-spacing:-.02em;margin:0 0 12px;text-wrap:pretty">{{ s.heading }}</h3>
+                <p style="font-size:15.5px;line-height:1.62;color:var(--n-text);margin:0 0 16px;text-wrap:pretty">{{ s.narrative }}</p>
+                <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+                  <sc-for list="{{ s.caveats }}" as="cv" hint-placeholder-count="2">
+                    <div style="display:flex;gap:9px;font-size:13px;line-height:1.5;color:var(--n-dim)">
+                      <span style="color:var(--n-faint)">caveat</span>
+                      <span style="text-wrap:pretty">{{ cv }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+                  <sc-for list="{{ s.driverList }}" as="d" hint-placeholder-count="2">
+                    <div style="display:flex;gap:12px;font-size:13px;line-height:1.5;border-left:1px solid var(--n-line2);padding-left:12px">
+                      <span style="color:var(--color-accent-400);flex:0 0 116px;font-size:11.5px;letter-spacing:.03em;padding-top:2px">{{ d.type }}</span>
+                      <span style="color:var(--n-dim);text-wrap:pretty">{{ d.description }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <button onClick="{{ s.toggleClaims }}" style="border:0;border-top:1px solid var(--n-line2);background:transparent;color:var(--color-accent-700);font-family:var(--font-body);font-size:12px;letter-spacing:.02em;padding:10px 0 0;cursor:pointer;text-align:left;width:100%" style-hover="color:var(--n-text)">{{ s.claimsLabel }}</button>
+                <sc-if value="{{ s.claimsOpen }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;margin-top:8px;border-top:2px solid var(--n-line2)">
+                    <div style="font-size:11px;color:var(--n-faint);line-height:1.55;padding:10px 0 12px;text-wrap:pretty">Provenance here is cluster-level: the narrative above is synthesised from every claim in the cluster, so no single sentence of it is attributed. These are the claims it was written from.</div>
+                    <sc-for list="{{ s.claimList }}" as="sc" hint-placeholder-count="4">
+                      <div style="display:grid;grid-template-columns:1fr 150px;gap:14px;padding:12px 0;border-top:1px solid var(--n-line2);align-items:start">
+                        <div style="min-width:0">
+                          <div style="font-size:13.5px;line-height:1.5;margin-bottom:4px;text-wrap:pretty">{{ sc.text }}</div>
+                          <div style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ sc.cite }} · claim {{ sc.ref }}</div>
+                        </div>
+                        <button onClick="{{ sc.openSrc }}" style="{{ sc.provStyle }}" style-hover="background:var(--n-panel2)"><span aria-hidden="true">{{ sc.provGlyph }}</span><span>{{ sc.provLabel }}</span></button>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+
+              <div style="border-left:2px solid var(--n-line2);padding-left:22px;display:flex;flex-direction:column;gap:18px">
+                <div>
+                  <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--n-faint);margin-bottom:7px">Quality</div>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="{{ s.tierChip }}">{{ s.tierLabel }}</span>
+                    <span style="font-size:12px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ s.scoreLabel }}</span>
+                  </div>
+                </div>
+                <div>
+                  <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--n-faint);margin-bottom:7px">Stance · {{ s.papers }} papers</div>
+                  <div style="display:flex;height:6px;border-radius:0;overflow:hidden;background:var(--n-panel2);margin-bottom:6px">
+                    <div style="{{ s.supW }}"></div><div style="{{ s.conW }}"></div><div style="{{ s.neuW }}"></div>
+                  </div>
+                  <div style="font-size:11.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ s.stanceText }}</div>
+                </div>
+                <div>
+                  <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--n-faint);margin-bottom:9px">Lineage</div>
+                  <div style="display:flex;align-items:center;margin-bottom:7px">
+                    <sc-for list="{{ s.lineageNodes }}" as="nd" hint-placeholder-count="5">
+                      <div style="display:flex;align-items:center;flex:1;min-width:0">
+                        <div style="{{ nd.lineStyle }}"></div>
+                        <div style="{{ nd.dotStyle }}"></div>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <div style="font-size:11.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ s.lineageLabel }}</div>
+                </div>
+                <div style="font-size:11.5px;color:var(--n-dim)">{{ s.driverCount }}</div>
+                <div>
+                  <div style="font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--n-faint);margin-bottom:7px">Source coverage</div>
+                  <div style="display:flex;height:5px;gap:1px;margin-bottom:6px">
+                    <div style="{{ s.barVerified }}"></div><div style="{{ s.barApprox }}"></div><div style="{{ s.barAbstract }}"></div><div style="{{ s.barNone }}"></div>
+                  </div>
+                  <div style="font-size:11.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ s.coverText }}</div>
+                </div>
+                <button onClick="{{ s.open }}" class="btn btn-secondary" style="color:var(--n-text);white-space:nowrap;font-size:12px;padding:6px 12px;border-color:var(--n-line2);align-self:flex-start;white-space:nowrap">Open cluster</button>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="max-width:760px;margin-top:54px;padding-top:34px;border-top:2px solid var(--n-line2)">
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">Open questions</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ openQuestions }}" as="oq" hint-placeholder-count="3">
+              <div style="font-size:15px;line-height:1.58;color:var(--n-dim);text-wrap:pretty">{{ oq }}</div>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:30px">
+            <button onClick="{{ goFollowup }}" class="btn btn-primary" style="white-space:nowrap;font-size:13px">Ask a follow-up</button>
+            <button onClick="{{ goEdits }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:13px">Review pinned edits</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isCluster }}" hint-placeholder-val="{{ false }}">
+    <div style="display:grid;grid-template-columns:250px 1fr;min-height:900px">
+      <div style="border-right:2px solid var(--n-line2);padding:26px 0;position:sticky;top:0;height:900px;overflow:auto">
+        <div style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);padding:0 14px;margin-bottom:12px">Clusters · 6</div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <sc-for list="{{ clusterList }}" as="cl" hint-placeholder-count="6">
+            <button onClick="{{ cl.go }}" style="{{ cl.style }}" style-hover="background:var(--n-panel2)">{{ cl.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="{{ cBodyStyle }}">
+        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:16px">Cluster {{ cId }} · {{ cPapers }} papers</div>
+        <input value="{{ cTitleValue }}" onChange="{{ renameCluster }}" style="width:100%;background:transparent;border:0;border-bottom:1px solid transparent;color:var(--n-text);font-family:var(--font-heading);font-weight:500;font-size:31px;line-height:1.18;letter-spacing:-.022em;padding:0 0 6px;outline:none" style-hover="border-bottom-color:var(--n-line2)" style-focus="border-bottom-color:var(--color-accent)">
+        <div style="font-size:11.5px;color:var(--n-faint);margin-bottom:26px">Click the heading to retitle it. An edited cluster is pinned and survives re-analysis.</div>
+        <p style="font-size:16px;line-height:1.62;max-width:760px;margin:0 0 46px;text-wrap:pretty">{{ cNarrative }}</p>
+
+        <div style="{{ cSplitStyle }}">
+          <div>
+            <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:16px">Disagreement</div>
+            <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:10px">
+              <div style="font-size:29px;letter-spacing:-.02em;font-variant-numeric:tabular-nums">{{ cStanceText }}</div>
+              <div style="font-size:11.5px;color:var(--n-faint);line-height:1.4">supports / contradicts<br>/ neutral</div>
+            </div>
+            <div style="display:flex;height:8px;border-radius:0;overflow:hidden;background:var(--n-panel2);margin-bottom:22px">
+              <div style="{{ cStanceSup }}"></div><div style="{{ cStanceCon }}"></div><div style="{{ cStanceNeu }}"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <sc-for list="{{ cDrivers }}" as="d" hint-placeholder-count="4">
+                <div>
+                  <div style="font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--color-accent-400);margin-bottom:5px">{{ d.type }}</div>
+                  <div style="font-size:13.5px;line-height:1.55;color:var(--n-dim);text-wrap:pretty">{{ d.description }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ cNoDrivers }}" hint-placeholder-val="{{ false }}">
+              <div style="border:1px dashed var(--n-line2);border-radius:var(--radius-sm);padding:16px 18px;color:var(--n-dim);font-size:13.5px;line-height:1.55">
+                No disagreement drivers were recorded. The papers in this cluster do not conflict on method, population or metric — they simply do not overlap enough to conflict. Read the low quality tier, not agreement, as the finding here.
+              </div>
+            </sc-if>
+          </div>
+
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+              <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint)">Quality · deterministic</div>
+              <button onClick="{{ openTierPanel }}" style="border:0;background:transparent;color:var(--color-accent-400);font-family:var(--font-body);font-size:11.5px;cursor:pointer;padding:0">Override tier</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+              <span style="{{ cTierChip }}">{{ cTier }}</span>
+              <span style="font-size:29px;letter-spacing:-.02em;font-variant-numeric:tabular-nums">{{ cScore }}</span>
+            </div>
+            <sc-if value="{{ cOverridden }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:10px;border-left:2px solid var(--color-accent);padding:8px 0 8px 12px;margin-bottom:16px">
+                <div style="font-size:12.5px;line-height:1.5">{{ cOverrideNote }}<br><span style="color:var(--n-faint)">The computed value is kept beside yours; nothing is overwritten. user_edited · pinned</span></div>
+                <button onClick="{{ clearTier }}" style="border:0;background:transparent;color:var(--n-dim);font-family:var(--font-body);font-size:11.5px;cursor:pointer;flex:0 0 auto">Revert</button>
+              </div>
+            </sc-if>
+            <sc-if value="{{ tierPanelOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="border:1px solid var(--n-line2);border-radius:var(--radius-sm);background:var(--n-panel);padding:14px 16px;margin-bottom:16px">
+                <div style="font-size:12px;color:var(--n-dim);margin-bottom:10px">Set the tier by hand. The computed score stays on record.</div>
+                <div style="display:flex;gap:8px">
+                  <sc-for list="{{ tierOptions }}" as="tv" hint-placeholder-count="4">
+                    <button onClick="{{ tv.pick }}" style="{{ tv.style }}">{{ tv.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hasComponents }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:18px">
+              <sc-for list="{{ compRows }}" as="cr" hint-placeholder-count="4">
+                <div>
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:5px;font-variant-numeric:tabular-nums">
+                    <span>{{ cr.name }} <span style="color:var(--n-faint)">× {{ cr.weight }}</span></span>
+                    <span style="color:var(--n-dim)">{{ cr.value }} → {{ cr.contrib }}</span>
+                  </div>
+                  <div style="{{ cr.trackStyle }}"><div style="{{ cr.barStyle }}"></div></div>
+                </div>
+              </sc-for>
+              <div style="display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums;padding-top:10px;border-top:2px solid var(--n-line2)">
+                <span style="color:var(--n-dim)">weighted sum</span><span>{{ cRawSum }}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;font-variant-numeric:tabular-nums">
+                <span style="color:var(--n-dim)">conflict_penalty (max 0.15)</span><span style="color:var(--n-con)">− {{ cPenalty }}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;font-variant-numeric:tabular-nums;padding-top:10px;border-top:1px solid var(--n-line2)">
+                <span>quality_score</span><span>{{ cScore }}</span>
+              </div>
+              <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums">thresholds — high ≥ 0.75 · medium ≥ 0.45 · low ≥ 0.25 · computed tier {{ cComputedTier }}</div>
+            </div>
+            </sc-if>
+
+            <div style="display:grid;grid-template-columns:170px 1fr;gap:1px;border-top:2px solid var(--n-line2);font-size:12.5px">
+              <sc-for list="{{ cInputs }}" as="inp" hint-placeholder-count="5">
+                <div style="display:contents">
+                  <div style="padding:8px 0;color:var(--n-faint);border-bottom:2px solid var(--n-line2);font-size:11.5px">{{ inp.k }}</div>
+                  <div style="padding:8px 0;border-bottom:2px solid var(--n-line2);color:var(--n-dim)">{{ inp.v }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:52px">
+          <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:22px">
+            <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint)">Lineage</div>
+            <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ cLineageMeta }}</div>
+          </div>
+          <sc-if value="{{ cHasLineage }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column">
+            <sc-for list="{{ cLineage }}" as="nd" hint-placeholder-count="6">
+              <div style="display:grid;grid-template-columns:56px 24px 1fr;gap:0;min-height:78px">
+                <div style="font-size:12.5px;color:var(--n-dim);font-variant-numeric:tabular-nums;padding-top:1px">{{ nd.year }}</div>
+                <div style="display:flex;flex-direction:column;align-items:center">
+                  <div style="{{ nd.dotStyle }}"></div>
+                  <div style="{{ nd.spineStyle }}"></div>
+                </div>
+                <div style="padding:0 0 26px 16px;min-width:0">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                    <span style="{{ nd.relStyle }}">{{ nd.rel }}</span>
+                    <span style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ nd.ids }}</span>
+                  </div>
+                  <div style="font-size:14.5px;line-height:1.4;margin-bottom:7px;text-wrap:pretty">{{ nd.title }}</div>
+                  <div style="display:flex;align-items:center;gap:10px;max-width:340px">
+                    <div style="{{ nd.citeBarStyle }}"></div>
+                    <span style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums;white-space:nowrap">{{ nd.cites }}</span>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          </sc-if>
+          <sc-if value="{{ cSingle }}" hint-placeholder-val="{{ false }}">
+            <div style="border:1px dashed var(--n-line2);border-radius:var(--radius-sm);padding:18px 20px;max-width:620px;color:var(--n-dim);font-size:13.5px;line-height:1.6">
+              One paper, so there is no chain to draw and no corroboration term to score. Nodus records the origin and stops: <span style="color:var(--n-text)">p13 · claim 5a · Mota-Pereira et al. 2011 · origin</span>. Nothing in the retrieved set cites, replicates or contests it.
+            </div>
+          </sc-if>
+        </div>
+
+        <div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint)">Member claims</div>
+            <div style="font-size:11.5px;color:var(--n-faint)">Click a stance to flip it · click a source mark to read the sentence it came from</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--n-line2)">
+            <div style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--n-faint);white-space:nowrap">Source coverage</div>
+            <div style="display:flex;height:6px;width:180px;gap:1px">
+              <div style="{{ cBarVerified }}"></div><div style="{{ cBarApprox }}"></div><div style="{{ cBarAbstract }}"></div><div style="{{ cBarNone }}"></div>
+            </div>
+            <div style="font-size:11.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ cCoverText }}</div>
+            <div style="font-size:11.5px;color:var(--n-faint);margin-left:auto;font-variant-numeric:tabular-nums">{{ cCoverTotal }}</div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-bottom:16px;font-size:10.5px;color:var(--n-faint)">
+            <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--n-text);color:var(--n-text);padding:2px 6px">¶ verified</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;border:1px dashed var(--n-line2);color:var(--n-dim);padding:2px 6px">≈ approximate span</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;border:1px solid var(--n-line2);border-left:3px solid var(--n-text);color:var(--n-dim);padding:2px 6px">§ abstract only</span>
+            <span style="display:inline-flex;align-items:center;gap:5px;border-bottom:1px dotted var(--n-line2);color:var(--n-faint)">— not locatable</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 152px 96px 84px 30px;gap:16px;padding:0 0 8px;border-bottom:1px solid var(--n-line2);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--n-faint)">
+            <div>claim_text · citation</div><div>stance · source</div><div>confidence</div><div>sample</div><div></div>
+          </div>
+          <sc-for list="{{ clusterClaims }}" as="cl" hint-placeholder-count="7">
+            <div style="{{ cl.rowStyle }}">
+              <div style="min-width:0">
+                <div style="font-size:14.5px;line-height:1.5;margin-bottom:5px;text-wrap:pretty">{{ cl.text }}</div>
+                <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ cl.cite }} · claim {{ cl.ref }} · similarity {{ cl.sim }}</div>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-start;gap:6px">
+                <button onClick="{{ cl.flip }}" style="{{ cl.stanceChip }}" style-hover="opacity:.75">{{ cl.stance }}</button>
+                <div style="{{ cl.wasStyle }}">{{ cl.wasNote }}</div>
+                <button onClick="{{ cl.openSrc }}" style="{{ cl.provStyle }}" style-hover="background:var(--n-panel2)"><span aria-hidden="true">{{ cl.provGlyph }}</span><span>{{ cl.provLabel }}</span></button>
+              </div>
+              <div style="font-size:12.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ cl.conf }}</div>
+              <div style="font-size:12.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">n = {{ cl.n }}</div>
+              <button onClick="{{ cl.move }}" style="border:1px solid var(--n-line2);background:transparent;color:var(--n-dim);border-radius:var(--radius-sm);width:26px;height:26px;cursor:pointer;font-size:14px;line-height:1" style-hover="border-color:var(--color-accent);color:var(--n-text)">⇄</button>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <sc-if value="{{ srcOpen }}" hint-placeholder-val="{{ false }}">
+      <aside data-src-panel="1" style="position:fixed;top:0;right:0;bottom:0;width:440px;z-index:40;background:var(--n-bg);border-left:2px solid var(--n-text);display:flex;flex-direction:column">
+        <div style="display:flex;align-items:flex-start;gap:12px;padding:20px 22px 14px;border-bottom:2px solid var(--n-line2)">
+          <div style="min-width:0">
+            <div style="font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:8px">Source text</div>
+            <div style="{{ srcKindStyle }}">{{ srcKind }}</div>
+          </div>
+          <button onClick="{{ closeSrc }}" style="margin-left:auto;border:1px solid var(--n-line2);background:transparent;color:var(--n-dim);font-family:var(--font-body);font-size:12px;padding:4px 9px;cursor:pointer;flex:0 0 auto" style-hover="border-color:var(--color-accent);color:var(--n-text)">Close</button>
+        </div>
+        <div style="padding:18px 22px 26px;overflow:auto;display:flex;flex-direction:column;gap:16px">
+          <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums;line-height:1.5">claim {{ srcId }} · {{ srcCite }}<br>{{ srcMeta }}</div>
+          <sc-if value="{{ srcHasPara }}" hint-placeholder-val="{{ true }}">
+            <div style="font-size:14px;line-height:1.65;color:var(--n-dim);border-left:2px solid var(--n-line2);padding-left:14px;text-wrap:pretty">{{ srcPre }}<mark style="background:color-mix(in srgb,var(--color-accent) 24%,transparent);color:var(--n-text);box-shadow:inset 0 -2px 0 var(--color-accent);padding:0 1px">{{ srcHighlight }}</mark>{{ srcPost }}</div>
+            <div style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ srcOffsets }}</div>
+          </sc-if>
+          <sc-if value="{{ srcNoPara }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:14px;line-height:1.65;color:var(--n-text);border-left:2px dotted var(--n-line2);padding-left:14px;text-wrap:pretty">“{{ srcQuote }}”</div>
+          </sc-if>
+          <div style="font-size:12.5px;line-height:1.6;color:var(--n-dim);text-wrap:pretty">{{ srcNote }}</div>
+          <sc-if value="{{ srcHasPdf }}" hint-placeholder-val="{{ true }}">
+            <button class="btn btn-secondary" style="color:var(--n-text);font-size:12px;border-color:var(--n-line2);align-self:flex-start;white-space:nowrap">{{ srcPdfLabel }}</button>
+          </sc-if>
+        </div>
+      </aside>
+      </sc-if>
+
+      <sc-if value="{{ showMoved }}" hint-placeholder-val="{{ false }}">
+      <div style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:30;background:var(--n-panel);border:1px solid var(--n-line2);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:16px 18px;width:520px">
+        <div style="font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--n-faint);margin-bottom:8px">Move claim</div>
+        <div style="font-size:13.5px;line-height:1.5;margin-bottom:12px">Reassign this claim to another cluster, or pull it out into a cluster of its own. Both objects are marked <span style="color:var(--color-accent-400)">user_edited</span> and pinned, and the clusters' scores recompute from the new membership.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onClick="{{ dismissMoved }}" class="btn btn-primary" style="white-space:nowrap;font-size:12px">Move to c1 — moderate reduction</button>
+          <button onClick="{{ dismissMoved }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:12px">New cluster</button>
+          <button onClick="{{ dismissMoved }}" class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:12px">Cancel</button>
+        </div>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isPapers }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:52px 56px 110px">
+      <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">Papers</div>
+      <h2 style="font-size:30px;letter-spacing:-.022em;margin:0 0 8px">20 retrieved, ranked, 17 read</h2>
+      <p style="color:var(--n-dim);max-width:640px;margin:0 0 34px">Ranking score comes from the structured query, not from citation count: concept overlap, recency and study design. Study type and methodology are read out of the paper during normalisation.</p>
+      <div style="display:grid;grid-template-columns:52px 1fr 190px 96px 74px;gap:22px;padding-bottom:10px;border-bottom:1px solid var(--n-line2);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--n-faint)">
+        <div>rank</div><div>title · authors · methodology</div><div>study type</div><div>sample</div><div>claims</div>
+      </div>
+      <sc-for list="{{ paperRows }}" as="p" hint-placeholder-count="20">
+        <div style="{{ p.wrapStyle }}">
+        <div style="{{ p.rowStyle }}">
+          <div>
+            <div style="font-size:13px;font-variant-numeric:tabular-nums">{{ p.rank }}</div>
+            <div style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ p.score }}</div>
+            <div style="{{ p.scoreBar }}"></div>
+          </div>
+          <div style="min-width:0">
+            <div style="font-size:14.5px;line-height:1.4;margin-bottom:4px;text-wrap:pretty">{{ p.title }}</div>
+            <div style="font-size:12px;color:var(--n-dim);margin-bottom:5px">{{ p.authors }} · {{ p.year }} · {{ p.journal }} · {{ p.cites }} citations</div>
+            <div style="font-size:12.5px;color:var(--n-faint);line-height:1.45;text-wrap:pretty">{{ p.method }}</div>
+            <div style="font-size:12px;color:var(--n-con);margin-top:5px">{{ p.why }}</div>
+          </div>
+          <div style="font-size:12.5px;color:var(--n-dim)">{{ p.type }}</div>
+          <div style="font-size:12.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">n = {{ p.n }}</div>
+          <div>
+            <div style="{{ p.claimStyle }}">{{ p.claims }}</div>
+            <div style="display:flex;height:4px;gap:1px;margin:6px 0 5px">
+              <div style="{{ p.barVerified }}"></div><div style="{{ p.barApprox }}"></div><div style="{{ p.barAbstract }}"></div><div style="{{ p.barNone }}"></div>
+            </div>
+            <div style="font-size:10.5px;color:var(--n-faint);line-height:1.4;font-variant-numeric:tabular-nums">{{ p.coverText }}</div>
+            <sc-if value="{{ p.hasClaims }}" hint-placeholder-val="{{ true }}">
+              <button onClick="{{ p.toggle }}" style="border:0;background:transparent;color:var(--color-accent-700);font-family:var(--font-body);font-size:11px;padding:6px 0 0;cursor:pointer;text-align:left" style-hover="color:var(--n-text)">{{ p.toggleLabel }}</button>
+            </sc-if>
+          </div>
+        </div>
+        <sc-if value="{{ p.expanded }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;padding:0 0 18px 74px;border-bottom:2px solid var(--n-line2)">
+            <sc-for list="{{ p.claimList }}" as="pc" hint-placeholder-count="2">
+              <div style="display:grid;grid-template-columns:1fr 170px;gap:16px;padding:12px 0;border-top:1px solid var(--n-line2);align-items:start">
+                <div style="min-width:0">
+                  <div style="font-size:13.5px;line-height:1.5;margin-bottom:4px;text-wrap:pretty">{{ pc.text }}</div>
+                  <div style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">claim {{ pc.ref }} · in cluster {{ pc.cluster }}</div>
+                </div>
+                <button onClick="{{ pc.openSrc }}" style="{{ pc.provStyle }}" style-hover="background:var(--n-panel2)"><span aria-hidden="true">{{ pc.provGlyph }}</span><span>{{ pc.provLabel }}</span></button>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        </div>
+      </sc-for>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isEdits }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:52px 56px 110px;max-width:1060px">
+      <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">Edits</div>
+      <h2 style="font-size:30px;letter-spacing:-.022em;margin:0 0 8px">What a person changed, kept beside what the machine computed</h2>
+      <p style="color:var(--n-dim);max-width:660px;margin:0 0 34px">Every edit sets <span style="color:var(--n-text)">user_edited: true</span> and pins the object. A re-analysis of the same question recomputes everything else and leaves these alone. The computed value is never replaced, only shown alongside.</p>
+      <sc-if value="{{ hasEdits }}" hint-placeholder-val="{{ false }}">
+      <div>
+        <div style="display:grid;grid-template-columns:150px 1fr 1fr 60px;gap:22px;padding-bottom:10px;border-bottom:1px solid var(--n-line2);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--n-faint)">
+          <div>field</div><div>computed</div><div>yours</div><div>at</div>
+        </div>
+        <sc-for list="{{ editLedger }}" as="e" hint-placeholder-count="3">
+          <div style="display:grid;grid-template-columns:150px 1fr 1fr 60px;gap:22px;padding:16px 0;border-bottom:2px solid var(--n-line2);font-size:13.5px;line-height:1.5">
+            <div><div>{{ e.field }}</div><div style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ e.obj }}</div></div>
+            <div style="color:var(--n-dim);text-decoration:line-through;text-decoration-color:var(--n-faint);text-wrap:pretty">{{ e.was }}</div>
+            <div style="color:var(--color-accent-300);text-wrap:pretty">{{ e.now }}</div>
+            <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ e.when }}</div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+      <sc-if value="{{ noEdits }}" hint-placeholder-val="{{ true }}">
+      <div style="border:1px dashed var(--n-line2);border-radius:var(--radius-sm);padding:22px 24px;max-width:640px">
+        <div style="font-size:15px;margin-bottom:8px">Nothing has been overridden yet.</div>
+        <div style="font-size:13.5px;color:var(--n-dim);line-height:1.6">Retitle a cluster, override a quality tier or flip a claim's stance on the cluster screen, and the change appears here beside the computed value it replaced in the reading view.</div>
+        <button onClick="{{ goCluster2 }}" class="btn btn-primary" style="white-space:nowrap;font-size:12.5px;margin-top:16px">Open cluster c2</button>
+      </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isFollowup }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:52px 56px 110px;max-width:980px">
+      <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">Follow-up</div>
+      <h2 style="font-size:30px;letter-spacing:-.022em;margin:0 0 8px">Ask inside an answer</h2>
+      <p style="color:var(--n-dim);max-width:620px;margin:0 0 38px">A follow-up runs against the papers already retrieved for its parent, so it costs less and stays comparable. The chain of questions is kept as evidence of how the reading narrowed.</p>
+
+      <div style="display:flex;flex-direction:column;margin-bottom:40px">
+        <div style="display:grid;grid-template-columns:110px 24px 1fr;min-height:88px">
+          <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums;padding-top:2px">09:41 · root</div>
+          <div style="display:flex;flex-direction:column;align-items:center">
+            <div style="width:11px;height:11px;border-radius:0;background:var(--color-accent);flex:0 0 11px"></div>
+            <div style="width:1px;flex:1;background:var(--n-line2)"></div>
+          </div>
+          <div style="padding:0 0 24px 16px">
+            <div style="font-size:16.5px;line-height:1.4;margin-bottom:5px">Does aerobic exercise reduce depression severity?</div>
+            <div style="font-size:12px;color:var(--n-dim);font-variant-numeric:tabular-nums">run 8f2c41 · 17 of 20 papers · 6 clusters · 143 claims</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:110px 24px 1fr;min-height:88px">
+          <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums;padding-top:2px">10:06 · child</div>
+          <div style="display:flex;flex-direction:column;align-items:center">
+            <div style="width:11px;height:11px;border-radius:0;background:var(--n-bg);border:2px solid var(--color-accent-400);flex:0 0 11px"></div>
+            <div style="width:1px;flex:1;background:var(--n-line2)"></div>
+          </div>
+          <div style="padding:0 0 24px 16px">
+            <div style="font-size:16.5px;line-height:1.4;margin-bottom:5px">Does the effect hold in trials with blinded outcome assessment?</div>
+            <div style="font-size:12px;color:var(--n-dim);font-variant-numeric:tabular-nums">run 7b19d0 · scoped to 9 papers from parent · 2 clusters · 24 claims</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:110px 24px 1fr">
+          <div style="font-size:11.5px;color:var(--n-faint);font-variant-numeric:tabular-nums;padding-top:2px">now · drafting</div>
+          <div style="display:flex;flex-direction:column;align-items:center">
+            <div style="width:11px;height:11px;border-radius:0;background:var(--n-bg);border:2px dashed var(--n-line2);flex:0 0 11px"></div>
+          </div>
+          <div style="padding:0 0 0 16px">
+            <div style="border:1px solid var(--n-line2);border-radius:var(--radius-md);background:var(--n-panel);padding:2px">
+              <textarea value="{{ fq }}" onChange="{{ onFq }}" rows="2" style="width:100%;border:0;background:transparent;color:var(--n-text);font-family:var(--font-body);font-size:17px;line-height:1.45;padding:14px 16px 6px;resize:none;outline:none"></textarea>
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px 10px 16px">
+                <div style="display:flex;gap:14px;align-items:center;font-size:11.5px;color:var(--n-faint)">
+                  <span>scope: 17 papers from run 8f2c41</span>
+                  <span>no new retrieval · re-extraction only</span>
+                </div>
+                <button onClick="{{ runFollowup }}" class="btn btn-primary" style="white-space:nowrap;font-size:12.5px">Run follow-up</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-top:2px solid var(--n-line2);padding-top:22px;max-width:640px">
+        <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:10px">What the child run inherits</div>
+        <div style="font-size:13.5px;color:var(--n-dim);line-height:1.65">The parent's normalised papers and claim embeddings, its pinned edits, and its structured query as context. What it does not inherit: cluster membership and quality scores, both recomputed against the narrower question.</div>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isHistory }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:52px 56px 110px;max-width:1060px">
+      <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">History</div>
+      <h2 style="font-size:30px;letter-spacing:-.022em;margin:0 0 30px">Past runs</h2>
+      <div style="display:grid;grid-template-columns:1fr 150px 100px 84px 110px;gap:22px;padding-bottom:10px;border-bottom:1px solid var(--n-line2);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--n-faint)">
+        <div>question</div><div>status</div><div>papers</div><div>clusters</div><div>started</div>
+      </div>
+      <sc-for list="{{ runRows }}" as="r" hint-placeholder-count="4">
+        <div onClick="{{ r.open }}" style="display:grid;grid-template-columns:1fr 150px 100px 84px 110px;gap:22px;padding:16px 0;border-bottom:2px solid var(--n-line2);cursor:pointer" style-hover="background:var(--n-panel2)">
+          <div style="min-width:0">
+            <div style="font-size:14.5px;line-height:1.4;margin-bottom:4px;text-wrap:pretty">{{ r.q }}</div>
+            <div style="font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums">run {{ r.id }} · {{ r.dur }} · {{ r.parentNote }}</div>
+          </div>
+          <div style="{{ r.statusStyle }}">{{ r.status }}</div>
+          <div style="font-size:12.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ r.papers }}</div>
+          <div style="font-size:12.5px;color:var(--n-dim);font-variant-numeric:tabular-nums">{{ r.clusters }}</div>
+          <div style="font-size:12.5px;color:var(--n-faint);font-variant-numeric:tabular-nums">{{ r.when }}</div>
+        </div>
+      </sc-for>
+      <div style="margin-top:26px;font-size:12px;color:var(--n-faint);font-variant-numeric:tabular-nums">2 pipeline slots · 1 in use · 14 of 40 runs today · retention 90 days</div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isStates }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:52px 56px 110px;max-width:820px">
+      <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:14px">States</div>
+      <h2 style="font-size:30px;letter-spacing:-.022em;margin:0 0 8px">Every refusal, failure and degenerate case</h2>
+      <p style="color:var(--n-dim);max-width:600px;margin:0 0 32px">Each of these is a designed screen rather than a thrown error. Pick one to jump straight to it in context.</p>
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <sc-for list="{{ stateCards }}" as="s" hint-placeholder-count="10">
+          <button onClick="{{ s.go }}" style="display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;width:100%;border:0;border-bottom:2px solid var(--n-line2);background:transparent;color:var(--n-text);font-family:var(--font-body);font-size:14.5px;padding:15px 4px;cursor:pointer" style-hover="background:var(--n-panel2)">
+            <span>{{ s.label }}</span>
+            <span style="color:var(--n-faint);font-size:12px">open →</span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ isPrint }}" hint-placeholder-val="{{ false }}">
+    <div style="padding:44px 56px 110px;background:var(--n-panel2);min-height:900px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:26px">
+        <div>
+          <div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--n-faint);margin-bottom:6px">Print variant</div>
+          <div style="font-size:19px;letter-spacing:-.015em">A4 · 18 mm margins · the same HTML the PDF export prints</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-secondary" style="color:var(--n-text);white-space:nowrap;font-size:12px;border-color:var(--n-line2)">Download PDF</button>
+          <button class="btn btn-ghost" style="color:var(--n-dim);white-space:nowrap;font-size:12px">Print-ready HTML</button>
+        </div>
+      </div>
+      <div style="width:794px;min-height:1123px;background:#ffffff;color:#16181f;box-shadow:0 18px 40px rgba(0,0,0,.35);padding:68px;font-size:10.5pt;line-height:1.5">
+        <div style="display:flex;justify-content:space-between;gap:20px;white-space:nowrap;font-size:7pt;letter-spacing:.08em;text-transform:uppercase;color:#6a6e7a;border-bottom:.5pt solid #c9ccd4;padding-bottom:8px;margin-bottom:26px">
+          <span>Nodus · run 8f2c41</span><span>17 of 20 papers · 6 clusters</span><span>18 Aug 2026 · page 1 of 9</span>
+        </div>
+        <div style="font-family:var(--font-heading);font-size:20pt;line-height:1.15;letter-spacing:-.02em;margin-bottom:8px">Aerobic exercise and depression severity: a moderate effect, contested at the method</div>
+        <div style="font-size:8.5pt;color:#5c6070;margin-bottom:24px">Does aerobic exercise reduce depression severity? · 17 papers, 1998–2024</div>
+        <div style="font-size:7.5pt;letter-spacing:.09em;text-transform:uppercase;color:#6a6e7a;margin-bottom:7px">Executive summary</div>
+        <div style="margin-bottom:22px;text-align:justify;hyphens:auto">Across seventeen papers the evidence supports a moderate antidepressant effect of aerobic exercise in adults with a depressive disorder, and the papers that dispute it dispute the method rather than the direction. The pooled estimate sits near SMD −0.62 to −0.79 against non-exercise controls, comparable to first-line pharmacotherapy in the same trials. The largest single qualification is assessor blinding: restricting to blinded, intention-to-treat trials cuts the estimate to roughly −0.18.</div>
+        <div style="border:.5pt solid #c9ccd4;padding:10px 12px;margin-bottom:24px;font-size:8.5pt;color:#3d414d">
+          <strong style="font-weight:600">Built on 17 of 20 retrieved papers.</strong> p05 (PDF unreachable), p12 (unparseable scan) and p18 (paywalled) failed extraction; the run continued without them.
+        </div>
+        <div style="font-size:7.5pt;letter-spacing:.09em;text-transform:uppercase;color:#6a6e7a;margin-bottom:9px">1 · Aerobic exercise produces a moderate reduction in depression severity</div>
+        <div style="display:grid;grid-template-columns:1fr 150px;gap:20px;padding-bottom:16px;border-bottom:.5pt solid #dfe1e7;margin-bottom:16px">
+          <div style="text-align:justify;hyphens:auto">Eleven papers estimate the effect of supervised aerobic exercise against non-exercise control conditions in adults meeting diagnostic criteria for depression. Pooled standardised mean differences cluster between −0.62 and −0.79, a moderate effect comparable in magnitude to that reported for first-line pharmacotherapy in the same populations.</div>
+          <div style="font-size:8pt;color:#3d414d">
+            <div style="border:.5pt solid #16181f;display:inline-block;padding:1px 6px;letter-spacing:.06em;text-transform:uppercase;font-size:6.5pt;white-space:nowrap;margin-bottom:8px">quality high · 0.89</div>
+            <div style="display:flex;height:4px;margin-bottom:5px"><div style="flex:9;background:#33735a"></div><div style="flex:1;background:#a05437"></div><div style="flex:1;background:#8b8fa3"></div></div>
+            <div>9 support · 1 contradict · 1 neutral</div>
+            <div style="margin-top:6px">Lineage 2007→2024, 5 papers</div>
+            <div>2 disagreement drivers</div>
+          </div>
+        </div>
+        <div style="font-size:7.5pt;letter-spacing:.09em;text-transform:uppercase;color:#6a6e7a;margin-bottom:9px">2 · Effect sizes shrink in trials with blinded outcome assessment</div>
+        <div style="display:grid;grid-template-columns:1fr 150px;gap:20px;padding-bottom:16px;border-bottom:.5pt solid #dfe1e7;margin-bottom:16px">
+          <div style="text-align:justify;hyphens:auto">Four papers report that restricting analysis to trials with blinded outcome assessors and intention-to-treat data reduces the pooled effect to a small, sometimes non-significant value. Three papers disagree, holding that the reduction is an artefact of restricting to a handful of small trials. The disagreement is not about the data but about which subset licenses a conclusion.</div>
+          <div style="font-size:8pt;color:#3d414d">
+            <div style="border:.5pt solid #16181f;display:inline-block;padding:1px 6px;letter-spacing:.06em;text-transform:uppercase;font-size:6.5pt;white-space:nowrap;margin-bottom:8px">quality medium · 0.50</div>
+            <div style="display:flex;height:4px;margin-bottom:5px"><div style="flex:4;background:#33735a"></div><div style="flex:3;background:#a05437"></div></div>
+            <div>4 support · 3 contradict</div>
+            <div style="margin-top:6px">Lineage 2009→2024, 6 papers</div>
+            <div>4 disagreement drivers</div>
+          </div>
+        </div>
+        <div style="font-size:7.5pt;letter-spacing:.09em;text-transform:uppercase;color:#6a6e7a;border-top:.5pt solid #c9ccd4;padding-top:10px;margin-bottom:8px">Sources for sections 1–2</div>
+        <div style="font-size:8pt;line-height:1.45;color:#3d414d;display:flex;flex-direction:column;gap:7px;margin-bottom:18px">
+          <div><span style="font-family:var(--font-heading);font-weight:600">1a</span> <span style="border:.5pt solid #16181f;padding:0 3px;font-size:6.5pt;letter-spacing:.06em;text-transform:uppercase">verified</span> claim 1a · Blumenthal et al. 2007 · results, p. 4 — “Remission rates were 45% in the supervised aerobic exercise group and 47% in the sertraline group at 16 weeks.”</div>
+          <div><span style="font-family:var(--font-heading);font-weight:600">1b</span> <span style="border:.5pt dashed #6a6e7a;padding:0 3px;font-size:6.5pt;letter-spacing:.06em;text-transform:uppercase">≈ approximate</span> claim 1b · Schuch et al. 2016 · results, p. 9 — “after trim-and-fill adjustment the pooled SMD was −0.62 (95% CI −0.81 to −0.42)”. Span boundaries approximate; verify against the page.</div>
+          <div><span style="font-family:var(--font-heading);font-weight:600">2a</span> <span style="border:.5pt solid #16181f;padding:0 3px;font-size:6.5pt;letter-spacing:.06em;text-transform:uppercase">verified</span> claim 2a · Cooney et al. 2013 · results, p. 14 — “When we restricted analysis to trials with adequate allocation concealment, blinding of outcome assessment and intention-to-treat analysis, the pooled SMD fell to −0.18.”</div>
+          <div><span style="font-family:var(--font-heading);font-weight:600">2b</span> <span style="border-bottom:.5pt dotted #6a6e7a;font-size:6.5pt;letter-spacing:.06em;text-transform:uppercase">not locatable</span> claim 2b · Noetel et al. 2024 · quote recorded, no page: “Effects persisted after controlling for risk of bias, although certainty of evidence was rated low to moderate.” No open-access full text, so the sentence could not be matched to a page.</div>
+          <div><span style="font-family:var(--font-heading);font-weight:600">2c</span> <span style="border:.5pt solid #6a6e7a;border-left:1.5pt solid #16181f;padding:0 3px;font-size:6.5pt;letter-spacing:.06em;text-transform:uppercase">§ abstract</span> claim 2c · Kvam et al. 2016 — quoted from the abstract; the paper body was never retrieved, so there is no page.</div>
+        </div>
+        <div style="font-size:8pt;color:#5c6070;border-top:.5pt solid #c9ccd4;padding-top:8px">Sections 3–6, member claims, lineage chains and quality arithmetic continue on pages 2–9. Overridden values are printed beside the computed ones, and every claim carries its source footnote in the same four marks used above.</div>
+      </div>
+    </div>
+    </sc-if>
+
+  </main>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;'dark'|'light'&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;query&quot;,&quot;run&quot;,&quot;report&quot;,&quot;cluster&quot;,&quot;papers&quot;,&quot;edits&quot;,&quot;followup&quot;,&quot;history&quot;,&quot;states&quot;,&quot;print&quot;],&quot;default&quot;:&quot;query&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;runSpeed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;min&quot;:0.5,&quot;max&quot;:3,&quot;step&quot;:0.5,&quot;default&quot;:1,&quot;unit&quot;:&quot;×&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Prototype&quot;},&quot;showEventStream&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Prototype&quot;}}">
+const PAPERS = [
+  {id:'p01',rank:1,score:.94,title:'Exercise and Pharmacotherapy in the Treatment of Major Depressive Disorder',authors:'Blumenthal, Babyak, Doraiswamy et al.',year:2007,journal:'Psychosomatic Medicine',type:'RCT',method:'4-arm parallel RCT, supervised aerobic exercise vs sertraline vs home exercise vs placebo, 16 wk, HAM-D',n:202,claims:9,cites:1204},
+  {id:'p02',rank:2,score:.92,title:'Exercise for depression',authors:'Cooney, Dwan, Greig et al.',year:2013,journal:'Cochrane Database of Systematic Reviews',type:'Systematic review',method:'39 trials, random-effects meta-analysis, risk-of-bias restricted sensitivity analysis',n:2326,claims:12,cites:2410},
+  {id:'p03',rank:3,score:.91,title:'Exercise as a treatment for depression: a meta-analysis adjusting for publication bias',authors:'Schuch, Vancampfort, Richards et al.',year:2016,journal:'Journal of Psychiatric Research',type:'Meta-analysis',method:'25 RCTs, trim-and-fill and PET-PEESE adjustment for small-study effects',n:1487,claims:11,cites:1866},
+  {id:'p04',rank:4,score:.89,title:'Exercise for patients with major depression: a systematic review with meta-analysis and trial sequential analysis',authors:'Krogh, Hjorthøj, Speyer et al.',year:2017,journal:'BMJ Open',type:'Systematic review',method:'35 trials, trial sequential analysis, blinded-outcome subgroup',n:2498,claims:10,cites:512},
+  {id:'p05',rank:5,score:.87,title:'Exercise treatment for depression: efficacy and dose response',authors:'Dunn, Trivedi, Kampert et al.',year:2005,journal:'American Journal of Preventive Medicine',type:'Dose-response RCT',method:'5-arm RCT of energy expenditure 7.0 vs 17.5 kcal/kg/wk at 3 or 5 days/wk',n:80,claims:8,cites:930},
+  {id:'p06',rank:6,score:.86,title:'Effectiveness of physical activity interventions for improving depression, anxiety and distress',authors:'Singh, Olds, Curtis et al.',year:2023,journal:'British Journal of Sports Medicine',type:'Umbrella review',method:'97 reviews of 1039 trials, median effect pooling across populations',n:128119,claims:12,cites:704},
+  {id:'p07',rank:7,score:.86,title:'Effect of exercise for depression: systematic review and network meta-analysis of randomised controlled trials',authors:'Noetel, Sanders, Gallardo-Gómez et al.',year:2024,journal:'BMJ',type:'Network meta-analysis',method:'218 trials, arm-level network model by modality and intensity, GRADE',n:14170,claims:12,cites:389},
+  {id:'p08',rank:8,score:.81,title:'Exercise and pharmacotherapy in patients with major depression: one-year follow-up of the SMILE study',authors:'Hoffman, Babyak, Craighead et al.',year:2011,journal:'Psychosomatic Medicine',type:'RCT follow-up',method:'12-month naturalistic follow-up of the SMILE cohort, self-reported activity',n:202,claims:7,cites:411},
+  {id:'p09',rank:9,score:.80,title:'The antidepressive effects of exercise: a meta-analysis of randomized trials',authors:'Rethorst, Wipfli, Landers',year:2009,journal:'Sports Medicine',type:'Meta-analysis',method:'58 trials, moderator analysis by duration, frequency and supervision',n:2325,claims:9,cites:1052},
+  {id:'p10',rank:10,score:.78,title:'Physical exercise intervention in depressive disorders: meta-analysis and systematic review',authors:'Josefsson, Lindwall, Archer',year:2014,journal:'Scandinavian Journal of Medicine & Science in Sports',type:'Meta-analysis',method:'13 RCTs restricted to clinical diagnosis and no-treatment controls',n:977,claims:8,cites:688},
+  {id:'p11',rank:11,score:.77,title:'Exercise as a treatment for depression: a meta-analysis',authors:'Kvam, Kleppe, Nordhus, Hovland',year:2016,journal:'Journal of Affective Disorders',type:'Meta-analysis',method:'23 RCTs, comparison against antidepressants and combined treatment arms',n:977,claims:9,cites:920},
+  {id:'p12',rank:12,score:.75,title:'Physical exercise for late-life major depression',authors:'Belvederi Murri, Amore, Menchetti et al.',year:2015,journal:'British Journal of Psychiatry',type:'RCT',method:'Sertraline plus progressive aerobic exercise in adults 65+, 24 wk, HAM-D',n:121,claims:8,cites:266},
+  {id:'p13',rank:13,score:.72,title:'Moderate exercise improves depression parameters in treatment-resistant patients with major depressive disorder',authors:'Mota-Pereira, Silverio, Carvalho et al.',year:2011,journal:'Journal of Psychiatric Research',type:'RCT',method:'Adjunct 30–45 min walking 5 days/wk added to stable pharmacotherapy',n:33,claims:6,cites:298},
+  {id:'p14',rank:14,score:.71,title:'Facilitated physical activity as a treatment for depressed adults: randomised controlled trial (TREAD)',authors:'Chalder, Wiles, Campbell et al.',year:2012,journal:'BMJ',type:'Pragmatic RCT',method:'Primary-care activity facilitation plus usual care, blinded BDI at 4 months',n:361,claims:9,cites:479},
+  {id:'p15',rank:15,score:.69,title:'The effect of exercise in clinically depressed adults (the DEMO trial)',authors:'Krogh, Saltin, Gluud, Nordentoft',year:2009,journal:'Journal of Clinical Psychiatry',type:'RCT',method:'Aerobic vs relaxation, 4 months, blinded HAM-D₁₇ assessors',n:165,claims:7,cites:342},
+  {id:'p16',rank:16,score:.66,title:'Physical exercise and internet-based cognitive–behavioural therapy in the treatment of depression',authors:'Hallgren, Kraepelien, Öjehagen et al.',year:2015,journal:'British Journal of Psychiatry',type:'RCT',method:'Three-arm: exercise vs iCBT vs treatment as usual, 12 wk, MADRS-S',n:946,claims:8,cites:301},
+  {id:'p17',rank:17,score:.63,title:'Aerobic exercise or basic body awareness therapy for patients with major depression',authors:'Danielsson, Papoulias, Petersson et al.',year:2014,journal:'Journal of Affective Disorders',type:'RCT',method:'10-week physiotherapy-led aerobic arm vs body awareness vs advice only',n:62,claims:6,cites:157},
+  {id:'p18',rank:18,score:.58,title:'Exercise leads to better clinical outcomes in those receiving medication plus cognitive behavioural therapy',authors:'Gourgouvelis, Yielder, Clarke et al.',year:2018,journal:'Frontiers in Psychiatry',type:'Quasi-experimental',method:'Non-randomised allocation to 8-week exercise adjunct, BDI-II and BDNF',n:16,claims:5,cites:88},
+  {id:'p19',rank:19,score:.55,title:'Exercise is an effective treatment for positive valence symptoms in major depression',authors:'Toups, Carmody, Greer et al.',year:2017,journal:'Journal of Affective Disorders',type:'RCT secondary analysis',method:'Secondary endpoint analysis of the TREAD-US dose trial, positive valence items',n:122,claims:6,cites:96},
+  {id:'p20',rank:20,score:.52,title:'Aerobic exercise or stretching as add-on to inpatient treatment of depression',authors:'Imboden, Gerber, Beck et al.',year:2020,journal:'Journal of Affective Disorders',type:'RCT',method:'Inpatient 6-week aerobic vs stretching add-on, HAM-D and actigraphy',n:42,claims:5,cites:74}
+];
+const FAILS = {p05:'PDF unreachable — publisher returned 403 twice', p12:'Two-column scan; text layer unparseable', p18:'Paywalled: abstract only, below claim threshold'};
+const SECTIONS = [
+  'Aerobic exercise produces a moderate reduction in depression severity',
+  'Effect sizes shrink in trials with blinded outcome assessment',
+  'Three or more sessions per week outperforms lower frequency',
+  'Effects in adults over 65 are comparable to younger cohorts',
+  'Exercise as an adjunct in treatment-resistant depression',
+  'Attrition weakens twelve-month follow-up estimates'
+];
+const PHASES = [
+  {name:'queued',at:0},{name:'structuring',at:3},{name:'retrieving',at:9},{name:'ranking',at:17},
+  {name:'storing',at:21},{name:'processing',at:24},{name:'clustering',at:74},{name:'synthesizing',at:84},{name:'completed',at:106}
+];
+const SEC_TICKS = [86,90,93,96,99,102];
+
+const CLUSTERS = [
+  {id:'c1', heading:'Aerobic exercise produces a moderate reduction in depression severity',
+   tier:'high', score:.86, papers:11, stance:{supports:9,contradicts:1,neutral:1},
+   narrative:'Eleven papers estimate the effect of supervised aerobic exercise against non-exercise control conditions in adults meeting diagnostic criteria for depression. Pooled standardised mean differences cluster between −0.62 and −0.79, a moderate effect comparable in magnitude to that reported for first-line pharmacotherapy in the same populations. The estimate is stable across pooling method: trim-and-fill adjustment moves it to −0.62, and the network meta-analysis with the largest sample recovers −0.79 for the walking and jogging node.',
+   caveats:['Nine of eleven papers pool trials that also appear in each other, so the papers are not independent evidence.','Control conditions range from waitlist to active stretching; the larger effects come from waitlist comparisons.'],
+   drivers:[{type:'methodology',description:'Waitlist controls produce effects roughly 0.25 SMD larger than active-control comparisons, and the two are pooled together in five of the eleven papers.'},{type:'analysis',description:'Random-effects pooling with high heterogeneity (I² = 63–81%) widens intervals that the narrative summaries report as point estimates.'}],
+   components:{design:.92, sample:.88, corroboration:.95, extraction:.90, penalty:.02},
+   inputs:{types:'6 meta-analyses, 1 network meta-analysis, 4 RCTs', largest:14170, papers:11, sup:9, con:1},
+   lineage:{root:'p01', rootYear:2007, span:17, count:5, chain:[
+     {id:'p01', claim:'cl_1042', title:'Exercise and Pharmacotherapy in the Treatment of Major Depressive Disorder', year:2007, cites:1204, rel:'origin'},
+     {id:'p09', claim:'cl_1188', title:'The antidepressive effects of exercise: a meta-analysis of randomized trials', year:2009, cites:1052, rel:'supports'},
+     {id:'p02', claim:'cl_1301', title:'Exercise for depression (Cochrane)', year:2013, cites:2410, rel:'extends'},
+     {id:'p03', claim:'cl_1466', title:'Exercise as a treatment for depression: a meta-analysis adjusting for publication bias', year:2016, cites:1866, rel:'supports'},
+     {id:'p07', claim:'cl_1902', title:'Effect of exercise for depression: network meta-analysis', year:2024, cites:389, rel:'extends'}]},
+   claims:[
+     {id:'cl_1042', text:'Supervised aerobic exercise reduced HAM-D scores at 16 weeks comparably to sertraline (remission 45% vs 47%).', cite:'Blumenthal et al. 2007, Psychosom Med', stance:'supports', conf:.94, sim:1.00, n:202},
+     {id:'cl_1188', text:'Pooled effect of exercise on depression across 58 trials was large before adjustment (d = −0.80).', cite:'Rethorst et al. 2009, Sports Med', stance:'supports', conf:.88, sim:.91, n:2325},
+     {id:'cl_1301', text:'Exercise is moderately more effective than no therapy at reducing depression symptoms (SMD −0.62).', cite:'Cooney et al. 2013, Cochrane', stance:'supports', conf:.93, sim:.94, n:2326},
+     {id:'cl_1466', text:'After adjusting for publication bias the effect remains moderate and significant (SMD −0.62, 95% CI −0.81 to −0.42).', cite:'Schuch et al. 2016, J Psychiatr Res', stance:'supports', conf:.91, sim:.89, n:1487},
+     {id:'cl_1902', text:'Walking or jogging showed a moderate reduction versus active control in the network model (SMD −0.62).', cite:'Noetel et al. 2024, BMJ', stance:'supports', conf:.90, sim:.87, n:14170}]},
+
+  {id:'c2', heading:'Effect sizes shrink in trials with blinded outcome assessment',
+   tier:'medium', score:.58, papers:7, stance:{supports:4,contradicts:3,neutral:0},
+   narrative:'Four papers report that restricting analysis to trials with blinded outcome assessors and intention-to-treat data reduces the pooled effect to a small, sometimes non-significant value. Three papers disagree, holding that the reduction is an artefact of restricting to a handful of small trials, or that bias-adjusted estimates remain clinically meaningful. The disagreement is not about the data — the same trials appear on both sides — but about which subset licenses a conclusion.',
+   caveats:['The blinded-only subgroups contain 4 to 8 trials, so subgroup estimates are themselves imprecise.','Two papers share an author team, which weakens the appearance of independent corroboration on the sceptical side.'],
+   drivers:[
+     {type:'methodology',description:'Krogh and Cooney restrict to blinded-assessor, ITT trials; Schuch and Noetel adjust statistically instead and retain unblinded trials in the pool. The two strategies cannot be reconciled by re-weighting.'},
+     {type:'metric_definition',description:'“Clinically meaningful” is defined as a 3-point HAM-D difference by one team and as SMD ≥ 0.5 by another, so the same estimate is called negligible and moderate.'},
+     {type:'sample_size',description:'Blinded-only subgroups draw on 4–8 trials (n = 391–1122) against 23–39 trials in the full pools; the sceptical estimate carries the wider interval.'},
+     {type:'publication_bias',description:'Funnel asymmetry is treated as evidence of small-study bias by three papers and as genuine heterogeneity in dose by two others.'}],
+   components:{design:.71, sample:.52, corroboration:.44, extraction:.86, penalty:.15},
+   inputs:{types:'3 systematic reviews, 2 meta-analyses, 2 RCTs', largest:2498, papers:7, sup:4, con:3},
+   lineage:{root:'p15', rootYear:2009, span:15, count:6, chain:[
+     {id:'p15', claim:'cl_1204', title:'The effect of exercise in clinically depressed adults (DEMO)', year:2009, cites:342, rel:'origin'},
+     {id:'p14', claim:'cl_1288', title:'Facilitated physical activity as a treatment for depressed adults (TREAD)', year:2012, cites:479, rel:'supports'},
+     {id:'p02', claim:'cl_1312', title:'Exercise for depression (Cochrane)', year:2013, cites:2410, rel:'supports'},
+     {id:'p03', claim:'cl_1470', title:'Exercise as a treatment for depression: adjusting for publication bias', year:2016, cites:1866, rel:'contradicts'},
+     {id:'p04', claim:'cl_1590', title:'Exercise for patients with major depression: trial sequential analysis', year:2017, cites:512, rel:'extends'},
+     {id:'p07', claim:'cl_1911', title:'Effect of exercise for depression: network meta-analysis', year:2024, cites:389, rel:'contradicts'}]},
+   claims:[
+     {id:'cl_1204', text:'Aerobic exercise did not reduce blinded HAM-D₁₇ scores more than relaxation at four months (difference 0.4 points, p = 0.79).', cite:'Krogh et al. 2009, J Clin Psychiatry', stance:'supports', conf:.92, sim:.96, n:165},
+     {id:'cl_1288', text:'Facilitated physical activity produced no improvement in blinded BDI score at four months versus usual care alone.', cite:'Chalder et al. 2012, BMJ', stance:'supports', conf:.95, sim:.93, n:361},
+     {id:'cl_1312', text:'Restricting to trials with adequate allocation concealment, blinding and ITT analysis reduced the pooled effect to SMD −0.18.', cite:'Cooney et al. 2013, Cochrane', stance:'supports', conf:.94, sim:.99, n:1122},
+     {id:'cl_1590', text:'Trial sequential analysis of blinded-outcome trials could not exclude a null effect; the required information size was not reached.', cite:'Krogh et al. 2017, BMJ Open', stance:'supports', conf:.89, sim:.90, n:2498},
+     {id:'cl_1470', text:'Bias-adjusted pooling retained a moderate effect (SMD −0.62), so blinding alone does not explain the estimate away.', cite:'Schuch et al. 2016, J Psychiatr Res', stance:'contradicts', conf:.90, sim:.84, n:1487},
+     {id:'cl_1911', text:'Effects persisted in the network model after controlling for risk of bias, though certainty was rated low to moderate.', cite:'Noetel et al. 2024, BMJ', stance:'contradicts', conf:.87, sim:.81, n:14170},
+     {id:'cl_1655', text:'Blinded subgroups comprise few, small trials; their smaller effect is within sampling error of the full pool.', cite:'Kvam et al. 2016, J Affect Disord', stance:'contradicts', conf:.78, sim:.77, n:977}]},
+
+  {id:'c3', heading:'Three or more sessions per week outperforms lower frequency',
+   tier:'medium', score:.64, papers:5, stance:{supports:4,contradicts:0,neutral:1},
+   narrative:'Dose is the one moderator that survives across papers. The single dedicated dose-response trial found public-health-dose exercise (17.5 kcal/kg/week) clearly superior to a low dose that performed like the placebo control, and three pooled analyses recover frequency or intensity as a moderator. Session frequency is confounded with supervision in every paper: higher-frequency arms were also the supervised ones.',
+   caveats:['No paper randomises frequency independently of supervision or session length.','The dose trial has 80 participants across five arms, so per-arm precision is low.'],
+   drivers:[{type:'population',description:'The dose trial recruited mild-to-moderate outpatients; pooled moderator analyses include inpatient samples where baseline severity limits achievable dose.'}],
+   components:{design:.68, sample:.48, corroboration:.72, extraction:.88, penalty:.00},
+   inputs:{types:'1 dose-response RCT, 3 meta-analyses, 1 umbrella review', largest:128119, papers:5, sup:4, con:0},
+   lineage:{root:'p05', rootYear:2005, span:19, count:4, chain:[
+     {id:'p05', claim:'cl_1001', title:'Exercise treatment for depression: efficacy and dose response', year:2005, cites:930, rel:'origin'},
+     {id:'p09', claim:'cl_1190', title:'The antidepressive effects of exercise: moderator analysis', year:2009, cites:1052, rel:'supports'},
+     {id:'p06', claim:'cl_1801', title:'Effectiveness of physical activity interventions (umbrella review)', year:2023, cites:704, rel:'extends'},
+     {id:'p07', claim:'cl_1920', title:'Effect of exercise for depression: dose nodes in the network model', year:2024, cites:389, rel:'supports'}]},
+   claims:[
+     {id:'cl_1001', text:'Public-health-dose exercise (17.5 kcal/kg/week) achieved 47% response versus 30% at low dose and 29% for placebo control.', cite:'Dunn et al. 2005, Am J Prev Med', stance:'supports', conf:.91, sim:.98, n:80},
+     {id:'cl_1190', text:'Trials with more than three sessions per week showed larger effects in moderator analysis.', cite:'Rethorst et al. 2009, Sports Med', stance:'supports', conf:.82, sim:.88, n:2325},
+     {id:'cl_1801', text:'Higher-intensity interventions produced larger reductions in depression across populations.', cite:'Singh et al. 2023, BJSM', stance:'supports', conf:.85, sim:.83, n:128119},
+     {id:'cl_1920', text:'Vigorous-intensity nodes ranked above light-intensity nodes, but interval overlap prevents ordering the doses.', cite:'Noetel et al. 2024, BMJ', stance:'neutral', conf:.80, sim:.79, n:14170}]},
+
+  {id:'c4', heading:'Effects in adults over 65 are comparable to younger cohorts',
+   tier:'low', score:.31, papers:3, stance:{supports:2,contradicts:0,neutral:1},
+   narrative:'Three papers touch late-life depression. One randomised trial of sertraline plus progressive aerobic exercise in adults 65 and older reports larger remission in the exercise arm, and two pooled analyses report age as a non-significant moderator. Age-stratified estimates are not reported separately in either pooled paper, so “comparable” rests on the absence of a moderator effect rather than on a measured one.',
+   caveats:['No paper reports an age-stratified effect size; the claim is inferred from null moderator tests.','The one dedicated trial has 121 participants and no blinded assessment of the exercise arm.'],
+   drivers:[],
+   components:{design:.44, sample:.22, corroboration:.30, extraction:.71, penalty:.00},
+   inputs:{types:'1 RCT, 2 meta-analyses', largest:2325, papers:3, sup:2, con:0},
+   lineage:{root:'p12', rootYear:2015, span:9, count:3, chain:[
+     {id:'p12', claim:'cl_1401', title:'Physical exercise for late-life major depression', year:2015, cites:266, rel:'origin'},
+     {id:'p11', claim:'cl_1489', title:'Exercise as a treatment for depression: a meta-analysis', year:2016, cites:920, rel:'supports'},
+     {id:'p07', claim:'cl_1930', title:'Effect of exercise for depression: age as a moderator', year:2024, cites:389, rel:'supports'}]},
+   claims:[
+     {id:'cl_1401', text:'Adding progressive aerobic exercise to sertraline raised remission at 24 weeks in adults 65+ (81% vs 45%).', cite:'Belvederi Murri et al. 2015, Br J Psychiatry', stance:'supports', conf:.86, sim:.95, n:121},
+     {id:'cl_1489', text:'Mean participant age was not a significant moderator of effect size.', cite:'Kvam et al. 2016, J Affect Disord', stance:'supports', conf:.74, sim:.72, n:977},
+     {id:'cl_1930', text:'Age subgroups did not differ credibly, though older-adult trials were few.', cite:'Noetel et al. 2024, BMJ', stance:'neutral', conf:.77, sim:.70, n:14170}]},
+
+  {id:'c5', heading:'Exercise as an adjunct in treatment-resistant depression',
+   tier:'unrated', score:null, papers:1, stance:{supports:1,contradicts:0,neutral:0},
+   narrative:'One small trial addresses treatment-resistant depression directly: 33 patients on stable pharmacotherapy, half assigned to 30–45 minutes of walking five days a week. The exercise arm improved on HAM-D, BDI and GAF where the control arm did not. Nothing in the retrieved set replicates or contests it, so the cluster has no corroboration term to score and Nodus leaves the tier unrated rather than inferring one.',
+   caveats:['Single study, 33 participants, no blinding of outcome assessment.','Treatment resistance was defined by the trial team rather than by a standard staging method.'],
+   drivers:[],
+   components:null,
+   inputs:{types:'1 RCT', largest:33, papers:1, sup:1, con:0},
+   lineage:null,
+   claims:[
+     {id:'cl_1233', text:'Adjunct moderate exercise improved HAM-D, BDI and GAF in treatment-resistant patients over 12 weeks, while the control arm did not change.', cite:'Mota-Pereira et al. 2011, J Psychiatr Res', stance:'supports', conf:.83, sim:1.00, n:33}]},
+
+  {id:'c6', heading:'Attrition weakens twelve-month follow-up estimates',
+   tier:'medium', score:.51, papers:4, stance:{supports:1,contradicts:2,neutral:1},
+   narrative:'Whether the benefit persists past the intervention period is the least settled question in the retrieved set. The one-year SMILE follow-up reports continued advantage for those who kept exercising, which two papers read as selection rather than effect: adherence at twelve months was self-reported and unrandomised. A fourth paper finds no maintenance signal at all.',
+   caveats:['Long-term arms lost 22–41% of participants; no paper reports a tipping-point analysis.','“Maintenance” is measured against different baselines across the four papers.'],
+   drivers:[
+     {type:'temporal',description:'Follow-up windows are 4, 6, 12 and 24 months; the longest window carries the largest attrition and the strongest reported effect.'},
+     {type:'analysis',description:'The follow-up advantage is a post-hoc comparison of self-selected adherers, not a randomised contrast.'}],
+   components:{design:.55, sample:.61, corroboration:.40, extraction:.79, penalty:.09},
+   inputs:{types:'1 RCT follow-up, 2 meta-analyses, 1 RCT', largest:2326, papers:4, sup:1, con:2},
+   lineage:{root:'p08', rootYear:2011, span:13, count:4, chain:[
+     {id:'p08', claim:'cl_1250', title:'One-year follow-up of the SMILE study', year:2011, cites:411, rel:'origin'},
+     {id:'p02', claim:'cl_1330', title:'Exercise for depression (Cochrane) — long-term outcomes', year:2013, cites:2410, rel:'contradicts'},
+     {id:'p16', claim:'cl_1444', title:'Physical exercise and internet-based CBT in the treatment of depression', year:2015, cites:301, rel:'contradicts'},
+     {id:'p07', claim:'cl_1940', title:'Effect of exercise for depression: durability of effect', year:2024, cites:389, rel:'extends'}]},
+   claims:[
+     {id:'cl_1250', text:'Participants who continued regular exercise had lower depression scores at twelve months than those who did not.', cite:'Hoffman et al. 2011, Psychosom Med', stance:'supports', conf:.84, sim:.94, n:202},
+     {id:'cl_1330', text:'Few trials reported outcomes beyond the intervention period, and those that did showed no maintained benefit.', cite:'Cooney et al. 2013, Cochrane', stance:'contradicts', conf:.88, sim:.86, n:2326},
+     {id:'cl_1444', text:'Group differences had disappeared at twelve-month follow-up across all three arms.', cite:'Hallgren et al. 2015, Br J Psychiatry', stance:'contradicts', conf:.85, sim:.82, n:946},
+     {id:'cl_1940', text:'Durability could not be assessed: too few trials reported post-intervention follow-up to model.', cite:'Noetel et al. 2024, BMJ', stance:'neutral', conf:.81, sim:.75, n:14170}]}
+];
+const TIER_LABEL = {high:'high', medium:'medium', low:'low', unrated:'unrated'};
+const RUNS = [
+  {id:'8f2c41', q:'Does aerobic exercise reduce depression severity?', status:'completed', papers:'17 / 20', clusters:6, when:'today, 09:41', dur:'4 m 12 s', parent:null},
+  {id:'7b19d0', q:'Does the effect hold in trials with blinded outcome assessment?', status:'completed', papers:'9 / 9', clusters:2, when:'today, 10:06', dur:'1 m 48 s', parent:'8f2c41'},
+  {id:'6a0e77', q:'Does time-restricted eating improve HbA1c in type 2 diabetes?', status:'processing 9/18', papers:'—', clusters:0, when:'today, 10:22', dur:'2 m 31 s', parent:null},
+  {id:'5c88ab', q:'Is exercise good?', status:'failed', papers:'0 / 0', clusters:0, when:'yesterday, 17:52', dur:'0 m 14 s', parent:null}
+];
+
+const PROV = {
+  cl_1042:{match:'exact',section:'results',page:4,origin:'full_text',pdf:true,available:true,
+    quote:'Remission rates were 45% in the supervised aerobic exercise group and 47% in the sertraline group at 16 weeks.',
+    ctx:['At the end of the 16-week intervention period, HAM-D scores had fallen in all three active conditions. ',
+         'Remission rates were 45% in the supervised aerobic exercise group and 47% in the sertraline group at 16 weeks.',
+         ' The placebo condition reached 31%, a difference that did not reach significance against either active arm.']},
+  cl_1188:{match:'normalized',section:'results',page:6,origin:'full_text',pdf:true,available:true,
+    quote:'The overall effect of exercise on depression across the 58 included trials was large (d = −0.80).',
+    ctx:['Random-effects pooling was performed on all trials reporting a continuous depression outcome. ',
+         'The  overall  effect of exercise on depression across the 58 included trials\nwas LARGE (d = −0.80).',
+         ' Restricting to trials with a non-exercise control condition attenuated the estimate only slightly.']},
+  cl_1301:{match:'exact',section:'conclusion',page:2,origin:'full_text',pdf:true,available:true,
+    quote:'Exercise is moderately more effective than a control intervention for reducing symptoms of depression (SMD −0.62).',
+    ctx:['Twenty-five of the thirty-nine included trials contributed to the primary comparison. ',
+         'Exercise is moderately more effective than a control intervention for reducing symptoms of depression (SMD −0.62).',
+         ' Sensitivity analyses restricted to trials at low risk of bias reduced this figure substantially.']},
+  cl_1466:{match:'fuzzy',section:'results',page:9,origin:'full_text',pdf:true,available:true,
+    quote:'after trim-and-fill adjustment the pooled SMD was −0.62 (95% CI −0.81 to −0.42)',
+    reason:'Located by fuzzy match, so the span boundaries are approximate — the extracted text ran two lines together here and the highlight may end past the sentence. Check the page before quoting.',
+    ctx:['Funnel plot asymmetry was present for the primary outcome, and ',
+         'after trim-and-fill adjustment the pooled SMD was −0.62 (95% CI −0.81 to −0.42). PET-PEESE produced a',
+         ' comparable estimate, indicating the effect is not an artefact of small-study bias alone.']},
+  cl_1902:{match:'normalized',section:'results',page:11,origin:'full_text',pdf:true,available:true,
+    quote:'Walking or jogging produced a moderate reduction in depression versus active control (SMD −0.62).',
+    ctx:['Node-level estimates from the network model ranked exercise modalities against active control conditions. ',
+         'Walking or jogging produced a moderate reduction in depression\nversus active control (SMD −0.62).',
+         ' Yoga and strength training showed comparable point estimates with wider credible intervals.']},
+
+  cl_1204:{match:'exact',section:'results',page:5,origin:'full_text',pdf:true,available:true,
+    quote:'The difference in blinded HAM-D₁₇ score between aerobic exercise and relaxation at four months was 0.4 points (p = 0.79).',
+    ctx:['The primary outcome was assessed by raters blind to allocation. ',
+         'The difference in blinded HAM-D₁₇ score between aerobic exercise and relaxation at four months was 0.4 points (p = 0.79).',
+         ' Unblinded self-report measures favoured exercise over the same interval.']},
+  cl_1288:{match:'exact',section:'results',page:7,origin:'full_text',pdf:true,available:true,
+    quote:'There was no evidence of improvement in blinded BDI score at four months in the intervention group compared with usual care alone.',
+    ctx:['Three hundred and sixty-one participants were randomised and followed for twelve months. ',
+         'There was no evidence of improvement in blinded BDI score at four months in the intervention group compared with usual care alone.',
+         ' Self-reported physical activity did increase in the intervention arm, indicating the intervention was delivered as intended.']},
+  cl_1312:{match:'exact',section:'results',page:14,origin:'full_text',pdf:true,available:true,
+    quote:'When we restricted analysis to trials with adequate allocation concealment, blinding of outcome assessment and intention-to-treat analysis, the pooled SMD fell to −0.18.',
+    ctx:['Risk of bias was assessed across six domains. ',
+         'When we restricted analysis to trials with adequate allocation concealment, blinding of outcome assessment and intention-to-treat analysis, the pooled SMD fell to −0.18.',
+         ' Only four trials met all three criteria, so this estimate is imprecise.']},
+  cl_1590:{match:'fuzzy',section:'methods',page:3,origin:'full_text',pdf:true,available:true,
+    quote:'trial sequential analysis did not reach the required information size and could not exclude a null effect',
+    reason:'Located by fuzzy match, so the span boundaries are approximate — the sentence is broken by a figure caption in the extracted text and the highlight may run past its end. Check the page before quoting.',
+    ctx:['We applied trial sequential analysis to the blinded-outcome subset to establish whether the accumulated evidence was conclusive. The cumulative Z-curve did not cross the monitoring boundary: ',
+         'trial sequential analysis did not reach the required information size and could not exclude a null effect. Further adequately',
+         ' blinded trials are therefore required.']},
+  cl_1470:{match:'normalized',section:'discussion',page:12,origin:'full_text',pdf:true,available:true,
+    quote:'Bias-adjusted pooling retained a moderate effect (SMD −0.62), so assessor blinding alone does not explain the estimate away.',
+    ctx:['Our adjustment methods address small-study effects directly rather than by exclusion. ',
+         'Bias-adjusted pooling retained a moderate effect (SMD −0.62), so assessor\nblinding alone does NOT explain the estimate away.',
+         ' We regard restriction to four blinded trials as discarding usable information.']},
+  cl_1911:{match:'none',section:'discussion',page:null,origin:'full_text',pdf:false,available:false,
+    quote:'Effects persisted after controlling for risk of bias, although certainty of evidence was rated low to moderate.',
+    reason:'No open-access full text. The publisher copy is paywalled, so only the abstract and reference metadata were retrieved and there is no paragraph to point at.'},
+  cl_1655:{match:'normalized',section:null,page:null,origin:'abstract',pdf:false,available:false,
+    quote:'Blinded subgroups comprise few and small trials, and their smaller pooled effect lies within sampling error of the full pool.',
+    reason:'Quoted from the abstract. The paper body was never available, so there is no page and no surrounding paragraph.'}
+};
+function provFor(id, claim){
+  const p = PROV[id];
+  if (p) return p;
+  const h = id.split('').reduce((a,ch)=>a+ch.charCodeAt(0),0);
+  const kinds = ['exact','normalized','fuzzy','none','normalized','abstract'];
+  const k = kinds[h % kinds.length];
+  const sect = ['results','methods','discussion','conclusion','limitations'][h % 5];
+  if (k === 'abstract') return {match:'normalized', section:null, page:null, origin:'abstract', pdf:false, available:false,
+    quote:claim.text, reason:'Quoted from the abstract. The paper body was never available, so there is no page and no surrounding paragraph.'};
+  if (k === 'none') return {match:'none', section:sect, page:null, origin:'full_text', pdf:false, available:false,
+    quote:claim.text, reason:'Full text was truncated during extraction, so there is no paragraph to point at.'};
+  return {match:k, section:sect, page:2 + (h % 13), origin:'full_text', pdf:true, available:true, quote:claim.text,
+    reason: k === 'fuzzy' ? 'Located by fuzzy match, so the span boundaries are approximate — check the page before quoting.' : undefined,
+    ctx:['… ', claim.text, ' The surrounding paragraph continues from the same page of the retrieved full text.']};
+}
+
+const CLAIM_REF = {};
+CLUSTERS.forEach((cc, ci) => cc.claims.forEach((cl, li) => {
+  const h = cl.id.split('').reduce((a,ch)=>a*31+ch.charCodeAt(0), 7) >>> 0;
+  const hex = (h.toString(16) + (h*2654435761 >>> 0).toString(16)).slice(0, 8);
+  CLAIM_REF[cl.id] = {marker: (ci+1) + 'abcdefghijkl'[li], uuid: hex};
+}));
+function claimRef(id){
+  const r = CLAIM_REF[id];
+  return r ? r.marker + ' · ' + r.uuid + '…' : id;
+}
+
+class Component extends DCLogic {
+  state = {
+    theme:'light', screen:'query', tick:0, running:false, flag:null,
+    q:'Does aerobic exercise reduce depression severity?', structured:true, vague:false,
+    cluster:'c2', tiers:{}, stances:{}, titles:{}, prose:null, editProse:false,
+    tierPanel:false, degraded:true, src:null, autoRetry:false, retryIn:240, secClaims:{}, openPaper:null, fq:'Does the effect hold once trials with blinded outcome assessment are separated out?'
+  };
+
+  componentDidMount(){
+    const t = this.props.theme || 'light';
+    const s = this.props.startScreen;
+    this.applyTheme(t);
+    this.setState({theme:t, screen: s || this.state.screen});
+  }
+  componentWillUnmount(){ clearInterval(this.timer); clearInterval(this.retryTimer); }
+  toggleRetry = () => {
+    clearInterval(this.retryTimer);
+    if (this.state.autoRetry) { this.setState({autoRetry:false, retryIn:240}); return; }
+    this.setState({autoRetry:true, retryIn:240});
+    this.retryTimer = setInterval(() => {
+      this.setState(p => {
+        if (p.retryIn <= 1) return {retryIn:240};
+        return {retryIn: p.retryIn - 1};
+      });
+    }, 1000);
+  };
+  applyTheme(t){ document.documentElement.setAttribute('data-theme', t); }
+  setTheme = (t) => { this.applyTheme(t); this.setState({theme:t}); };
+
+  start = () => {
+    clearInterval(this.timer);
+    this.setState({screen:'run', tick:0, running:true, flag:null});
+    this.timer = setInterval(() => {
+      this.setState(s => {
+        const t = s.tick + 1;
+        if (t >= 108) { clearInterval(this.timer); return {tick:108, running:false}; }
+        return {tick:t};
+      });
+    }, 320 / (this.props.runSpeed ?? 1));
+  };
+
+  phaseIndex(t){ let i=0; PHASES.forEach((p,k)=>{ if(t>=p.at) i=k; }); return i; }
+
+  paperState(i, t){
+    const p = PAPERS[i];
+    const start = 25 + i*2.05, local = t - start;
+    const failed = FAILS[p.id] !== undefined;
+    if (local < 0) return {stage:'queued', label:'queued', pct:0};
+    if (failed && local >= 4.5) return {stage:'failed', label:'failed', pct:1};
+    if (local < 2) return {stage:'active', label:'fetching full text', pct:.2};
+    if (local < 4) return {stage:'active', label:'normalised', pct:.45};
+    if (local < 6.5) return {stage:'active', label:'extracting claims', pct:.7};
+    if (local < 8.5) return {stage:'active', label:'embedding claims', pct:.9};
+    return {stage:'done', label:'processed', pct:1};
+  }
+
+  computed(c){
+    if (!c.components) return {score:null, tier:'unrated'};
+    const k = c.components;
+    const raw = k.design*.40 + k.sample*.20 + k.corroboration*.20 + k.extraction*.20;
+    const score = Math.max(0, raw - k.penalty);
+    const tier = score >= .75 ? 'high' : score >= .45 ? 'medium' : score >= .25 ? 'low' : 'low';
+    return {score, tier, raw};
+  }
+  provKind(p){
+    if (p.origin === 'abstract') return 'abstract';
+    if (p.match === 'exact' || p.match === 'normalized') return 'verified';
+    if (p.match === 'fuzzy') return 'approximate';
+    return 'unavailable';
+  }
+  provChip(id, claim, active){
+    const p = provFor(id, claim), kind = this.provKind(p);
+    const base = 'display:inline-flex;align-items:center;gap:5px;font-family:var(--font-body);font-size:10.5px;letter-spacing:.03em;padding:2px 6px;cursor:pointer;white-space:nowrap;font-variant-numeric:tabular-nums;text-align:left';
+    const box = {
+      verified:'border:1px solid var(--n-text);background:transparent;color:var(--n-text)',
+      approximate:'border:1px dashed var(--n-line2);background:transparent;color:var(--n-dim)',
+      abstract:'border:1px solid var(--n-line2);border-left:3px solid var(--n-text);background:transparent;color:var(--n-dim)',
+      unavailable:'border:0;padding-left:0;padding-right:0;border-bottom:1px dotted var(--n-line2);background:transparent;color:var(--n-faint)'
+    }[kind];
+    const glyph = {verified:'\u00b6', approximate:'\u2248', abstract:'\u00a7', unavailable:'\u2014'}[kind];
+    const label = {
+      verified: (p.section || 'source') + (p.page ? ' \u00b7 p. ' + p.page : ''),
+      approximate: (p.section || 'source') + (p.page ? ' \u00b7 p. ' + p.page : '') + ' \u00b7 approx',
+      abstract: 'abstract only',
+      unavailable: p.quote ? 'quote, not locatable' : 'no source text'
+    }[kind];
+    return {
+      kind, glyph, label,
+      style: base + ';' + box + (active ? ';background:var(--n-panel2);outline:2px solid var(--color-accent);outline-offset:1px' : '')
+    };
+  }
+  coverage(list){
+    const t = {verified:0, approximate:0, abstract:0, unavailable:0};
+    list.forEach(x => { t[this.provKind(provFor(x.id, x))]++; });
+    const n = list.length || 1;
+    const seg = (k, fill) => ({style:'flex:' + (t[k] || 0) + ';min-width:' + (t[k] ? '3px' : '0') + ';' + fill});
+    const parts = [];
+    if (t.verified) parts.push(t.verified + ' verified');
+    if (t.approximate) parts.push(t.approximate + ' approximate');
+    if (t.abstract) parts.push(t.abstract + ' abstract-only');
+    if (t.unavailable) parts.push(t.unavailable + ' not locatable');
+    return {
+      text: parts.join(' \u00b7 '),
+      total: list.length,
+      barVerified:'flex:' + t.verified + ';background:var(--n-text)',
+      barApprox:'flex:' + t.approximate + ';background:repeating-linear-gradient(45deg,var(--n-dim) 0 2px,transparent 2px 4px)',
+      barAbstract:'flex:' + t.abstract + ';background:var(--n-line2)',
+      barNone:'flex:' + t.unavailable + ';background:transparent;box-shadow:inset 0 0 0 1px var(--n-line2)',
+      pct: Math.round((t.verified / n) * 100)
+    };
+  }
+  openSource(id, claim){ this.setState({src:{id, claim}}); }
+  stanceStyle(s, size){
+    const c = s==='supports' ? 'var(--n-sup)' : s==='contradicts' ? 'var(--n-con)' : 'var(--n-neu)';
+    const b = s==='supports' ? 'var(--n-sup-bg)' : s==='contradicts' ? 'var(--n-con-bg)' : 'var(--n-neu-bg)';
+    return `display:inline-flex;align-items:center;gap:5px;background:${b};color:${c};border-radius:0;padding:${size==='sm'?'2px 6px':'3px 8px'};font-size:${size==='sm'?'10.5px':'11.5px'};letter-spacing:.03em;white-space:nowrap`;
+  }
+  tierStyle(tier, overridden){
+    const map = {high:'var(--color-accent-400)', medium:'var(--color-accent-500)', low:'var(--n-neu)', unrated:'var(--n-faint)'};
+    return `display:inline-flex;align-items:center;gap:6px;border:1px solid ${overridden?'var(--color-accent)':'var(--n-line2)'};color:${map[tier]};border-radius:0;padding:3px 9px;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase`;
+  }
+
+  reportVals(){
+    const st = this.state;
+    const flip = (s) => s==='supports' ? 'contradicts' : s==='contradicts' ? 'neutral' : 'supports';
+
+    const sections = CLUSTERS.map(c => {
+      const comp = this.computed(c);
+      const ovr = st.tiers[c.id];
+      const tier = ovr || comp.tier;
+      const tot = c.stance.supports + c.stance.contradicts + c.stance.neutral;
+      const conflict = c.stance.contradicts >= 2;
+      return {
+        id:c.id, heading: st.titles[c.id] || c.heading, narrative:c.narrative,
+        caveats:c.caveats, papers:c.papers, edited: !!(st.titles[c.id] || st.tiers[c.id]),
+        editedNote: st.titles[c.id] ? 'renamed · pinned' : st.tiers[c.id] ? 'tier overridden · pinned' : '',
+        editedStyle: `font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-accent-400);${(st.titles[c.id]||st.tiers[c.id])?'':'display:none'}`,
+        tier, tierLabel: TIER_LABEL[tier], tierChip: this.tierStyle(tier, !!ovr),
+        scoreLabel: comp.score === null ? 'no score' : comp.score.toFixed(2),
+        supW:`flex:${c.stance.supports};background:var(--n-sup);height:100%`,
+        conW:`flex:${c.stance.contradicts};background:var(--n-con);height:100%`,
+        neuW:`flex:${c.stance.neutral};background:var(--n-neu);height:100%`,
+        stanceText:`${c.stance.supports} support · ${c.stance.contradicts} contradict · ${c.stance.neutral} neutral`,
+        conflictNote: conflict ? 'papers conflict' : '',
+        conflictStyle: `font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--n-con);${conflict?'':'display:none'}`,
+        driverCount: c.drivers.length ? `${c.drivers.length} disagreement driver${c.drivers.length>1?'s':''}` : 'no disagreement drivers recorded',
+        driverList: c.drivers.map(d => ({type:d.type.replace('_',' '), description:d.description})),
+        lineageNodes: (c.lineage ? c.lineage.chain : []).map((nd,i) => ({
+          year:String(nd.year), rel:nd.rel,
+          dotStyle:`width:9px;height:9px;border-radius:0;background:${nd.rel==='contradicts'?'var(--n-con)':nd.rel==='origin'?'var(--color-accent)':'var(--n-sup)'};flex:0 0 9px`,
+          lineStyle:`height:1px;flex:1;background:${i===0?'transparent':'var(--n-line2)'};min-width:14px`
+        })),
+        lineageLabel: c.lineage ? `${c.lineage.count} papers, ${c.lineage.rootYear}–${c.lineage.rootYear + c.lineage.span}` : 'single paper — no lineage',
+        coverText: this.coverage(c.claims).text,
+        barVerified: this.coverage(c.claims).barVerified,
+        barApprox: this.coverage(c.claims).barApprox,
+        barAbstract: this.coverage(c.claims).barAbstract,
+        barNone: this.coverage(c.claims).barNone,
+        claimsOpen: !!st.secClaims[c.id],
+        claimsLabel: (st.secClaims[c.id] ? 'Hide the ' : 'Show the ') + c.claims.length + ' claims behind this section',
+        toggleClaims: () => this.setState(pv => ({secClaims:{...pv.secClaims, [c.id]: !pv.secClaims[c.id]}})),
+        claimList: c.claims.map(cl => {
+          const ch = this.provChip(cl.id, cl, !!(st.src && st.src.id === cl.id));
+          return {
+            id: cl.id, text: cl.text, cite: cl.cite, ref: claimRef(cl.id),
+            provGlyph: ch.glyph, provLabel: ch.label, provStyle: ch.style,
+            openSrc: () => this.openSource(cl.id, cl)
+          };
+        }),
+        open: () => this.setState({screen:'cluster', cluster:c.id})
+      };
+    });
+
+    const c = CLUSTERS.find(x => x.id === st.cluster) || CLUSTERS[0];
+    const comp = this.computed(c);
+    const ovr = st.tiers[c.id];
+    const wmap = {design:.40, sample:.20, corroboration:.20, extraction:.20};
+    const namemap = {design:'design', sample:'sample_size', corroboration:'corroboration', extraction:'extraction_confidence'};
+    const compRows = c.components ? Object.keys(wmap).map(k => {
+      const v = c.components[k], w = wmap[k];
+      return {
+        name: namemap[k], weight: w.toFixed(2), value: v.toFixed(2),
+        contrib: (v*w).toFixed(3),
+        barStyle:`height:6px;border-radius:0;background:var(--color-accent-600);width:${(v*100).toFixed(0)}%`,
+        trackStyle:'height:6px;border-radius:0;background:var(--n-panel2);width:100%;overflow:hidden'
+      };
+    }) : [];
+
+    const clusterClaims = c.claims.map(cl => {
+      const s = st.stances[cl.id] || cl.stance;
+      const changed = !!st.stances[cl.id];
+      const chip = this.provChip(cl.id, cl, !!(st.src && st.src.id === cl.id));
+      return {
+        provGlyph: chip.glyph, provLabel: chip.label, provStyle: chip.style, ref: claimRef(cl.id),
+        openSrc: () => this.openSource(cl.id, cl),
+        id:cl.id, text:cl.text, cite:cl.cite, conf:cl.conf.toFixed(2), sim:cl.sim.toFixed(2),
+        n: cl.n.toLocaleString('en-US'), stance:s, stanceChip:this.stanceStyle(s),
+        wasNote: changed ? `model said ${cl.stance}` : '',
+        wasStyle:`font-size:10.5px;color:var(--n-faint);${changed?'':'display:none'}`,
+        rowStyle:`display:grid;grid-template-columns:1fr 152px 96px 84px 30px;gap:16px;align-items:start;padding:16px 0;border-bottom:2px solid var(--n-line2);${changed?'background:linear-gradient(90deg,color-mix(in srgb,var(--color-accent) 7%,transparent),transparent)':''}`,
+        flip: () => this.setState(p => ({stances:{...p.stances, [cl.id]: flip(s)}})),
+        move: () => this.setState({flag:'moved'})
+      };
+    });
+
+    const editLedger = [];
+    Object.keys(st.titles).forEach(id => {
+      const cc = CLUSTERS.find(x=>x.id===id);
+      editLedger.push({field:'cluster.heading', obj:`${id} · cluster`, was:cc.heading, now:st.titles[id], when:'10:31'});
+    });
+    Object.keys(st.tiers).forEach(id => {
+      const cc = CLUSTERS.find(x=>x.id===id);
+      editLedger.push({field:'quality_tier', obj:`${id} · cluster`, was:`computed ${this.computed(cc).tier} (${this.computed(cc).score===null?'—':this.computed(cc).score.toFixed(2)})`, now:`${st.tiers[id]} — set by hand`, when:'10:33'});
+    });
+    Object.keys(st.stances).forEach(id => {
+      let base=null, cid=null;
+      CLUSTERS.forEach(cc => cc.claims.forEach(cl => { if (cl.id===id) { base=cl.stance; cid=cc.id; } }));
+      editLedger.push({field:'claim.stance', obj:`claim ${claimRef(id)} in ${cid}`, was:`computed ${base}`, now:`${st.stances[id]} — set by hand`, when:'10:35'});
+    });
+
+    const cCoverage = this.coverage(c.claims);
+
+    const sv = st.src;
+    const svProv = sv ? provFor(sv.id, sv.claim) : null;
+    const svKind = sv ? this.provKind(svProv) : null;
+    // claims.source returns context + precomputed highlight offsets; never search for the quote.
+    const svCtx = svProv && svProv.ctx ? svProv.ctx.join('') : '';
+    const svHS = svProv && svProv.ctx ? svProv.ctx[0].length : 0;
+    const svHE = svProv && svProv.ctx ? svHS + svProv.ctx[1].length : 0;
+    const svAvail = !!(svProv && svProv.available && svProv.ctx);
+    const svQuote = svProv ? svProv.quote : '';
+    const svNote = svProv ? (svProv.reason || 'Located in the retrieved full text; the highlight uses the offsets the API returned for this paragraph.') : '';
+
+    const sectionClaims = {};
+    CLUSTERS.forEach(cc => { sectionClaims[cc.id] = cc.claims; });
+
+    const paperClaimMap = {};
+    CLUSTERS.forEach(cc => {
+      if (!cc.lineage) return;
+      cc.lineage.chain.forEach(nd => {
+        const cl = cc.claims.find(x => x.id === nd.claim) || {id:nd.claim, text:nd.title, cite:cc.heading, stance:'neutral'};
+        (paperClaimMap[nd.id] = paperClaimMap[nd.id] || []).push({...cl, cluster:cc.id});
+      });
+    });
+
+    return {
+      isReport: st.screen==='report', isCluster: st.screen==='cluster', isPapers: st.screen==='papers',
+      isHistory: st.screen==='history', isFollowup: st.screen==='followup', isStates: st.screen==='states',
+      isEdits: st.screen==='edits', isPrint: st.screen==='print',
+      sections,
+      execProse: st.prose || 'Across seventeen papers the evidence supports a moderate antidepressant effect of aerobic exercise in adults with a depressive disorder, and the papers that dispute it dispute the method rather than the direction. The pooled estimate sits near SMD −0.62 to −0.79 against non-exercise controls, comparable to first-line pharmacotherapy in the same trials. The largest single qualification is assessor blinding: restricting to blinded, intention-to-treat trials cuts the estimate to roughly −0.18, and four of seven papers in that cluster treat this as the defensible number. Dose survives as the one reproducible moderator; durability past the intervention period does not.',
+      editingProse: st.editProse, notEditingProse: !st.editProse,
+      proseButton: st.editProse ? 'Done' : 'Edit',
+      proseEditedStyle: `font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-accent-400);${st.prose?'':'display:none'}`,
+      cCoverText: cCoverage.text, cCoverTotal: cCoverage.total + ' claims',
+      cBarVerified: cCoverage.barVerified, cBarApprox: cCoverage.barApprox,
+      cBarAbstract: cCoverage.barAbstract, cBarNone: cCoverage.barNone,
+      srcOpen: !!sv, srcClosed: !sv,
+      cBodyStyle: 'padding:52px 56px 110px;max-width:1000px;' + (sv ? 'padding-right:496px;max-width:1440px' : ''),
+      cSplitStyle: 'display:grid;grid-template-columns:' + (sv ? '1fr' : '1fr 1fr') + ';gap:44px;margin-bottom:52px',
+      srcId: sv ? claimRef(sv.id) : '', srcCite: sv ? sv.claim.cite : '',
+      srcKind: svKind === 'verified' ? 'verified source' : svKind === 'approximate' ? 'approximate span' : svKind === 'abstract' ? 'abstract only' : 'not locatable',
+      srcKindStyle: 'display:inline-block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;' + (
+        svKind === 'verified' ? 'border:1px solid var(--n-text);color:var(--n-text)' :
+        svKind === 'approximate' ? 'border:1px dashed var(--n-line2);color:var(--n-dim)' :
+        svKind === 'abstract' ? 'border:1px solid var(--n-line2);border-left:3px solid var(--n-text);color:var(--n-dim)' :
+        'border:0;border-bottom:1px dotted var(--n-line2);color:var(--n-faint);padding-left:0'),
+      srcMeta: sv ? [svProv.section ? 'section ' + svProv.section : 'no section recorded',
+        svProv.page ? 'page ' + svProv.page : 'no page',
+        'origin ' + (svProv.origin || 'full_text'),
+        'source_match ' + svProv.match].join(' \u00b7 ') : '',
+      srcHasPara: svAvail, srcNoPara: !!(sv && !svAvail),
+      srcPre: svAvail ? svCtx.slice(0, svHS) : '',
+      srcHighlight: svAvail ? svCtx.slice(svHS, svHE) : '',
+      srcQuote: svQuote,
+      srcPost: svAvail ? svCtx.slice(svHE) : '',
+      srcOffsets: svAvail ? 'highlight_start ' + svHS + ' · highlight_end ' + svHE : '',
+      srcNote: svNote || '',
+      srcHasPdf: !!(svProv && svProv.pdf),
+      srcPdfLabel: svProv && svProv.pdf ? (svProv.page ? 'Open PDF at page ' + svProv.page : 'Open PDF') : '',
+      closeSrc: () => this.setState({src:null}),
+      toggleRetry: this.toggleRetry,
+      retryLabel: st.autoRetry ? 'Stop retrying' : 'Keep my question and retry automatically',
+      retryStatus: st.autoRetry
+        ? 'Next attempt in ' + Math.floor(st.retryIn/60) + ' m ' + String(st.retryIn%60).padStart(2,'0') + ' s · nothing is sent until a slot frees'
+        : 'Your question stays in the box. Nothing is queued server-side.',
+      cSingle: !c.lineage, noEdits: editLedger.length === 0,
+      toggleProse: () => this.setState({editProse: !this.state.editProse}),
+      onProse: (e) => this.setState({prose: e.target.value}),
+      proseEdited: !!st.prose,
+      keyFindings: [
+        'Seventeen papers report a moderate reduction in depression severity for aerobic exercise against non-exercise control (SMD −0.62 to −0.79).',
+        'Restricting to blinded-assessor, intention-to-treat trials reduces the pooled estimate to about SMD −0.18; four papers treat this as the defensible figure and three dispute the restriction.',
+        'Frequency of three or more supervised sessions per week is the only moderator recovered by more than two papers, and it is confounded with supervision in all of them.',
+        'No cluster supports a claim of maintained benefit twelve months after the intervention ends.'
+      ].map((s,i) => ({n: String(i+1).padStart(2,'0'), text:s})),
+      openQuestions: [
+        'No retrieved trial randomises session frequency independently of supervision, so dose and contact time cannot be separated.',
+        'Treatment-resistant depression rests on a single 33-participant trial; the cluster is left unrated for want of corroboration.',
+        'Late-life effects are inferred from null moderator tests rather than age-stratified estimates.'
+      ],
+      degraded: st.degraded,
+      degradeDetail: [
+        {id:'p05', title:'Exercise treatment for depression: efficacy and dose response — Dunn et al. 2005', why:FAILS.p05},
+        {id:'p12', title:'Physical exercise for late-life major depression — Belvederi Murri et al. 2015', why:FAILS.p12},
+        {id:'p18', title:'Exercise leads to better clinical outcomes… — Gourgouvelis et al. 2018', why:FAILS.p18}
+      ],
+
+      cName: st.titles[c.id] || c.heading, cId: c.id, cRaw: c.heading,
+      cNarrative: c.narrative, cCaveats: c.caveats, cPapers: c.papers,
+      cTierChip: this.tierStyle(ovr || comp.tier, !!ovr),
+      cTier: ovr || comp.tier,
+      cComputedTier: comp.tier,
+      cScore: comp.score === null ? '—' : comp.score.toFixed(2),
+      cRawSum: comp.raw === undefined ? '—' : comp.raw.toFixed(3),
+      cPenalty: c.components ? c.components.penalty.toFixed(2) : '—',
+      cOverridden: !!ovr,
+      cOverrideNote: ovr ? `The model said ${comp.tier}${comp.score===null?'':' ('+comp.score.toFixed(2)+')'}. You said ${ovr}.` : '',
+      hasComponents: !!c.components,
+      compRows,
+      cInputs: c.components ? [
+        {k:'study_types', v:c.inputs.types},
+        {k:'largest_sample_size', v:c.inputs.largest.toLocaleString('en-US') + ' participants'},
+        {k:'paper_count', v:String(c.inputs.papers)},
+        {k:'support_count', v:String(c.inputs.sup)},
+        {k:'contradiction_count', v:String(c.inputs.con)}
+      ] : [{k:'paper_count', v:'1'},{k:'corroboration', v:'not computable — no second paper'}],
+      cStanceSup: `flex:${c.stance.supports};background:var(--n-sup);height:100%`,
+      cStanceCon: `flex:${c.stance.contradicts};background:var(--n-con);height:100%`,
+      cStanceNeu: `flex:${c.stance.neutral};background:var(--n-neu);height:100%`,
+      cStanceText: `${c.stance.supports} / ${c.stance.contradicts} / ${c.stance.neutral}`,
+      cDrivers: c.drivers.map(d => ({type:d.type.replace('_',' '), description:d.description})),
+      cNoDrivers: c.drivers.length === 0,
+      cHasLineage: !!c.lineage,
+      cLineageMeta: c.lineage ? `root ${c.lineage.root} · ${c.lineage.rootYear} · span ${c.lineage.span} years · ${c.lineage.count} papers` : '',
+      cLineage: (c.lineage ? c.lineage.chain : []).map((nd,i,arr) => {
+        const col = nd.rel==='contradicts' ? 'var(--n-con)' : nd.rel==='origin' ? 'var(--color-accent)' : nd.rel==='extends' ? 'var(--color-accent-400)' : 'var(--n-sup)';
+        return {
+          year:String(nd.year), title:nd.title, ids:`${nd.id} · claim ${claimRef(nd.claim)}`, rel:nd.rel,
+          cites:`${nd.cites.toLocaleString('en-US')} citations`,
+          relStyle:`display:inline-flex;padding:2px 7px;border-radius:0;font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:${col};border:1px solid ${col}`,
+          dotStyle:`width:11px;height:11px;border-radius:0;background:${nd.rel==='origin'?col:'var(--n-bg)'};border:2px solid ${col};flex:0 0 11px;z-index:1`,
+          spineStyle:`width:1px;flex:1;background:${i===arr.length-1?'transparent':'var(--n-line2)'};margin:2px 0`,
+          citeBarStyle:`height:3px;border-radius:0;background:${col};opacity:.5;width:${Math.max(6, Math.min(100, nd.cites/25)).toFixed(0)}%`
+        };
+      }),
+      clusterClaims,
+      clusterList: CLUSTERS.map(x => ({
+        label: st.titles[x.id] || x.heading, id:x.id,
+        style:`text-align:left;border:0;background:${x.id===c.id?'var(--n-panel2)':'transparent'};border-left:2px solid ${x.id===c.id?'var(--color-accent)':'transparent'};color:${x.id===c.id?'var(--n-text)':'var(--n-dim)'};font-family:var(--font-body);font-size:12.5px;line-height:1.35;padding:9px 12px;cursor:pointer;width:100%`,
+        go: () => this.setState({cluster:x.id})
+      })),
+      openTierPanel: () => this.setState({tierPanel:!this.state.tierPanel}),
+      tierPanelOpen: st.tierPanel,
+      tierOptions: ['high','medium','low','unrated'].map(tv => ({
+        label:tv,
+        style:`border:1px solid ${(ovr||'')===tv?'var(--color-accent)':'var(--n-line2)'};background:transparent;color:${(ovr||'')===tv?'var(--n-text)':'var(--n-dim)'};border-radius:var(--radius-sm);padding:6px 12px;font-family:var(--font-body);font-size:12.5px;cursor:pointer`,
+        pick: () => this.setState(p => ({tiers:{...p.tiers, [c.id]:tv}, tierPanel:false}))
+      })),
+      clearTier: () => this.setState(p => { const n = {...p.tiers}; delete n[c.id]; return {tiers:n, tierPanel:false}; }),
+      renameCluster: (e) => this.setState(p => ({titles:{...p.titles, [c.id]: e.target.value}})),
+      cTitleValue: st.titles[c.id] || c.heading,
+
+      paperRows: PAPERS.map(p => ({
+        rank:String(p.rank).padStart(2,'0'), score:p.score.toFixed(2), title:p.title, authors:p.authors,
+        year:String(p.year), journal:p.journal, type:p.type, method:p.method,
+        n: p.n.toLocaleString('en-US'), cites:p.cites.toLocaleString('en-US'),
+        claims: FAILS[p.id] ? '—' : `${p.claims} claims`,
+        failed: !!FAILS[p.id], why: FAILS[p.id] || '',
+        rowStyle:`display:grid;grid-template-columns:52px 1fr 190px 96px 74px;gap:22px;padding:18px 0;border-bottom:2px solid var(--n-line2);opacity:${FAILS[p.id]?.55:1}`,
+        scoreBar:`height:2px;background:var(--color-accent-600);width:${(p.score*100).toFixed(0)}%;margin-top:5px`,
+        claimStyle:`font-size:12px;color:${FAILS[p.id]?'var(--n-con)':'var(--n-dim)'};font-variant-numeric:tabular-nums`,
+        wrapStyle:'display:flex;flex-direction:column',
+        coverText: (paperClaimMap[p.id] && paperClaimMap[p.id].length) ? this.coverage(paperClaimMap[p.id]).text : (FAILS[p.id] ? 'no claims extracted' : 'provenance not indexed for this paper'),
+        barVerified: this.coverage(paperClaimMap[p.id] || []).barVerified,
+        barApprox: this.coverage(paperClaimMap[p.id] || []).barApprox,
+        barAbstract: this.coverage(paperClaimMap[p.id] || []).barAbstract,
+        barNone: this.coverage(paperClaimMap[p.id] || []).barNone,
+        hasClaims: !!(paperClaimMap[p.id] && paperClaimMap[p.id].length),
+        expanded: st.openPaper === p.id,
+        toggleLabel: st.openPaper === p.id ? 'Hide claim sources' : 'Claim sources',
+        toggle: () => this.setState(pv => ({openPaper: pv.openPaper === p.id ? null : p.id})),
+        claimList: (paperClaimMap[p.id] || []).map(cl => {
+          const ch = this.provChip(cl.id, cl, !!(st.src && st.src.id === cl.id));
+          return {
+            id: cl.id, cluster: cl.cluster, text: cl.text, ref: claimRef(cl.id),
+            provGlyph: ch.glyph, provLabel: ch.label, provStyle: ch.style,
+            openSrc: () => this.openSource(cl.id, cl)
+          };
+        })
+      })),
+
+      runRows: RUNS.map(r => ({
+        id:r.id, q:r.q, status:r.status, papers:r.papers, clusters:String(r.clusters||'—'),
+        when:r.when, dur:r.dur, child: !!r.parent,
+        parentNote: r.parent ? `follow-up of ${r.parent}` : '',
+        statusStyle:`font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:${r.status==='failed'?'var(--n-con)':r.status.startsWith('processing')?'var(--color-accent)':'var(--n-dim)'}`,
+        open: () => this.setState({screen: r.status==='failed' ? 'run' : r.status.startsWith('processing') ? 'run' : 'report', flag: r.status==='failed' ? 'failed' : null, tick: r.status==='failed' ? 12 : 108})
+      })),
+
+      editLedger, hasEdits: editLedger.length > 0,
+      fq: st.fq, onFq: (e) => this.setState({fq:e.target.value}),
+      runFollowup: () => this.setState({screen:'run', tick:0, running:true, flag:null}, this.start),
+
+      stateCards: [
+        {label:'Backpressure — 429, both slots busy', go:()=>this.setState({screen:'run', tick:6, flag:'busy'})},
+        {label:'Seq gap — reload prompt', go:()=>this.setState({screen:'run', tick:52, flag:'seqgap'})},
+        {label:'Failed run — retrieval 502', go:()=>this.setState({screen:'run', tick:12, flag:'failed'})},
+        {label:'Cancelled run — 12 of 20 papers', go:()=>this.setState({screen:'run', tick:48, flag:'cancelled'})},
+        {label:'Clarification needed — question too broad', go:()=>this.setState({screen:'query', q:'Is exercise good?', vague:true, structured:false})},
+        {label:'Partial degradation — 17 of 20 papers', go:()=>this.setState({screen:'report', degraded:true})},
+        {label:'Unrated quality — single-paper cluster', go:()=>this.setState({screen:'cluster', cluster:'c5'})},
+        {label:'Zero disagreement drivers', go:()=>this.setState({screen:'cluster', cluster:'c4'})},
+        {label:'Overridden tier — model said medium, I said high', go:()=>this.setState(p=>({screen:'cluster', cluster:'c2', tiers:{...p.tiers, c2:'high'}}))},
+        {label:'Print variant — A4, 18 mm margins', go:()=>this.setState({screen:'print'})}
+      ],
+      goPrint: () => this.setState({screen:'print'}),
+      goCluster2: () => this.setState({screen:'cluster', cluster:'c2'}),
+      goFollowup: () => this.setState({screen:'followup'}),
+      goEdits: () => this.setState({screen:'edits'}),
+      showMoved: st.flag==='moved',
+      dismissMoved: () => this.setState({flag:null})
+    };
+  }
+
+  renderVals(){
+    const st = this.state, t = st.tick;
+    const pi = this.phaseIndex(t);
+    const dark = st.theme === 'dark';
+
+    const NAV_ICONS = {"query":"M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 8v8M8 12h8","run":"M3 12h4l3-8 4 16 3-8h4","report":"M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6","papers":"M4 8l8-4 8 4-8 4zM4 12l8 4 8-4M4 16l8 4 8-4","cluster":"M6 12a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M16 6a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M16 18a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M11.2 10.8l5-3M11.2 13.2l5 3","edits":"M4 20h4L20 8l-4-4L4 16z","followup":"M9 10L4 15l5 5M4 15h9a7 7 0 0 0 7-7V5","history":"M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l4 2","states":"M12 4L2 20h20zM12 10v5M12 17.4v.2","print":"M7 8V3h10v5M7 16H5V9h14v7h-2M7 13h10v8H7z"};
+    const navItems = [
+      ['query','New query',''],['run','Live run',''],['report','Report','6'],
+      ['papers','Papers','20'],['cluster','Cluster detail',''],['edits','Edits',''],
+      ['followup','Follow-up',''],['history','History','4'],['states','States',''],['print','Print sheet','']
+    ];
+    const nav = navItems.map(([id,label,badge]) => {
+      const on = st.screen === id;
+      return {
+        label, badge, icon: NAV_ICONS[id] || '',
+        go: () => { if (id==='run' && this.state.tick===0) this.start(); else this.setState({screen:id, flag:null}); },
+        style:`display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:7px 18px;border:0;border-left:2px solid ${on?'var(--color-accent)':'transparent'};background:${on?'var(--n-panel2)':'transparent'};color:${on?'var(--n-text)':'var(--n-dim)'};font-family:var(--font-body);font-size:13.5px;cursor:pointer`,
+        badgeStyle:`font-size:11px;color:var(--n-faint);font-variant-numeric:tabular-nums;flex:0 0 auto`
+      };
+    });
+
+    const segBase = 'flex:1;border:0;padding:6px 10px;font-family:var(--font-body);font-size:12px;cursor:pointer';
+    const on = 'background:var(--color-accent-800);color:var(--n-text)';
+    const off = 'background:transparent;color:var(--n-dim)';
+
+    const phases = PHASES.map((p,i) => {
+      const done = i < pi, active = i === pi;
+      const detailMap = {
+        structuring:'1 call', retrieving:'42 hits', ranking:'top 20',
+        storing:'20 rows', processing: active ? `${Math.min(20,Math.max(0,Math.round((t-25)/2.05)))}/20` : '20/20',
+        clustering:'6 clusters', synthesizing: active ? `${SEC_TICKS.filter(x=>t>=x).length}/6` : '6/6'
+      };
+      return {
+        name:p.name,
+        detail: (done||active) ? (detailMap[p.name]||'') : '',
+        wrapStyle:'flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;padding-right:10px',
+        barStyle:`height:3px;border-radius:0;background:${done?'var(--color-accent-600)':active?'var(--color-accent)':'var(--n-line2)'};${active?'animation:n-pulse 1.4s ease-in-out infinite':''}`,
+        labelStyle:`font-size:11.5px;letter-spacing:.02em;color:${active?'var(--n-text)':done?'var(--n-dim)':'var(--n-faint)'}`
+      };
+    });
+
+    const paperCells = PAPERS.map((p,i) => {
+      const ps = this.paperState(i,t);
+      const col = ps.stage==='failed' ? 'var(--n-con)' : ps.stage==='done' ? 'var(--color-accent-500)' : ps.stage==='active' ? 'var(--color-accent)' : 'var(--n-line2)';
+      return {
+        title: p.title,
+        status: ps.label,
+        meta: ps.stage==='done' ? `${p.claims} claims · ${p.year}` : ps.stage==='failed' ? FAILS[p.id] : `${p.authors.split(',')[0]} ${p.year}`,
+        rowStyle:`display:flex;gap:11px;min-width:0;padding:9px 0;border-bottom:2px solid var(--n-line2);opacity:${ps.stage==='queued'?.42:1};transition:opacity .3s`,
+        dotStyle:`width:7px;height:7px;border-radius:0;margin-top:6px;flex:0 0 7px;background:${col};${ps.stage==='active'?'animation:n-pulse 1s ease-in-out infinite':''}`,
+        titleStyle:'font-size:13px;line-height:1.35;margin-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap',
+        statusStyle:`color:${ps.stage==='failed'?'var(--n-con)':ps.stage==='active'?'var(--color-accent-400)':'var(--n-faint)'}`
+      };
+    });
+
+    const done = PAPERS.filter((p,i)=>this.paperState(i,t).stage==='done');
+    const failed = PAPERS.filter((p,i)=>this.paperState(i,t).stage==='failed');
+    const claimsSoFar = done.reduce((a,p)=>a+p.claims,0);
+
+    const sectionSlots = SECTIONS.map((h,i) => {
+      const ready = t >= SEC_TICKS[i];
+      return {
+        heading: ready ? h : '—',
+        tick: ready ? '✓' : String(i+1).padStart(2,'0'),
+        style:`display:flex;gap:10px;align-items:flex-start;opacity:${ready?1:.38};${ready?'animation:n-in .35s ease both':''}`,
+        tickStyle:`flex:0 0 18px;font-size:11px;color:${ready?'var(--color-accent-400)':'var(--n-faint)'};font-variant-numeric:tabular-nums;padding-top:2px`
+      };
+    });
+
+    const events = [];
+    let seq = 1804 + t*3;
+    const push = (text, kind) => events.unshift({seq:String(seq--), text, style:`color:${kind==='fail'?'var(--n-con)':kind==='hi'?'var(--n-text)':'var(--n-dim)'}`});
+    const activeIdx = PAPERS.map((p,i)=>i).filter(i=>this.paperState(i,t).stage!=='queued').slice(-5).reverse();
+    activeIdx.forEach(i => {
+      const ps = this.paperState(i,t);
+      const short = PAPERS[i].authors.split(',')[0] + ' ' + PAPERS[i].year;
+      if (ps.stage==='failed') push(`paper_failed ${PAPERS[i].id} ${short}`,'fail');
+      else if (ps.stage==='done') push(`paper_processed ${PAPERS[i].id} claims=${PAPERS[i].claims}`,'hi');
+      else push(`${ps.label==='fetching full text'?'paper_started':ps.label==='normalised'?'paper_normalized':ps.label==='extracting claims'?'paper_claims_extracted':'paper_claims_embedded'} ${PAPERS[i].id}`);
+    });
+    if (t>=84) push(`section_ready cluster=c${SEC_TICKS.filter(x=>t>=x).length||1}`,'hi');
+    if (t>=106) push('run_completed papers=17/20 clusters=6','hi');
+    if (t<25) push(`phase_changed ${PHASES[pi].name}`,'hi');
+    while (events.length < 9) push('heartbeat');
+
+    const mm = Math.floor(t*1.9/60), ss = Math.floor(t*1.9)%60;
+
+    return {
+      nav, seq: String(1804 + t*3),
+      socketLabel: st.flag==='seqgap' ? 'desynced' : st.running ? 'open' : 'idle',
+      socketColor: `color:${st.flag==='seqgap'?'var(--n-con)':'var(--color-accent-400)'}`,
+      darkBtn: segBase + ';' + (dark?on:off), lightBtn: segBase + ';' + (dark?off:on),
+      setDark: () => this.setTheme('dark'), setLight: () => this.setTheme('light'),
+
+      theme: st.theme,
+      showStream: this.props.showEventStream ?? true,
+      isQuery: st.screen==='query', isRun: st.screen==='run',
+      q: st.q, qLen: st.q.length,
+      onQ: (e) => this.setState({q:e.target.value}),
+      showStructured: st.structured && !st.vague, showClarify: st.vague,
+      examples: [
+        {label:'Does aerobic exercise reduce depression severity?', go:()=>this.setState({q:'Does aerobic exercise reduce depression severity?',vague:false,structured:true})},
+        {label:'Is exercise good?', go:()=>this.setState({q:'Is exercise good?',vague:true,structured:false})},
+        {label:'Does intermittent fasting improve HbA1c?', go:()=>this.setState({q:'Does intermittent fasting improve HbA1c in type 2 diabetes?',vague:false,structured:true})}
+      ],
+      structure: () => this.setState({structured:true, vague: this.state.q.trim().length < 30}),
+      goVague: () => this.setState({structured:false, vague:false}),
+      useSuggested: () => this.setState({q:'Does aerobic exercise reduce depression severity?', vague:false, structured:true}),
+
+      startRun: this.start, restartRun: this.start,
+      cancelRun: () => { clearInterval(this.timer); this.setState({running:false, flag:'cancelled'}); },
+      jumpDone: () => { clearInterval(this.timer); this.setState({tick:108, running:false, flag:null}); },
+      reloadRun: () => { this.setState({flag:null}); },
+      clearFlag: () => this.setState({flag:null}),
+      goReport: () => this.setState({screen:'report'}),
+      goHistory: () => this.setState({screen:'history', flag:null}),
+
+      phaseLabel: PHASES[pi].name, phases,
+      elapsed: `${mm}:${String(ss).padStart(2,'0')}`,
+      paperCells, procCount: done.length + failed.length, claimsSoFar, failCount: failed.length,
+      sectionSlots, runComplete: t >= 106,
+      events: events.slice(0,9),
+      showSeqGap: st.flag==='seqgap', showFailed: st.flag==='failed',
+      showCancelled: st.flag==='cancelled', showBusy: st.flag==='busy',
+      ...this.reportVals()
+    };
+  }
+}
+
+</script>
+</body>
+</html>

@@ -4,6 +4,8 @@
 
 Auth runs inline on the handshake: FastAPI's HTTP security dependencies do not
 execute for a WebSocket upgrade, so `require_api_key` cannot be reused here.
+The admin key is resolved once here too and carried on the connection, so an
+action never has to re-derive it from the socket.
 
 `/api/v2/ws/{query_id}` is the same socket with one subscription pre-attached,
 for a client that only wants to watch a single run.
@@ -14,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import secrets
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -28,11 +31,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["v2"])
 
 
+def _presented(websocket: WebSocket, header: str, param: str) -> str:
+    return websocket.headers.get(header) or websocket.query_params.get(param) or ""
+
+
 def _authorized(websocket: WebSocket) -> bool:
     if not settings.api_key:
         return True
-    provided = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
-    return provided == settings.api_key
+    provided = _presented(websocket, "x-api-key", "api_key")
+    return secrets.compare_digest(provided, settings.api_key)
+
+
+def _is_admin(websocket: WebSocket) -> bool:
+    """Whether this handshake carried ADMIN_API_KEY.
+
+    Unset means nobody is an admin, so the inline `wait` path stays closed on a
+    public deployment instead of opening by default.
+    """
+    if not settings.admin_api_key:
+        return False
+    return secrets.compare_digest(
+        _presented(websocket, "x-admin-key", "admin_key"), settings.admin_api_key
+    )
 
 
 async def _serve(websocket: WebSocket, query_id: UUID | None = None) -> None:
@@ -41,7 +61,7 @@ async def _serve(websocket: WebSocket, query_id: UUID | None = None) -> None:
         return
 
     await websocket.accept()
-    connection = Connection(websocket)
+    connection = Connection(websocket, is_admin=_is_admin(websocket))
     heartbeat = asyncio.create_task(connection.heartbeat_forever(), name="ws-heartbeat")
 
     try:

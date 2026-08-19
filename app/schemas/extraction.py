@@ -73,6 +73,15 @@ class ExtractedClaim(BaseModel):
     confidence_score: float = Field(
         default=0.5, description="0.0-1.0 confidence that this extraction is faithful to the paper"
     )
+    supporting_quote: str | None = Field(
+        default=None,
+        description=(
+            "The exact sentence or two from the supplied text that this claim came "
+            "from, copied character for character. Never paraphrased, never "
+            "stitched together from separate places. Null if no single span "
+            "supports it."
+        ),
+    )
 
     def methodology_payload(self) -> dict[str, Any] | None:
         payload = {

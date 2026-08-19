@@ -82,6 +82,13 @@ async def cluster_claims(cluster: ClaimCluster, db: AsyncSession) -> list[Cluste
             similarity_score=link_by_claim[claim.id].similarity_score,
             confidence_score=claim.confidence_score,
             sample_size=claim.sample_size,
+            source_match=claim.source_match,
+            source_quote=claim.source_quote,
+            source_origin=claim.source_origin,
+            source_section=claim.source_section,
+            source_page=claim.source_page,
+            source_start=claim.source_start,
+            source_end=claim.source_end,
         )
         for claim, paper in rows
     ]
