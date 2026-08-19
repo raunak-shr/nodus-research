@@ -1080,7 +1080,7 @@ function sampleLine(methodology: Record<string, unknown> | null): string | null 
   // A leading count is the useful part; anything else is cut to a width the
   // column can hold, with the full text kept on the cell's title. It is never
   // dressed up as an "n =" the paper did not claim.
-  const leading = /^\s*(?:n\s*=\s*)?([\d,]{1,12})\s*(?:participants|subjects|patients)?/.exec(sample)
+  const leading = /^\s*(?:n\s*=\s*)?([\d,]{1,12})\s*(?:participants|subjects|patients)?\b/.exec(sample)
   if (leading && leading[1]) return `n = ${leading[1]}`
   const trimmed = sample.trim()
   return trimmed.length > 40 ? `${trimmed.slice(0, 39)}…` : trimmed
