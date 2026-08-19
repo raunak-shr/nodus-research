@@ -522,10 +522,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         tick += 1
         if (tick >= DEMO_RUN_TICKS) {
           stopClock()
-          setRun(simulateRun(DEMO_RUN_TICKS, question, 'completed'))
+          setRun(simulateRun(DEMO_RUN_TICKS, asked, 'completed'))
           return
         }
-        setRun(simulateRun(tick, question, 'running'))
+        setRun(simulateRun(tick, asked, 'running'))
       }, DEMO_TICK_MS)
     },
     [question, stopClock],
