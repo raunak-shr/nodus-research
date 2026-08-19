@@ -60,6 +60,7 @@ import {
 } from '../data/demoRun'
 
 export type Screen =
+  | 'landing'
   | 'query'
   | 'run'
   | 'report'
@@ -225,7 +226,9 @@ const STREAM_QUIET_MS = 20_000
 export function StoreProvider({ children }: { children: ReactNode }): ReactElement {
   const [mode, setMode] = useState<Mode>(DEMO_ENV ? 'demo' : 'live')
   const [theme, setThemeState] = useState<'light' | 'dark'>('light')
-  const [screen, setScreen] = useState<Screen>('query')
+  // The landing page is the entry point: a first visit has no query, no run and
+  // no report, so every other screen would open on its empty state.
+  const [screen, setScreen] = useState<Screen>('landing')
   const [flag, setFlag] = useState<Flag>(null)
   const [socketStatus, setSocketStatus] = useState<SocketStatus>(DEMO_ENV ? 'idle' : 'connecting')
   const [seq, setSeq] = useState(0)
@@ -519,10 +522,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         tick += 1
         if (tick >= DEMO_RUN_TICKS) {
           stopClock()
-          setRun(simulateRun(DEMO_RUN_TICKS, question, 'completed'))
+          setRun(simulateRun(DEMO_RUN_TICKS, asked, 'completed'))
           return
         }
-        setRun(simulateRun(tick, question, 'running'))
+        setRun(simulateRun(tick, asked, 'running'))
       }, DEMO_TICK_MS)
     },
     [question, stopClock],
