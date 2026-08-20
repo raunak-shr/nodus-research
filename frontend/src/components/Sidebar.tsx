@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react'
 
+import { Mark } from './Mark'
 import { useStore, type Screen } from '../state/store'
 
 const ICONS: Record<Screen, string> = {
@@ -53,7 +54,7 @@ export function Sidebar(): ReactElement {
   return (
     <nav className="sidebar">
       <div style={{ padding: '0 18px', display: 'flex', alignItems: 'center', gap: 9 }}>
-        <Mark />
+        <Mark size={22} />
         <div
           style={{
             fontFamily: 'var(--font-heading)',
@@ -155,37 +156,5 @@ export function Sidebar(): ReactElement {
         ) : null}
       </div>
     </nav>
-  )
-}
-
-/** The mark: two nodes and the edge between them. */
-function Mark(): ReactElement {
-  return (
-    <div
-      style={{
-        width: 22,
-        height: 22,
-        border: '1px solid var(--color-accent)',
-        position: 'relative',
-        flex: '0 0 22px',
-      }}
-      aria-hidden="true"
-    >
-      <div style={{ position: 'absolute', left: 4, top: 4, width: 5, height: 5, background: 'var(--color-accent)' }} />
-      <div style={{ position: 'absolute', right: 4, bottom: 4, width: 5, height: 5, background: 'var(--color-accent)' }} />
-      <div
-        style={{
-          position: 'absolute',
-          left: 6,
-          top: 6,
-          width: 12,
-          height: 1,
-          background: 'var(--color-accent)',
-          transform: 'rotate(45deg)',
-          transformOrigin: 'left center',
-          opacity: 0.7,
-        }}
-      />
-    </div>
   )
 }
