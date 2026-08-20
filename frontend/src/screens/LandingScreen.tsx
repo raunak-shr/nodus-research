@@ -257,7 +257,7 @@ export function LandingScreen(): ReactElement {
               </a>
             </div>
             <p className="lp-mono" style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--n-faint)', margin: '22px 0 0', maxWidth: '48ch' }}>
-              Your own Postgres · Azure OpenAI, Gemini, Anthropic or Ollama · fully local option
+              Your own Postgres · Gemini, Anthropic or Ollama · fully local option
             </p>
           </div>
 
@@ -642,7 +642,7 @@ export function LandingScreen(): ReactElement {
               there is no hosted service holding them.
             </p>
             <p className="lp-body pretty" style={{ maxWidth: '52ch' }}>
-              The model is swappable: Azure OpenAI, Gemini, Anthropic, or Ollama. With Ollama the
+              The model is swappable: Gemini, Anthropic, or Ollama. With Ollama the
               whole pipeline runs locally and nothing leaves the machine, which is the configuration
               to use for unpublished or embargoed work.
             </p>
