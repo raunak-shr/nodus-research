@@ -47,6 +47,7 @@ export function ClusterScreen(): ReactElement {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '250px minmax(0, 1fr)', minHeight: '100vh' }}>
       <div
+        className="n-scroll"
         style={{
           borderRight: '2px solid var(--n-line2)',
           padding: '26px 0',

@@ -294,3 +294,19 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
   .sidebar { display: none; }
   .screen { padding: 32px 24px 80px; }
 }
+
+/* -- scrollers ------------------------------------------------------------ */
+
+/* An inner scroller paints its own bar. The platform default is a white track
+   with a pair of stepper buttons, which on a --n-panel surface reads as a
+   bright strip down the edge of the panel rather than as part of it. The track
+   is transparent so whatever surface the scroller sits on shows through, and
+   the thumb is the same rule colour everything else on the screen is drawn in. */
+.n-scroll { scrollbar-width: thin; scrollbar-color: var(--n-line2) transparent; }
+.n-scroll::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+.n-scroll::-webkit-scrollbar-track { background: transparent; border: 0; }
+.n-scroll::-webkit-scrollbar-thumb { background: var(--n-line2); border: 0; }
+.n-scroll::-webkit-scrollbar-thumb:hover { background: var(--n-dim); }
+/* Chromium still draws the two arrows on Windows unless they are turned off. */
+.n-scroll::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.n-scroll::-webkit-scrollbar-corner { background: transparent; }
