@@ -556,6 +556,22 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     return () => window.clearInterval(timer)
   }, [mode, reconcileRun, run.complete, run.queryId])
 
+  // The elapsed clock. Events arrive in bursts and Stage 3 is minutes of LLM
+  // calls between them, so reading the feed only when a frame lands left the
+  // clock standing still and then jumping; this re-reads it once a second.
+  // The feed is what computes elapsed and it stops at the run's own end, so
+  // this interval carries no time of its own — it is only what redraws it.
+  useEffect(() => {
+    if (mode !== 'live' || !run.started) return
+    if (run.complete || run.outcome !== 'running' || flag === 'cancelled') return
+
+    const timer = window.setInterval(() => {
+      const feed = feedRef.current
+      if (feed) setRun(feed.view())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [flag, mode, run.complete, run.outcome, run.started])
+
   // -- actions -------------------------------------------------------------
 
   const go = useCallback((next: Screen, nextFlag: Flag = null) => {
@@ -687,6 +703,11 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
 
   const cancelRun = useCallback(() => {
     stopClock()
+    // Cancelling ends the run without a terminal phase — the stream just stops —
+    // so the feed is told to hold its clock at the moment it was asked to stop.
+    // That number is what the cancelled screen reports as the run's length.
+    feedRef.current?.freeze()
+    setRun((current) => feedRef.current?.view() ?? current)
     setFlag('cancelled')
     if (mode === 'live' && activeQueryId && socketRef.current) {
       void socketRef.current.request('queries.cancel', { query_id: activeQueryId }).catch(() => undefined)

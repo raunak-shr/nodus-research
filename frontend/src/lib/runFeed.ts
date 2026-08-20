@@ -63,6 +63,11 @@ export class RunFeed {
   private reportNote: string | null = null
   private errorMessage: string | null = null
   private readonly startedAt = Date.now()
+  /** When the run stopped, if it has. The elapsed clock reads to here instead of
+   *  to now, so a finished run's time is the time it took rather than the time
+   *  since it started — `view()` is called again on every later reconnect,
+   *  reconcile and artifact load, and each one used to move the clock on. */
+  private finishedAt: number | null = null
 
   constructor(
     private queryId: string | null,
@@ -110,10 +115,24 @@ export class RunFeed {
       this.clusterCount = Math.max(this.clusterCount ?? 0, snapshot.clusters)
     }
     if (snapshot.reportAvailable) this.reportAvailable = true
+    this.stopClockIfFinished()
+  }
+
+  /** Stop the clock at the run's own end.
+   *
+   *  Cancelling is the one ending the phases never name — the pipeline is asked
+   *  to stop and the stream simply ends — so the store calls this directly. */
+  freeze(): void {
+    if (this.finishedAt === null) this.finishedAt = Date.now()
+  }
+
+  private stopClockIfFinished(): void {
+    if (this.phase === 'completed' || this.phase === 'failed') this.freeze()
   }
 
   apply(frame: EventFrame): void {
     this.phase = frame.phase
+    this.stopClockIfFinished()
     this.events = [eventLine(frame), ...this.events].slice(0, 9)
 
     const paperId = str(frame.paper_id)
@@ -343,7 +362,7 @@ export class RunFeed {
           detail: index <= phaseIndex ? this.phaseDetail(name, total) : '',
         }
       }),
-      elapsedSeconds: (Date.now() - this.startedAt) / 1000,
+      elapsedSeconds: ((this.finishedAt ?? Date.now()) - this.startedAt) / 1000,
       papers,
       paperTotal: total,
       processedCount: this.completedCount ?? seenDone,
