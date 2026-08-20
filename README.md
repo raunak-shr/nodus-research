@@ -144,6 +144,10 @@ tests/
 ├── …                           # mirrors app/, hermetic (no network, DB or LLM)
 ├── integration/                # live checks against a running server, run by hand
 └── reports/                    # generated report output (git-ignored)
+Dockerfile                      # the deployed image — Chromium baked in, one worker
+.github/workflows/
+├── deploy-backend.yml          # build and roll the image onto Cloud Run
+└── README-deploy.md            # one-time GCP setup: WIF, secrets, first deploy
 ```
 
 ## Prerequisites
@@ -151,7 +155,8 @@ tests/
 - Python 3.11+
 - A hosted PostgreSQL 15+ with `pgvector` — Supabase, RDS, Neon, or your own
 - [uv](https://docs.astral.sh/uv/)
-- Optional: Ollama for semantic embeddings (`docker compose up -d ollama`)
+- Optional: Docker, to build or run the deployment image locally
+- Optional: a local [Ollama](https://ollama.com) install, if you want to run inference or embeddings on your own machine
 
 ## Setup
 
@@ -204,11 +209,11 @@ Lower `DB_POOL_SIZE` to 1–2 on serverless: each warm instance holds its own po
 uv run alembic upgrade head
 ```
 
-Docker Compose does not define a database — it only carries the optional Ollama service.
+There is no local database and nothing to bring up: `DATABASE_URL` points at hosted Postgres in every environment.
 
 **4. Embeddings**
 
-Cloudflare Workers AI needs nothing hosted and works from a serverless deployment:
+Cloudflare Workers AI needs nothing hosted or installed, which is why the deployment uses it:
 
 ```
 EMBEDDING_PROVIDER=cloudflare
@@ -219,20 +224,19 @@ CLOUDFLARE_EMBEDDING_MODEL=@cf/baai/bge-base-en-v1.5
 
 `bge-base-en-v1.5` is 768-wide and fits the `claim_embeddings` column as it stands. `bge-small` (384) and `bge-large` (1024) do not — the dimension check in `embedding_store` discards every vector from those, which reaches you as a run that clusters nothing. `/health/config` reports the mismatch before you spend a run on it.
 
-Or a local Ollama instead:
+Or a local Ollama instead — install it, then pull the model:
 
 ```bash
-docker compose up -d ollama
-docker compose exec ollama ollama pull nomic-embed-text
+ollama pull nomic-embed-text
 ```
 
-Then set `EMBEDDING_PROVIDER=ollama`. Failing both, `EMBEDDING_PROVIDER=hash` runs everything offline using lexical overlap — the pipeline works, but clustering only catches claims that share vocabulary, not paraphrases.
+Then set `EMBEDDING_PROVIDER=ollama`, and `OLLAMA_BASE_URL` if it is not on the default `http://localhost:11434`. Failing both, `EMBEDDING_PROVIDER=hash` runs everything offline using lexical overlap — the pipeline works, but clustering only catches claims that share vocabulary, not paraphrases.
 
 The cluster similarity threshold follows the provider, because cosine similarity is not comparable across models: `CLUSTER_SIMILARITY_THRESHOLD` (0.72) for nomic-embed-text and Azure, `BGE_CLUSTER_SIMILARITY_THRESHOLD` (0.80) for Workers AI, `LEXICAL_CLUSTER_SIMILARITY_THRESHOLD` (0.45) for the hash fallback. On a real 169-claim query, running BGE at 0.72 put 75% of the claims into one cluster — a single useless report section.
 
 Whichever you pick has to be reachable. `EMBEDDING_PROVIDER=ollama` with no Ollama server yields no vectors, and claims with no vector cannot be clustered — so the run fails at the clustering step with a 503 naming the provider. It does not finish as a report-less success.
 
-A deployed API cannot use the Compose service at all: a serverless host runs no sidecar, keeps no volume for the weights, and never reads `docker-compose.yml`. That is what `EMBEDDING_PROVIDER=cloudflare` is for. If you do point `OLLAMA_BASE_URL` at an Ollama of your own, put a proxy in front that checks `OLLAMA_AUTH_TOKEN` and set the same token here — Ollama has no authentication of its own, so an exposed one is open inference. `/health/config` reports `embedding_warning` when the configuration cannot work, so a deploy can be checked without starting a run.
+A local Ollama is a local answer only. The deployed container has no Ollama in it and no way to reach yours, so an `OLLAMA_BASE_URL` on loopback is a deployment that cannot embed anything — which is what `EMBEDDING_PROVIDER=cloudflare` is for. If you do point it at an Ollama of your own, put a proxy in front that checks `OLLAMA_AUTH_TOKEN` and set the same token here: Ollama has no authentication of its own, so an exposed one is open inference. `/health/config` reports `embedding_warning` when the configuration cannot work, so a deploy can be checked without starting a run.
 
 **5. Verify**
 
@@ -495,9 +499,14 @@ Run it before and after a prompt or provider change and diff the aggregates.
 ## Development
 
 ```bash
-uv run ruff check .
+uv run ruff check .           # linter — rules E, F, I, UP
+uv run ruff format --check .  # formatter — a separate tool with separate rules
 uv run pytest
 ```
+
+`ruff check` and `ruff format` are not the same check, and passing one says nothing about the other: this repo satisfied the linter for a long time while about a third of its files were unformatted, because only the first command was ever run. `.github/workflows/ci.yml` runs both, plus the tests and the frontend build, on every push and pull request — and `deploy-backend.yml` calls it as a gate, so nothing reaches Cloud Run without passing.
+
+Use `uv run ruff format .` to fix formatting rather than reformatting by hand.
 
 To exercise the live HTTP surface against a running server:
 
@@ -511,6 +520,30 @@ clusters, the three axes, every editing endpoint, all three export formats, and
 a follow-up query.
 
 Tests are hermetic — no network, no database, no LLM calls. Coverage focuses on the parts where correctness is subtle: the APIM URL rewriting, retrieval query construction and fallback, the SQL statement splitter, clustering behaviour, quality scoring, lineage reconstruction, PDF section splitting, export escaping, and the progress hub. End-to-end behaviour is verified by `scripts/run_query.py` and the eval harness.
+
+## Deployment
+
+The API is one container on Google Cloud Run. The frontend stays a static build on Vercel, pointed at the backend with `VITE_NODUS_WS_URL`.
+
+`.github/workflows/deploy-backend.yml` builds and rolls the image on every push to `main`. [.github/workflows/README-deploy.md](.github/workflows/README-deploy.md) is the one-time GCP setup: Artifact Registry, two service accounts, Workload Identity Federation so no key is stored, and Secret Manager.
+
+**One instance is a correctness requirement.** `--min-instances=1 --max-instances=1`. Three subsystems keep state in the process — the progress hub, the run gate and rate limiter, and the connection pool — so a second instance splits the run registry in half, turns `MAX_ACTIVE_QUERIES` into a per-instance number, and doubles the client count the database pooler is measuring against its cap. Scaling horizontally means replacing the in-memory hub with Redis pub/sub and a persisted event table first; raising `--max-instances` on its own produces papers that fail one after another for no visible reason.
+
+Two other flags matter and are not obvious:
+
+- `--no-cpu-throttling` — the pipeline is a detached `asyncio` task that outlives the socket that started it. With CPU allocated only during requests it freezes when the socket closes, and a run appears to hang forever.
+- `--timeout=3600` — a per-*request* timeout, which for a WebSocket is the socket's lifetime. A short cap drops the socket mid-run and forces the client through its resume path on every query.
+
+To run the deployed image locally:
+
+```bash
+docker build -t nodus-api:local .
+docker run --rm -p 8080:8080 -v "$(pwd)/.env:/app/.env:ro" nodus-api:local
+```
+
+Mount `.env` rather than passing `--env-file`: Docker keeps trailing comments inside the value, so `GEMINI_RPM_LIMIT=14  # …` arrives as that whole string and `Settings()` fails at import. python-dotenv, which the app uses, strips them.
+
+Migrations do not run on container start — a failure mid-rollout would take the API down and be retried until the quota ran out. Run `alembic upgrade head` before deploying a revision that needs it.
 
 ## Key Design Decisions
 
