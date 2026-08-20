@@ -242,8 +242,23 @@ export function RunScreen(): ReactElement {
 
         <div style={{ padding: '30px 56px 0 0', position: 'sticky', top: 210 }}>
           <div className="panel" style={{ padding: '18px 20px', marginBottom: 16 }}>
-            <div className="kicker" style={{ marginBottom: 14 }}>
-              {noReport ? 'No report' : 'Report assembling'}
+            <div
+              className="kicker"
+              style={{
+                marginBottom: 14,
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 10,
+              }}
+            >
+              <span>{noReport ? 'No report' : 'Report assembling'}</span>
+              {/* The list below scrolls, so it no longer shows its own length.
+                  This says how many sections there are to scroll through. */}
+              {!noReport && run.sectionTotal ? (
+                <span className="num faint">
+                  {run.sections.filter((slot) => slot.ready).length} of {run.sectionTotal}
+                </span>
+              ) : null}
             </div>
             {noReport ? (
               <div className="dim" style={{ fontSize: 13, lineHeight: 1.45 }}>
@@ -251,7 +266,22 @@ export function RunScreen(): ReactElement {
                   'The run finished without writing a report. The stream below says how far it got.'}
               </div>
             ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            // The section list grows with the cluster count, and a run with a
+            // dozen clusters pushed the event stream below it off the screen.
+            // Scrolling the list keeps the panel — and what sits under it — the
+            // same height however many sections the run writes.
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                maxHeight: 260,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                paddingRight: 4,
+                marginRight: -4,
+              }}
+            >
               {(run.sections.length ? run.sections : placeholderSlots(run.sectionTotal)).map((slot, index) => (
                 <div
                   key={index}
