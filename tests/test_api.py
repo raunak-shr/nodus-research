@@ -12,7 +12,33 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.config import settings
+from app.db.session import get_session
 from app.main import app
+
+
+class _EmptyResult:
+    """Just enough of a SQLAlchemy result for `list_queries` to return []."""
+
+    def scalars(self) -> "_EmptyResult":
+        return self
+
+    def all(self) -> list:
+        return []
+
+
+class _NoDbSession:
+    """Stands in for a session so a route can run without a database.
+
+    Without this, `test_routes_are_open_when_no_api_key_configured` opened a real
+    connection: it passed on a machine with DATABASE_URL pointing somewhere
+    reachable and failed in CI with `Connect call failed ('127.0.0.1', 5432)`
+    against the localhost default. The assertion never wanted a database — auth
+    resolves before any query — but the connection error propagated out of the
+    request instead of becoming a response, so the test could not even reach it.
+    """
+
+    async def execute(self, *_args, **_kwargs) -> _EmptyResult:
+        return _EmptyResult()
 
 
 @pytest.mark.asyncio
@@ -47,10 +73,16 @@ async def test_health_config_reports_active_providers(client: AsyncClient) -> No
 
 @pytest.mark.asyncio
 async def test_routes_are_open_when_no_api_key_configured(client: AsyncClient) -> None:
-    with patch.object(settings, "api_key", ""):
-        response = await client.get("/api/v1/queries/")
-    # Reaches the handler (DB may be unavailable in CI) rather than 401.
-    assert response.status_code != 401
+    app.dependency_overrides[get_session] = lambda: _NoDbSession()
+    try:
+        with patch.object(settings, "api_key", ""):
+            response = await client.get("/api/v1/queries/")
+    finally:
+        app.dependency_overrides.pop(get_session, None)
+    # 200, not merely "not 401": with the database stubbed out, reaching the
+    # handler and returning its empty list is the whole claim.
+    assert response.status_code == 200
+    assert response.json() == []
 
 
 @pytest.mark.asyncio

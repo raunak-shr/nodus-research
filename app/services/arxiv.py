@@ -284,9 +284,7 @@ async def fetch_document(
     if not identifier:
         return None
 
-    document = await pdf.fetch_from_urls(
-        [(pdf_url(identifier), "arxiv")], before_request=_throttle
-    )
+    document = await pdf.fetch_from_urls([(pdf_url(identifier), "arxiv")], before_request=_throttle)
     if document is None:
         logger.info("arXiv PDF unusable for %s", identifier)
     return document

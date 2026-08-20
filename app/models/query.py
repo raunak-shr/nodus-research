@@ -22,9 +22,7 @@ class QueryStatus(enum.StrEnum):
 class Query(Base):
     __tablename__ = "queries"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     raw_query: Mapped[str] = mapped_column(Text, nullable=False)
     structured_query: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[QueryStatus] = mapped_column(

@@ -68,7 +68,8 @@ nodus/
 ├── tests/                      # mirrors app/, hermetic (no network/DB/LLM)
 │   ├── integration/            # live checks, run by hand — not collected by pytest
 │   └── reports/                # generated report output (git-ignored)
-├── docker-compose.yml          # optional ollama only — the database is hosted
+├── Dockerfile                  # the deployed image — Chromium baked in, one worker
+├── .github/workflows/          # deploy-backend.yml → Cloud Run, plus its setup guide
 └── .env.example
 ```
 
@@ -97,6 +98,8 @@ nodus/
 - **Services report progress through a callback, not the hub.** `cross_paper` and `synthesizer` take `on_progress`, so they stay decoupled from transport and testable without one.
 - **Every event carries `seq`, `phase` and sometimes `progress`.** The UI drives off `phase`; a gap in `seq` tells a client it missed events and must reload rather than assume continuity.
 - **The progress hub is in-process.** No broker, so run the API with one worker; history dies with the process. Redis pub/sub plus a persisted event table is the scale-out path.
+- **A list of papers carries each paper's normalisation with it.** `QueryPaperRead.normalized` is filled from an eager-loaded `Paper.normalized_paper`, so listing 20 papers is one request. It used to be one request *per paper*, which is over `_MAX_INFLIGHT_REQUESTS` (8) — the socket refused the tail of the fan-out, the client mapped every refusal to null, and the UI reported twelve perfectly good papers as having failed during processing. **A per-item fan-out sized by `TOP_K_PAPERS` will always outgrow a fixed per-connection ceiling**, so the fix was to stop fanning out rather than to raise the ceiling. The inline shape is a summary, not `NormalizedPaperRead`: that carries `sections`, which is the paper's full text. Populated through `QueryPaperRead.from_query_paper` on both surfaces, because plain `model_validate` finds no `normalized` attribute on `QueryPaper` and silently falls back to the default — which type-checks clean and looks exactly like data loss.
+- **"No record" and "record that failed" are different states, and a client must not merge them.** A paper with no `normalized_papers` row was never processed — mid-run that means "not yet", after a run it means it was dropped. A row whose `processing_status` is `failed` was normalised and then lost its claims. Neither is a transport error, and the reason the frontend no longer has a third case to confuse them with is that the data now arrives with the paper instead of over a request that could be refused.
 - **The PDF is the print variant of the on-screen HTML**, rendered in Chromium and cached by a hash of that HTML — so the PDF cannot drift from the report, and a renderer change invalidates the cache on its own.
 - **JSONB for semi-structured fields.** structured_query, methodology, effect_size, lineage_tree, disagreement_drivers, quality_rationale, report sections.
 
@@ -113,13 +116,37 @@ nodus/
 - **asyncpg rejects multi-statement SQL.** Migrations that ship raw SQL must run statements one at a time via `app/db/sql_split.py`.
 - **TLS interception.** Corporate proxies *and* antivirus HTTPS scanning re-sign traffic, so outbound HTTPS uses the OS trust store (`USE_SYSTEM_CA=true`). Apply it per httpx client — injecting truststore globally replaces `ssl.SSLContext` and breaks asyncpg's TLS.
 - **Workers AI models have fixed widths, and the wrong one is silent.** `bge-base-en-v1.5` is 768 and fits `vector(768)`; `bge-small` is 384 and `bge-large` is 1024, and every vector from those is discarded on write by the dimension check in `embedding_store`. `/health/config` reports the mismatch as `embedding_warning`.
-- **`EMBEDDING_PROVIDER` has to point at something reachable.** No vectors means no clusters, and no clusters means no report — so an unreachable embedder fails the run at the clustering step with a 503 naming the provider, rather than completing with an empty report screen. Locally `ollama` needs a running server (`docker compose up -d ollama`, then `docker compose exec ollama ollama pull nomic-embed-text`); `hash` needs nothing. **A serverless deployment cannot use the Compose service** — no sidecar, no volume, `docker-compose.yml` unread — which is what `EMBEDDING_PROVIDER=cloudflare` is for. A self-hosted Ollama reached over the network needs a token-checking proxy and `OLLAMA_AUTH_TOKEN`, because Ollama authenticates nothing itself. `/health/config` exposes `embedding_warning`, which is non-null exactly when the configuration cannot work.
+- **`EMBEDDING_PROVIDER` has to point at something reachable.** No vectors means no clusters, and no clusters means no report — so an unreachable embedder fails the run at the clustering step with a 503 naming the provider, rather than completing with an empty report screen. `cloudflare` is what the deployment uses and needs nothing hosted; `hash` needs nothing at all. `ollama` needs a running server — a local install reachable at `OLLAMA_BASE_URL`, no longer a Compose service (Compose runs the API image now, and nothing in the deployed configuration wants a local model server). A self-hosted Ollama reached over the network needs a token-checking proxy and `OLLAMA_AUTH_TOKEN`, because Ollama authenticates nothing itself. `/health/config` exposes `embedding_warning`, which is non-null exactly when the configuration cannot work.
 - **GPT-5.1 rejects non-default `temperature`.** Never set it; use `LLM_AZURE_REASONING_EFFORT` instead.
 - **Gemini's `responseSchema` is not JSON Schema.** It is OpenAPI-shaped: no `$ref`, no `$defs`, no `additionalProperties`, and nullability is a `nullable` flag rather than a `null` type. `to_gemini_schema` inlines and translates what Pydantic emits, and drops every key outside the accepted set — an unknown one is a 400 on every call that agent ever makes, so any new LLM output schema should be run through `test_every_agent_schema_survives_translation`.
 - **Gemini 3 bills thinking as output tokens** and `thinkingBudget` is rejected — `thinkingLevel` (`minimal` | `low` | `high`) is the knob. `GEMINI_THINKING_LEVEL=low` is the default here because these agents decode against a schema rather than reasoning in prose.
 - **The free tier is paced, not just capped.** `GEMINI_RPM_LIMIT` (14) is what enforces requests-per-minute; `GEMINI_MAX_CONCURRENCY` (4) alone cannot, because four calls that each take two seconds is 120 RPM. A twenty-paper run is roughly 60–70 calls, so expect about five minutes of pacing, shared between `MAX_ACTIVE_QUERIES` runs. Set both to 0 on a paid key.
-- **PDF export needs the Chromium binary**, not just the `playwright` package: `uv run playwright install chromium`. A missing browser surfaces as an `unavailable` error carrying the install command, never an import crash.
+- **PDF export needs the Chromium binary**, not just the `playwright` package: `uv run playwright install chromium` for local work. A missing browser surfaces as an `unavailable` error carrying the install command, never an import crash — which is how it went unnoticed that the hosted deployment never had one, because a platform that installs Python dependencies and never runs `playwright install` leaves `report.pdf` failing forever. The `Dockerfile` bakes it in, which is the durable fix.
+- **A venv is not relocatable, and the error names the wrong thing.** Console scripts (`uvicorn`, `playwright`, `alembic`) carry an absolute shebang, so building a venv at one path and copying it to another leaves every one of them pointing at an interpreter that is not there. `sh` reports that as `playwright: not found` — naming the script, which exists, rather than the shebang target, which does not. The `Dockerfile` builds at the final path via `UV_PROJECT_ENVIRONMENT` instead of moving it afterwards.
 - **`uv` fails on TLS-inspected networks.** Pass `--native-tls` (e.g. `uv sync --native-tls`) so it uses the OS trust store.
+
+## Deployment
+
+**The backend runs as one container on Cloud Run; the frontend stays a static build on Vercel.** `.github/workflows/deploy-backend.yml` builds and rolls the image on every push to `main`; `.github/workflows/README-deploy.md` is the one-time GCP setup.
+
+**One instance is a correctness requirement, not a cost saving.** `--min-instances=1 --max-instances=1`. Three subsystems keep state in the process — the progress hub (`core/events.py`), the run gate and rate limiter (`services/limits.py`), and the connection pool (`db/session.py`) — so a second instance splits the run registry, makes `MAX_ACTIVE_QUERIES` a per-instance number, and doubles the client count Supavisor is counting against its 15. On the previous per-request platform all three were broken at once, and the visible symptom was papers failing one after another. Raising `--max-instances` re-introduces every one of them; scaling means doing the Redis work `events.py` names.
+
+**Two flags are load-bearing and non-obvious:**
+- `--no-cpu-throttling` — the pipeline is a detached `asyncio` task that outlives the socket that started it. Under the default (CPU only during a request) it freezes the moment the socket closes, and a run appears to hang.
+- `--timeout=3600` — a per-*request* timeout, which for a WebSocket is the socket's lifetime. The previous platform's 300s cap dropped the socket roughly once per run, so the resume-from-`seq` path ran on every query rather than being a rare-failure path.
+
+**The workflow deploys the image and the runtime shape, never the environment.** `gcloud run deploy` inherits existing service config, so variables set on the service survive a deploy — which is what makes the ordering rule below possible. Configuration changes go through `gcloud run services update`, and secrets live in Secret Manager read by a runtime service account that has no deploy rights.
+
+**To run the image locally, mount `.env` — do not pass `--env-file`.** They are not equivalent. `--env-file` hands each line to the container verbatim, keeping any trailing comment inside the value, so `GEMINI_RPM_LIMIT=14  # a twenty-paper run…` arrives as that whole string and `Settings()` dies at import on an int it cannot parse, taking every route with it. python-dotenv, which pydantic-settings uses for `env_file=".env"`, strips those comments. Mounting the file lets `Settings()` read it exactly as it does under local uvicorn:
+
+```bash
+docker build -t nodus-api:local .
+docker run --rm -p 8080:8080 -v "$(pwd)/.env:/app/.env:ro" nodus-api:local
+```
+
+(Under Git Bash on Windows the source path needs to be absolute and doubled — `-v "//e/Projects/Nodus/nodus-research/.env:/app/.env:ro"`.) Cloud Run has no file and no such hazard: values arrive as real environment variables from `--set-env-vars` and Secret Manager.
+
+**Migrations do not run on container start.** A failed migration during a rollout would take the API down and Cloud Run would retry the container until the quota ran out. Run `alembic upgrade head` before deploying a revision that needs it.
 
 ## Database
 
@@ -131,7 +158,7 @@ Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster 
 
 MVP (Phases 0–5) and post-MVP (Phases 6–10) are complete: retrieval, extraction, three-axis analysis, synthesis and export, human-in-the-loop editing, and follow-up queries. See the README for the phase table and known limitations.
 
-**v2 (frontend surface)** is complete: `/api/v2/ws` with 35 actions, fine-grained pipeline events, the rendered report document, and PDF export. Requires `uv run playwright install chromium` once, and a single API worker.
+**v2 (frontend surface)** is complete: `/api/v2/ws` with 35 actions, fine-grained pipeline events, the rendered report document, and PDF export. Locally that needs `uv run playwright install chromium` once, and a single API worker; the deployed image carries Chromium and runs one worker by construction.
 
 ## Conventions
 
@@ -140,7 +167,7 @@ MVP (Phases 0–5) and post-MVP (Phases 6–10) are complete: retrieval, extract
 - Pydantic models for all request/response bodies and LLM structured outputs
 - Agent prompts live in `app/services/prompts.py`, not inline
 - Type hints on all functions
-- ruff for linting and formatting (line length 100)
+- ruff for linting and formatting (line length 100). **They are two tools and both are enforced:** `ruff check .` and `ruff format --check .` in CI, which `deploy-backend.yml` gates on. Passing the linter says nothing about formatting — the repo satisfied `check` for a long time with a third of its files unformatted, because only that command was ever run. When touching a file, run `ruff format` on **that file**, not on a directory: a whole-tree format run mixed ~170 lines of unrelated churn into a feature diff once already.
 - Tests in tests/ mirroring the app/ structure, and hermetic — mock the LLM, the network, and the database
 - Environment variables via .env, never hardcoded secrets
 

@@ -25,9 +25,7 @@ _MISSING_ID = "00000000-0000-0000-0000-000000000000"
 
 async def call(socket, action: str, params: dict | None = None, *, request_id: str) -> dict:
     """Send one request and return its reply, ignoring events and heartbeats."""
-    await socket.send(
-        json.dumps({"id": request_id, "action": action, "params": params or {}})
-    )
+    await socket.send(json.dumps({"id": request_id, "action": action, "params": params or {}}))
     while True:
         frame = json.loads(await asyncio.wait_for(socket.recv(), timeout=300))
         if frame.get("type") in {"event", "heartbeat"}:
@@ -151,9 +149,7 @@ async def main() -> int:
 
         # Failure paths: a domain error and an unknown action must both come back
         # as error frames carrying the request id, not close the socket.
-        missing = await call(
-            socket, "report.get", {"query_id": _MISSING_ID}, request_id="missing"
-        )
+        missing = await call(socket, "report.get", {"query_id": _MISSING_ID}, request_id="missing")
         check(
             "not_found frame",
             missing["type"] == "error" and missing["error"]["code"] == "not_found",
@@ -167,9 +163,7 @@ async def main() -> int:
             unknown.get("error", {}).get("message", ""),
         )
 
-        bad_params = await call(
-            socket, "queries.get", {"query_id": "not-a-uuid"}, request_id="bad"
-        )
+        bad_params = await call(socket, "queries.get", {"query_id": "not-a-uuid"}, request_id="bad")
         check(
             "params validation",
             bad_params["type"] == "error" and bad_params["error"]["message"] == "Invalid params",

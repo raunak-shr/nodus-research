@@ -1,0 +1,47 @@
+# Keep the build context to what the image actually needs. Beyond image size,
+# this is a safety property: `.env` holds live credentials and must never reach
+# a layer, and .git would carry every secret ever committed.
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+
+# The frontend deploys separately (static build on Vercel) and shares nothing
+# with this image. node_modules alone is larger than the runtime stage.
+frontend/
+
+# Local virtualenv — the image builds its own from uv.lock. Copying a Windows
+# venv into a Linux image would be inert at best.
+.venv
+venv/
+ENV/
+
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Tests are hermetic and never run in the runtime image.
+tests/
+scripts/
+
+# Docs and local tooling
+*.md
+!README.md
+.claude/
+.mcp.json
+Dockerfile
+.dockerignore
+.github/
+
+# Run artifacts
+eval-report.json
+eval-*.json
+report-*.md
+report-*.html
+report-*.json
+report-*.pdf
+001_initial_schema.sql

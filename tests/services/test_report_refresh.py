@@ -90,10 +90,14 @@ class _StubDb:
 
 
 async def _refresh(report, *, clusters=None, rows=None):
-    clusters = clusters if clusters is not None else [
-        SimpleNamespace(id=CLUSTER_A),
-        SimpleNamespace(id=CLUSTER_B),
-    ]
+    clusters = (
+        clusters
+        if clusters is not None
+        else [
+            SimpleNamespace(id=CLUSTER_A),
+            SimpleNamespace(id=CLUSTER_B),
+        ]
+    )
     rows = FRESH_ROWS if rows is None else rows
 
     async def fake_rows(cluster, db):

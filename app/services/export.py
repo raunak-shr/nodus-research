@@ -81,9 +81,7 @@ def _source_lines(claims: list[dict[str, Any]], index: int) -> list[str]:
         kind = _prov_kind(claim)
         page = claim.get("source_page")
         locus = ", ".join(
-            part
-            for part in (claim.get("source_section"), f"p. {page}" if page else None)
-            if part
+            part for part in (claim.get("source_section"), f"p. {page}" if page else None) if part
         )
         note = _PROV_NOTE.get(kind)
         lines.append(

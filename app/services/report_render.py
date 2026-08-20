@@ -606,9 +606,7 @@ def _source_notes(section: dict[str, Any], index: int) -> str:
         kind = prov_kind(claim)
         page = claim.get("source_page")
         locus = " \u00b7 ".join(
-            part
-            for part in (claim.get("source_section"), f"p. {page}" if page else None)
-            if part
+            part for part in (claim.get("source_section"), f"p. {page}" if page else None) if part
         )
         note = _PROV_NOTE.get(kind)
         note_html = f'<span class="sources__note"> {_esc(note)}</span>' if note else ""
@@ -629,7 +627,7 @@ def _source_notes(section: dict[str, Any], index: int) -> str:
         return ""
     return (
         f'<div class="sources"><div class="block__head">Sources for section {index}</div>'
-        f'<ol>{"".join(items)}</ol></div>'
+        f"<ol>{''.join(items)}</ol></div>"
     )
 
 
@@ -656,7 +654,7 @@ def _claims_without_provenance(rows: list[dict[str, Any]], *, expanded: bool) ->
         f"<summary>Underlying claims ({len(rows)})</summary>"
         '<div class="table-wrap"><table><thead><tr><th>Stance</th><th>Source</th>'
         "<th>Claim</th><th>Evidence</th><th>n</th><th>Conf.</th></tr></thead>"
-        f'<tbody>{"".join(body)}</tbody></table></div></details>'
+        f"<tbody>{''.join(body)}</tbody></table></div></details>"
     )
 
 
@@ -703,7 +701,7 @@ def _claims(section: dict[str, Any], index: int, *, expanded: bool) -> str:
         '<div class="table-wrap"><table><thead><tr><th></th><th>Stance</th>'
         "<th>Source</th><th>Claim</th><th>Provenance</th><th>Evidence</th>"
         "<th>n</th><th>Conf.</th></tr></thead>"
-        f'<tbody>{"".join(body)}</tbody></table></div>'
+        f"<tbody>{''.join(body)}</tbody></table></div>"
         f"{_source_notes(section, index) if expanded else ''}"
         "</details>"
     )
@@ -714,10 +712,7 @@ def _caveats(section: dict[str, Any]) -> str:
     if not rows:
         return ""
     items = "".join(f"<li>{_esc(c)}</li>" for c in rows)
-    return (
-        '<aside class="caveats"><h3 class="block__head">Caveats</h3>'
-        f"<ul>{items}</ul></aside>"
-    )
+    return f'<aside class="caveats"><h3 class="block__head">Caveats</h3><ul>{items}</ul></aside>'
 
 
 def render_body(payload: dict[str, Any], *, variant: str = "screen") -> str:
@@ -745,7 +740,7 @@ def render_body(payload: dict[str, Any], *, variant: str = "screen") -> str:
         score = format(section.get("quality_score") or 0.0, ".2f")
         toc.append(
             f'<li><a href="#section-{index}"><span class="toc__rank">{index}</span>'
-            f'<span>{_esc(section.get("heading"))}</span>'
+            f"<span>{_esc(section.get('heading'))}</span>"
             f'<span class="dot dot--{_esc(tier)}" aria-hidden="true"></span></a></li>'
         )
         body.append(
@@ -772,10 +767,13 @@ def render_body(payload: dict[str, Any], *, variant: str = "screen") -> str:
 
     findings = "".join(f"<li>{_esc(f)}</li>" for f in (report.get("key_findings") or []))
     questions = "".join(f"<li>{_esc(q)}</li>" for q in (report.get("open_questions") or []))
-    tier_summary = " · ".join(
-        f"{count} {TIER_LABEL.get(tier, tier).lower()}"
-        for tier, count in sorted(tier_counts.items(), key=lambda kv: -kv[1])
-    ) or "none"
+    tier_summary = (
+        " · ".join(
+            f"{count} {TIER_LABEL.get(tier, tier).lower()}"
+            for tier, count in sorted(tier_counts.items(), key=lambda kv: -kv[1])
+        )
+        or "none"
+    )
     created = (report.get("created_at") or "")[:10]
     edited = " · user edited" if report.get("user_edited") else ""
 
@@ -796,7 +794,7 @@ def render_body(payload: dict[str, Any], *, variant: str = "screen") -> str:
     rail = (
         '<nav class="rail" aria-label="Evidence clusters, ranked">'
         "<h2>Clusters by strength</h2>"
-        f'<ol>{"".join(toc)}</ol></nav>'
+        f"<ol>{''.join(toc)}</ol></nav>"
     )
     concept_chips = "".join(f'<span class="concept">{_esc(c)}</span>' for c in concepts)
 
@@ -812,7 +810,7 @@ def render_body(payload: dict[str, Any], *, variant: str = "screen") -> str:
         '<div><div class="summary"><h2>Executive summary</h2>'
         f'<div class="prose">{_paragraphs(report.get("executive_summary"))}</div></div>'
         f'<div class="findings"><h2>Key findings</h2><ol>{findings}</ol></div></div>'
-        f'{"".join(body)}'
+        f"{''.join(body)}"
         f'<div class="questions"><h2>Open questions</h2><ol>{questions}</ol></div>'
         '<div class="method"><p>Papers were retrieved from Semantic Scholar and re-ranked by '
         "citation impact, influential citations, recency and relevance position. Claims were "

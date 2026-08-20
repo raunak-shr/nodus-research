@@ -29,9 +29,7 @@ router = APIRouter(prefix="/claims", tags=["claims"])
 
 
 @router.get("/papers/{paper_id}", response_model=list[ClaimRead])
-async def list_claims_for_paper(
-    paper_id: UUID, db: DBSession, page: PageParams
-) -> list[ClaimRead]:
+async def list_claims_for_paper(paper_id: UUID, db: DBSession, page: PageParams) -> list[ClaimRead]:
     """List all extracted claims for a paper."""
     result = await db.execute(
         select(Claim)

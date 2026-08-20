@@ -143,9 +143,7 @@ def test_an_empty_candidate_is_an_error_rather_than_empty_text():
 def test_retry_delay_prefers_what_google_asked_for():
     payload = {
         "error": {
-            "details": [
-                {"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "31s"}
-            ]
+            "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "31s"}]
         }
     }
     delay = gemini._retry_delay(payload, attempt=0)

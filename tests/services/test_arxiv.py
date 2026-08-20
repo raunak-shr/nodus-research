@@ -25,21 +25,13 @@ def _feed(*entries: str, total: int | None = None) -> str:
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<feed xmlns="http://www.w3.org/2005/Atom" '
         'xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">'
-        f"<opensearch:totalResults>{count}</opensearch:totalResults>"
-        + "".join(entries)
-        + "</feed>"
+        f"<opensearch:totalResults>{count}</opensearch:totalResults>" + "".join(entries) + "</feed>"
     )
 
 
 def _entry(arxiv_id: str, title: str, authors: list[str]) -> str:
     people = "".join(f"<author><name>{name}</name></author>" for name in authors)
-    return (
-        "<entry>"
-        f"<id>http://arxiv.org/abs/{arxiv_id}</id>"
-        f"<title>{title}</title>"
-        f"{people}"
-        "</entry>"
-    )
+    return f"<entry><id>http://arxiv.org/abs/{arxiv_id}</id><title>{title}</title>{people}</entry>"
 
 
 TARGET_TITLE = "Attention Is All You Need"
@@ -148,9 +140,7 @@ def test_no_shared_author_vetoes_a_title_that_would_otherwise_pass():
 def test_authors_cannot_veto_when_one_side_lists_none():
     """Bulk search omits authors for some papers. An empty list is no evidence
     of a mismatch, so the title has to carry the decision alone."""
-    record = arxiv.ArxivRecord(
-        arxiv_id="1706.03762", title="Attention Is All You Need", authors=[]
-    )
+    record = arxiv.ArxivRecord(arxiv_id="1706.03762", title="Attention Is All You Need", authors=[])
     assert arxiv.matches(record, TARGET_TITLE, TARGET_AUTHORS)
     assert arxiv.matches(record, TARGET_TITLE, [])
 

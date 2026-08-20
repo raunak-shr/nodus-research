@@ -83,10 +83,7 @@ async def extract_claims(
         # being sent again.
         section_order=pdf.CLAIM_SECTIONS,
     )
-    prompt = (
-        f"{_context_block(paper, normalized)}\n\n"
-        f"PAPER TEXT:\n{paper_text}"
-    )
+    prompt = f"{_context_block(paper, normalized)}\n\nPAPER TEXT:\n{paper_text}"
 
     try:
         agent = get_structured_llm(ExtractionOutput, task="extraction")
@@ -151,7 +148,5 @@ async def extract_claims(
         await db.refresh(claim)
 
     cited = sum(1 for claim in claims if claim.source_match != "none")
-    logger.info(
-        "Extracted %d claims from %s (%d located in source)", len(claims), paper.id, cited
-    )
+    logger.info("Extracted %d claims from %s (%d located in source)", len(claims), paper.id, cited)
     return claims

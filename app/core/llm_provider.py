@@ -113,9 +113,7 @@ def _ollama_llm(task: Task) -> BaseChatModel:
     from langchain_ollama import ChatOllama
 
     model = (
-        settings.ollama_synthesis_model
-        if task == "synthesis"
-        else settings.ollama_extraction_model
+        settings.ollama_synthesis_model if task == "synthesis" else settings.ollama_extraction_model
     )
     # (There is no retry knob on ChatOllama.)
     return ChatOllama(
@@ -362,9 +360,10 @@ def get_embedder() -> Embeddings:
     return _hash_embedder()
 
 
-#: Env vars managed serverless hosts set. Nothing listens on loopback there, and
-#: `docker-compose.yml` is a local-development file the host never reads — so an
-#: embedder pointed at localhost is a deployment that cannot embed anything.
+#: Env vars managed hosts set. `K_SERVICE` covers Cloud Run, which is where this
+#: deploys. Nothing listens on loopback inside a deployed container — an Ollama
+#: running on someone's laptop is not reachable from it — so an embedder pointed
+#: at localhost is a deployment that cannot embed anything.
 _SERVERLESS_MARKERS = (
     "VERCEL",
     "AWS_LAMBDA_FUNCTION_NAME",
@@ -455,10 +454,10 @@ def _ollama_warning() -> str | None:
         return None
     return (
         f"EMBEDDING_PROVIDER=ollama points at {shown}, but this process "
-        f"runs on a managed host ({platform}) where nothing listens on loopback — "
-        "docker-compose.yml is not read there. Claims will get no vectors and every run "
-        "will fail at clustering. Set EMBEDDING_PROVIDER=cloudflare, point OLLAMA_BASE_URL "
-        "at a reachable Ollama, or set EMBEDDING_PROVIDER=hash."
+        f"runs on a managed host ({platform}) where nothing listens on loopback. "
+        "Claims will get no vectors and every run will fail at clustering. Set "
+        "EMBEDDING_PROVIDER=cloudflare, point OLLAMA_BASE_URL at a reachable Ollama, "
+        "or set EMBEDDING_PROVIDER=hash."
     )
 
 

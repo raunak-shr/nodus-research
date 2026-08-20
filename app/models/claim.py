@@ -27,9 +27,7 @@ class CausalClassification(enum.StrEnum):
 class Claim(Base):
     __tablename__ = "claims"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     paper_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("papers.id", ondelete="CASCADE"), nullable=False
     )
@@ -78,9 +76,7 @@ class Claim(Base):
 class ClaimEmbedding(Base):
     __tablename__ = "claim_embeddings"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     claim_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("claims.id", ondelete="CASCADE"),
@@ -88,9 +84,7 @@ class ClaimEmbedding(Base):
         unique=True,
     )
     embedding: Mapped[list[float]] = mapped_column(Vector(768), nullable=False)
-    model_used: Mapped[str] = mapped_column(
-        String(100), nullable=False, default="nomic-embed-text"
-    )
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False, default="nomic-embed-text")
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

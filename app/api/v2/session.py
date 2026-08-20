@@ -219,9 +219,7 @@ class Connection:
 
         try:
             data = await entry.handler(
-                ActionContext(
-                    connection=self, is_admin=self.is_admin, client_key=self._client_key
-                ),
+                ActionContext(connection=self, is_admin=self.is_admin, client_key=self._client_key),
                 params,
             )
         except NodusError as exc:
@@ -243,9 +241,7 @@ class Connection:
             )
             return
 
-        await self.send_model(
-            frames.ResultFrame(id=request.id, action=request.action, data=data)
-        )
+        await self.send_model(frames.ResultFrame(id=request.id, action=request.action, data=data))
 
     # ------------------------------------------------------------ lifecycle
 

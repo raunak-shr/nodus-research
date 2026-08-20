@@ -23,7 +23,13 @@ export function RunScreen(): ReactElement {
   // reachable only by starting a run, so it assumed one; now that opening it
   // is just navigation, it has to be able to say there isn't one. A flag is
   // still shown — the failed and cancelled states are staged without a run.
-  const started = Boolean(run.queryId) || run.papers.length > 0 || run.events.length > 0
+  //
+  // `run.started` is what the feed sets the moment a run is asked for. The
+  // other three are consequences of one, and all three are still false for the
+  // second or two `queries.create` takes to answer — long enough that starting
+  // a run flashed the no-run screen before the run appeared.
+  const started =
+    run.started || Boolean(run.queryId) || run.papers.length > 0 || run.events.length > 0
   if (!started && !run.complete && !flag) return <NoRun />
 
   return (
@@ -159,8 +165,9 @@ export function RunScreen(): ReactElement {
 
           {run.papers.length === 0 ? (
             <div className="dim" style={{ fontSize: 13.5, lineHeight: 1.6, maxWidth: 520 }}>
-              Nothing to show yet. Papers appear here one at a time as retrieval lands and each is
-              normalised, extracted and embedded — the run reports per paper, not in a single jump.
+              Nothing to show yet. The whole shortlist appears here as soon as retrieval and ranking
+              land, and each row then moves through normalisation, extraction and embedding — the run
+              reports per paper, not in a single jump.
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1px 26px' }}>
@@ -235,8 +242,23 @@ export function RunScreen(): ReactElement {
 
         <div style={{ padding: '30px 56px 0 0', position: 'sticky', top: 210 }}>
           <div className="panel" style={{ padding: '18px 20px', marginBottom: 16 }}>
-            <div className="kicker" style={{ marginBottom: 14 }}>
-              {noReport ? 'No report' : 'Report assembling'}
+            <div
+              className="kicker"
+              style={{
+                marginBottom: 14,
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 10,
+              }}
+            >
+              <span>{noReport ? 'No report' : 'Report assembling'}</span>
+              {/* The list below scrolls, so it no longer shows its own length.
+                  This says how many sections there are to scroll through. */}
+              {!noReport && run.sectionTotal ? (
+                <span className="num faint">
+                  {run.sections.filter((slot) => slot.ready).length} of {run.sectionTotal}
+                </span>
+              ) : null}
             </div>
             {noReport ? (
               <div className="dim" style={{ fontSize: 13, lineHeight: 1.45 }}>
@@ -244,7 +266,22 @@ export function RunScreen(): ReactElement {
                   'The run finished without writing a report. The stream below says how far it got.'}
               </div>
             ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            // The section list grows with the cluster count, and a run with a
+            // dozen clusters pushed the event stream below it off the screen.
+            // Scrolling the list keeps the panel — and what sits under it — the
+            // same height however many sections the run writes.
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                maxHeight: 260,
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                paddingRight: 4,
+                marginRight: -4,
+              }}
+            >
               {(run.sections.length ? run.sections : placeholderSlots(run.sectionTotal)).map((slot, index) => (
                 <div
                   key={index}

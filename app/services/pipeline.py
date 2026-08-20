@@ -167,6 +167,9 @@ async def store_results_node(state: PipelineState) -> dict:
     query_id = UUID(state["query_id"])
     ranked_papers = state["ranked_papers"]
     paper_ids: list[str] = []
+    # Paired with the ids so the frontend can move the rows it drew at ranking
+    # onto the ids every later event uses, instead of drawing each paper twice.
+    stored: list[dict[str, str | None]] = []
 
     # TLDRs are unavailable from bulk search; fetch them for the kept papers only.
     tldrs = await retriever.fetch_tldrs(
@@ -221,6 +224,13 @@ async def store_results_node(state: PipelineState) -> dict:
             if not paper:
                 continue
             paper_ids.append(str(paper.id))
+            stored.append(
+                {
+                    "id": str(paper.id),
+                    "semantic_scholar_id": ss_id,
+                    "title": paper.title,
+                }
+            )
             await db.execute(
                 pg_insert(QueryPaper)
                 .values(
@@ -237,7 +247,7 @@ async def store_results_node(state: PipelineState) -> dict:
         query_obj.paper_count = len(paper_ids)
         await db.commit()
 
-    hub.publish(query_id, "papers_stored", count=len(paper_ids), paper_ids=paper_ids)
+    hub.publish(query_id, "papers_stored", count=len(paper_ids), paper_ids=paper_ids, papers=stored)
     return {"paper_ids": paper_ids}
 
 

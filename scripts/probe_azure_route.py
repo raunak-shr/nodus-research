@@ -68,8 +68,7 @@ async def main() -> int:
             try:
                 response = await client.post(url, headers=headers, json=_CHAT_BODY)
                 print(
-                    f"[{response.status_code}] {label}\n      {url}\n"
-                    f"      {response.text[:220]}\n"
+                    f"[{response.status_code}] {label}\n      {url}\n      {response.text[:220]}\n"
                 )
             except Exception as exc:  # noqa: BLE001 - diagnostics only
                 print(f"[EXC] {label}\n      {url}\n      {exc!r}\n")

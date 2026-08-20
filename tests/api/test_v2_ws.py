@@ -221,7 +221,5 @@ def test_socket_requires_the_api_key_when_one_is_configured():
         with client.websocket_connect("/api/v2/ws?api_key=secret-key") as socket:
             assert _ready(socket)["protocol"] == PROTOCOL_VERSION
 
-        with client.websocket_connect(
-            "/api/v2/ws", headers={"X-API-Key": "secret-key"}
-        ) as socket:
+        with client.websocket_connect("/api/v2/ws", headers={"X-API-Key": "secret-key"}) as socket:
             assert _ready(socket)["protocol"] == PROTOCOL_VERSION

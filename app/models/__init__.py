@@ -5,9 +5,19 @@ from app.models.query import Query, QueryStatus
 from app.models.report import Report
 
 __all__ = [
-    "Query", "QueryStatus",
-    "Paper", "QueryPaper", "NormalizedPaper", "StudyType", "ProcessingStatus",
-    "Claim", "ClaimEmbedding", "EvidenceType", "CausalClassification",
-    "ClaimCluster", "ClusterClaim", "QualityTier",
+    "Query",
+    "QueryStatus",
+    "Paper",
+    "QueryPaper",
+    "NormalizedPaper",
+    "StudyType",
+    "ProcessingStatus",
+    "Claim",
+    "ClaimEmbedding",
+    "EvidenceType",
+    "CausalClassification",
+    "ClaimCluster",
+    "ClusterClaim",
+    "QualityTier",
     "Report",
 ]

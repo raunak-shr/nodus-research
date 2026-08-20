@@ -18,7 +18,7 @@ const ICONS: Record<Screen, string> = {
 }
 
 const ITEMS: { id: Screen; label: string }[] = [
-  { id: 'landing', label: 'Landing' },
+  { id: 'landing', label: 'Home' },
   { id: 'query', label: 'New query' },
   { id: 'run', label: 'Live run' },
   { id: 'report', label: 'Report' },

@@ -1,0 +1,76 @@
+# Lint, format and tests. Runs on its own for branches and pull requests, and
+# is called by deploy-backend.yml as a gate before anything reaches Cloud Run.
+#
+# `workflow_call` is why this is one file rather than two: the deploy workflow
+# invokes these exact jobs instead of restating them, so there is no second copy
+# to drift out of step with this one.
+
+name: CI
+
+on:
+  # `main` is deliberately absent: every push to main arrives through a
+  # dev -> main pull request, which ran these checks, and deploy-backend.yml
+  # calls them again as its gate. Listing main here would run all of it a third
+  # time for the same commit.
+  push:
+    branches: [dev]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # Matches the Dockerfile's base, so a version-specific failure shows up
+      # here rather than after a deploy.
+      - run: uv python install 3.12
+
+      # --frozen fails if uv.lock and pyproject.toml disagree, rather than
+      # quietly resolving something different from what the image will install.
+      - name: Install
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      # Separate from `ruff check` on purpose — they are different tools with
+      # different rules, and the repo satisfied the linter for a long time while
+      # ~30% of its files were unformatted. Checking only one of them is what
+      # let that happen.
+      - name: Format
+        run: uv run ruff format --check .
+
+      # Hermetic: no network, no database, no LLM. Nothing to provision.
+      - name: Test
+        run: uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+
+      # `npm run build` is `tsc -b && vite build`, so this covers the type check
+      # and the production bundle in one step. Vercel builds this too, but only
+      # after a merge — a break found here costs nothing to fix.
+      - name: Typecheck and build
+        run: npm run build

@@ -1,10 +1,10 @@
 /** Turning the pipeline's event stream into the live-run view.
  *
  *  The run screen is built entirely from events the server actually sent — a
- *  paper appears when `papers_stored` names it, gains a title at
- *  `paper_started`, and moves through its stages as each sub-stage lands. It is
- *  a reduction rather than a poll, so nothing on screen is a guess about work
- *  the server has not reported.
+ *  paper appears with its title the moment `papers_ranked` names the shortlist,
+ *  is re-keyed to its stored row at `papers_stored`, and moves through its
+ *  stages as each sub-stage lands. It is a reduction rather than a poll, so
+ *  nothing on screen is a guess about work the server has not reported.
  *
  *  Counts come from the events too where the server publishes them
  *  (`completed`/`total` on `paper_processed`), because the server knows the
@@ -165,14 +165,61 @@ export class RunFeed {
     }
 
     switch (frame.event) {
+      case 'papers_ranked': {
+        // Ranking is the first event that knows both which papers the run will
+        // work on and what they are called, and it lands seconds before
+        // storing does — storing waits on a TLDR batch call and twenty upserts.
+        // Seeding here is what fills the grid straight after retrieval instead
+        // of leaving it empty, and with real titles rather than id stubs.
+        const rows = Array.isArray(frame.papers) ? frame.papers : []
+        for (const row of rows) {
+          if (!row || typeof row !== 'object') continue
+          const record = row as Record<string, unknown>
+          const ssId = str(record.semantic_scholar_id)
+          if (!ssId) continue
+          const key = provisionalKey(ssId)
+          if (this.papers.has(key)) continue
+          const year = typeof record.year === 'number' ? String(record.year) : ''
+          this.papers.set(key, {
+            id: key,
+            title: str(record.title) ?? shortId(ssId),
+            stage: 'queued',
+            label: 'retrieved',
+            detail: year,
+          })
+        }
+        if (typeof frame.count === 'number') this.totalCount = frame.count
+        break
+      }
       case 'papers_stored': {
-        // The one event that names the whole set, so the grid can show every
-        // paper as queued instead of growing one row at a time.
+        // The one event that names the whole set by the id every later event
+        // uses. Rows seeded at ranking are re-keyed rather than added beside
+        // their stored selves, which would show each paper twice.
+        const stored = Array.isArray(frame.papers) ? frame.papers : []
+        for (const row of stored) {
+          if (!row || typeof row !== 'object') continue
+          const record = row as Record<string, unknown>
+          const id = str(record.id)
+          const ssId = str(record.semantic_scholar_id)
+          if (!id) continue
+          this.rekey(ssId ? provisionalKey(ssId) : null, id, str(record.title))
+        }
+        // Older servers send ids only; a paper with no title yet reads as its
+        // id until `paper_started` supplies one.
         const ids = Array.isArray(frame.paper_ids) ? frame.paper_ids : []
         for (const raw of ids) {
           const id = str(raw)
           if (!id || this.papers.has(id)) continue
           this.papers.set(id, { id, title: shortId(id), stage: 'queued', label: 'queued', detail: '' })
+        }
+        // This event names the whole stored set, so anything still filed under
+        // a provisional key was ranked and then not stored — no later event
+        // will ever mention it, and left in place it sits at 'retrieved' for
+        // the rest of the run and pushes the grid past its own total.
+        if (stored.length || ids.length) {
+          for (const key of [...this.papers.keys()]) {
+            if (isProvisional(key)) this.papers.delete(key)
+          }
         }
         if (typeof frame.count === 'number') this.totalCount = frame.count
         break
@@ -226,6 +273,35 @@ export class RunFeed {
     }
   }
 
+  /** Move a provisionally-keyed row onto the id the rest of the run will use.
+   *
+   *  Insertion order is the grid's order, so the entry is rewritten in place
+   *  under its new key instead of being deleted and appended — otherwise every
+   *  paper would jump position the moment storing landed.
+   */
+  private rekey(from: string | null, to: string, title: string | null): void {
+    const existing = from ? this.papers.get(from) : undefined
+    if (!existing) {
+      if (!this.papers.has(to)) {
+        this.papers.set(to, {
+          id: to,
+          title: title ?? shortId(to),
+          stage: 'queued',
+          label: 'queued',
+          detail: '',
+        })
+      }
+      return
+    }
+    const entry = { ...existing, id: to, title: title ?? existing.title }
+    const rebuilt = new Map<string, PaperEntry>()
+    for (const [key, value] of this.papers) {
+      if (key === from) rebuilt.set(to, entry)
+      else if (key !== to) rebuilt.set(key, value)
+    }
+    this.papers = rebuilt
+  }
+
   view(): RunView {
     const papers: PaperProgress[] = [...this.papers.values()].map((entry) => ({
       id: entry.id,
@@ -249,6 +325,9 @@ export class RunFeed {
 
     return {
       queryId: this.queryId,
+      // A feed exists only because a run was asked for, so there is one to show
+      // even before `queries.create` has answered with its id.
+      started: true,
       question: this.question,
       status: this.phase === 'completed' ? 'completed' : this.phase === 'failed' ? 'failed' : 'processing',
       phase: this.phase,
@@ -258,7 +337,10 @@ export class RunFeed {
         return {
           name,
           state: index < phaseIndex ? 'done' : index === phaseIndex ? 'active' : 'pending',
-          detail: this.phaseDetail(name, total),
+          // Only for phases the run has reached. The shortlist is known at
+          // ranking, so a count under 'storing' would otherwise be filled in
+          // before anything had been stored.
+          detail: index <= phaseIndex ? this.phaseDetail(name, total) : '',
         }
       }),
       elapsedSeconds: (Date.now() - this.startedAt) / 1000,
@@ -281,6 +363,8 @@ export class RunFeed {
 
   private phaseDetail(name: Phase, total: number): string {
     switch (name) {
+      case 'ranking':
+        return this.papers.size ? `top ${this.papers.size}` : ''
       case 'storing':
         return this.papers.size ? `${this.papers.size} rows` : ''
       case 'processing': {
@@ -301,6 +385,18 @@ export class RunFeed {
 
 function str(value: unknown): string | null {
   return typeof value === 'string' && value ? value : null
+}
+
+/** The key a paper is filed under before its stored id is known.
+ *
+ *  Prefixed so it can never collide with a real row id, and so `rekey` can tell
+ *  a provisional row from one the server has already named. */
+function provisionalKey(semanticScholarId: string): string {
+  return `ss:${semanticScholarId}`
+}
+
+function isProvisional(key: string): boolean {
+  return key.startsWith('ss:')
 }
 
 /** Until `paper_started` supplies the title, the id is what is known. */

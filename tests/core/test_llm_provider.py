@@ -220,7 +220,7 @@ def test_azure_uses_json_schema_structured_output():
 
 
 def test_loopback_ollama_is_flagged_on_a_serverless_host(monkeypatch):
-    """docker-compose.yml is not read on Vercel, so nothing answers on loopback."""
+    """A deployed container has no Ollama in it, so nothing answers on loopback."""
     monkeypatch.setenv("VERCEL", "1")
     with (
         patch.object(llm_provider.settings, "embedding_provider", "ollama"),
@@ -229,6 +229,25 @@ def test_loopback_ollama_is_flagged_on_a_serverless_host(monkeypatch):
         warning = embedder_warning()
     assert warning is not None
     assert "VERCEL" in warning and "EMBEDDING_PROVIDER=hash" in warning
+
+
+def test_loopback_ollama_is_flagged_on_cloud_run(monkeypatch):
+    """`K_SERVICE` is Cloud Run's marker, and Cloud Run is where this deploys.
+
+    Worth its own test rather than trusting the tuple: the guard is only useful
+    on the platform actually in use, and a marker list is exactly the kind of
+    thing that keeps naming the host you just left.
+    """
+    for marker in ("VERCEL", "AWS_LAMBDA_FUNCTION_NAME", "FUNCTIONS_WORKER_RUNTIME"):
+        monkeypatch.delenv(marker, raising=False)
+    monkeypatch.setenv("K_SERVICE", "nodus-api")
+    with (
+        patch.object(llm_provider.settings, "embedding_provider", "ollama"),
+        patch.object(llm_provider.settings, "ollama_base_url", "http://127.0.0.1:11434"),
+    ):
+        warning = embedder_warning()
+    assert warning is not None
+    assert "K_SERVICE" in warning
 
 
 def test_loopback_ollama_is_fine_off_a_serverless_host(monkeypatch):

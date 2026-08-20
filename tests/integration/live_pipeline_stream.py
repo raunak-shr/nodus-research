@@ -103,9 +103,7 @@ async def main() -> int:
         # The socket is not run-scoped: it still serves the rest of the API.
         for request_id, action in (("report", "report.get"), ("pdf", "report.pdf")):
             await socket.send(
-                json.dumps(
-                    {"id": request_id, "action": action, "params": {"query_id": query_id}}
-                )
+                json.dumps({"id": request_id, "action": action, "params": {"query_id": query_id}})
             )
             while True:
                 frame = json.loads(await asyncio.wait_for(socket.recv(), timeout=600))

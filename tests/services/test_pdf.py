@@ -316,9 +316,7 @@ async def test_the_doi_is_a_fallback_not_a_replacement():
     routes = {"https://direct.example/a.pdf": (MINIMAL_PDF, "application/pdf")}
 
     with _fetching(routes, seen):
-        document = await pdf.fetch_pdf_document(
-            "https://direct.example/a.pdf", doi="10.1234/abcd"
-        )
+        document = await pdf.fetch_pdf_document("https://direct.example/a.pdf", doi="10.1234/abcd")
 
     assert document is not None
     assert len(seen) == 1

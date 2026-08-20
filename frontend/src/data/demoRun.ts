@@ -281,6 +281,7 @@ export function simulateRun(tick: number, question: string, outcome: RunView['ou
 
   return {
     queryId: DEMO_QUERY_ID,
+    started: true,
     question,
     status: tick >= 106 ? 'completed' : 'processing',
     phase: outcome === 'failed' ? 'failed' : phaseName,
@@ -305,6 +306,7 @@ export function simulateRun(tick: number, question: string, outcome: RunView['ou
 
 export const EMPTY_RUN: RunView = {
   queryId: null,
+  started: false,
   question: '',
   status: 'pending',
   phase: 'queued',

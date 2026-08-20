@@ -172,7 +172,10 @@ async def test_a_failed_retitle_leaves_the_duplicate_alone():
 
     with patch.object(synthesizer, "_retitle", AsyncMock(return_value=None)):
         await _disambiguate_headings(
-            "q", [_cluster(), _cluster()], [_claims()] * 2, narratives,
+            "q",
+            [_cluster(), _cluster()],
+            [_claims()] * 2,
+            narratives,
             lambda event, **payload: events.append(event),
         )
 

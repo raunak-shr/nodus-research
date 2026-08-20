@@ -28,11 +28,13 @@ import type {
   ClaimSourceRead,
   ClusterClaimRead,
   EventFrame,
+  NormalizedPaperSummary,
   QualityTier,
   QueryInterpretation,
   Phase,
   QueryRead,
   QueryStats,
+  QueryStatus,
   QueryWithPapers,
   ReportRead,
   ReportSection,
@@ -440,7 +442,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     )
 
     if (detail) {
-      setPapers(await livePaperRows(socket, detail, reportDoc?.sections ?? []))
+      setPapers(livePaperRows(detail, reportDoc?.sections ?? []))
     }
   }, [])
 
@@ -1191,11 +1193,49 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
 
 // -- live paper rows --------------------------------------------------------
 
-async function livePaperRows(
-  socket: NodusSocket,
+/** Terminal query states: after one of these, nothing more will be processed.
+ *
+ *  The distinction matters for a paper with no normalisation row. Mid-run that
+ *  means its turn has not come; once the run has stopped it means the paper was
+ *  dropped and never will be.
+ */
+const SETTLED_STATUSES: ReadonlySet<QueryStatus> = new Set<QueryStatus>(['completed', 'failed'])
+
+/** Why this paper has no usable normalisation, or null when nothing is wrong.
+ *
+ *  Three states that a single "did we get a record?" check used to flatten into
+ *  one, and reported as a processing failure:
+ *
+ *  - no record, run still going — not a failure, just not reached yet
+ *  - no record, run finished    — the paper was dropped
+ *  - record present, `failed`   — normalised, but extraction gave up on it
+ *
+ *  Nothing here reports a *transport* problem, and that is the point. This
+ *  reads a field that arrived with the paper itself, so there is no separate
+ *  request whose refusal could be mistaken for a dead paper. When twenty of
+ *  these were fetched one-per-paper, the socket's in-flight ceiling refused the
+ *  tail of the fan-out and every refusal was rendered as "failed during
+ *  processing" — a transport limit presented to the user as data loss.
+ */
+function normalisationFailure(
+  normalized: NormalizedPaperSummary | null,
+  status: QueryStatus,
+): string | null {
+  if (!normalized) {
+    return SETTLED_STATUSES.has(status)
+      ? 'Not normalised — the paper was dropped during processing'
+      : null
+  }
+  if (normalized.processing_status === 'failed') {
+    return 'Normalised, but claim extraction failed'
+  }
+  return null
+}
+
+function livePaperRows(
   detail: QueryWithPapers,
   sections: ReportSection[],
-): Promise<PaperRow[]> {
+): PaperRow[] {
   const claimsByPaper = new Map<string, PaperRow['claims']>()
   sections.forEach((section, clusterIndex) => {
     ;(section.claims ?? []).forEach((claim, claimIndex) => {
@@ -1218,19 +1258,10 @@ async function livePaperRows(
     })
   })
 
-  const normalized = await Promise.all(
-    detail.papers.map((qp) =>
-      socket
-        .request<{ study_type: string; methodology: Record<string, unknown> | null }>(
-          'papers.normalized',
-          { paper_id: qp.paper.id },
-        )
-        .catch(() => null),
-    ),
-  )
-
-  return detail.papers.map((qp, index) => {
-    const norm = normalized[index]
+  // `queries.get` carries each paper's normalisation inline, so this is one
+  // request for the whole table rather than one per paper.
+  return detail.papers.map((qp) => {
+    const norm = qp.normalized
     const methodology = norm?.methodology ?? null
     const claims = claimsByPaper.get(qp.paper.id) ?? []
     return {
@@ -1246,7 +1277,7 @@ async function livePaperRows(
       methodology: methodologyLine(methodology),
       sampleSize: sampleLine(methodology),
       claimCount: claims.length,
-      failureReason: norm ? null : 'Not normalised — the paper failed during processing',
+      failureReason: normalisationFailure(norm, detail.status),
       claims,
     }
   })

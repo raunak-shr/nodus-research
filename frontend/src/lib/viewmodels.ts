@@ -65,6 +65,12 @@ export interface EventLine {
 
 export interface RunView {
   queryId: string | null
+  /** Whether there is a run to show at all.
+   *
+   *  True from the moment one is asked for, which is before `queryId` is known:
+   *  `queries.create` takes a moment to answer, and keying "is there a run" off
+   *  the id flashed the no-run screen over a run that had just been started. */
+  started: boolean
   question: string
   status: QueryStatus
   phase: Phase
