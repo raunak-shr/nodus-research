@@ -1,0 +1,120 @@
+# Build the API image and roll it onto Cloud Run.
+#
+# Deliberately deploys the *image and the runtime shape*, and nothing else. No
+# --set-env-vars, no --set-secrets: `gcloud run deploy` creates a revision that
+# inherits the service's existing configuration, so environment variables set
+# on the service survive every deploy. That is not laziness, it is the ordering
+# rule from CLAUDE.md — `Settings()` is constructed at import, so a variable
+# that only new code understands must be set *after* that code is live, and a
+# workflow that rewrote the whole env block on every push would make the safe
+# order impossible to follow.
+#
+# One-time setup lives in .github/workflows/README-deploy.md.
+
+name: Deploy backend to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    # The frontend is a separate static build on Vercel and shares no code with
+    # the image, so a frontend-only commit should not roll the API.
+    paths-ignore:
+      - 'frontend/**'
+      - '**/*.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Required for Workload Identity Federation. This is what lets the job get a
+  # Google credential from GitHub's OIDC token, so no service-account JSON key
+  # is ever stored as a repository secret.
+  id-token: write
+
+concurrency:
+  # The service runs a single instance holding in-memory run state. Two deploys
+  # racing would hand traffic between revisions mid-run for no reason; queue
+  # them instead, and never cancel one partway.
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+env:
+  SERVICE: ${{ vars.CLOUD_RUN_SERVICE || 'nodus-api' }}
+  REGION: ${{ vars.GCP_REGION }}
+  REPOSITORY: ${{ vars.AR_REPOSITORY || 'nodus' }}
+
+jobs:
+  # A merge to main is a production deploy, so it does not get to skip the
+  # checks. Calling ci.yml rather than repeating its steps means there is one
+  # definition of "passing" and it cannot drift between the two workflows.
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOYER_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authenticate Docker to Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # Tagged by commit so a revision is traceable to a sha, and :latest
+          # moved so a manual `docker pull` gets something sensible. Cloud Run
+          # is always given the immutable tag.
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:${{ github.sha }}
+            ${{ env.REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE }}:latest
+          # Chromium and the dependency layer are the expensive part and change
+          # rarely; without a cache every push re-downloads both.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "${REGION}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPOSITORY}/${SERVICE}:${{ github.sha }}" \
+            --region "$REGION" \
+            --platform managed \
+            --port 8080 \
+            --allow-unauthenticated \
+            --min-instances 1 \
+            --max-instances 1 \
+            --concurrency 80 \
+            --timeout 3600 \
+            --memory 2Gi \
+            --cpu 1 \
+            --no-cpu-throttling \
+            --service-account "${{ vars.RUNTIME_SERVICE_ACCOUNT }}" \
+            --quiet
+
+      - name: Report the URL and check health
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.url)')
+          echo "Deployed: $URL"
+          echo "### Deployed \`$SERVICE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: $URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image tag: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          # /health/config is the useful one: it reports the resolved providers
+          # plus embedding_warning and db_pool_warning, which are non-null
+          # exactly when the configuration cannot work. A 200 with a warning is
+          # still a broken deploy, so print the body rather than just the code.
+          curl -fsS --retry 5 --retry-delay 5 --retry-connrefused "$URL/health/config" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
