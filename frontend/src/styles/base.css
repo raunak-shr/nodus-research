@@ -226,12 +226,32 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
 .clamp-2 { -webkit-line-clamp: 2; }
 .clamp-3 { -webkit-line-clamp: 3; }
 
+/* The one control inside a report section, and the only way to the evidence the
+   section was written from. As a bare line of accent text under a hairline it
+   read as the section's last caption and was scrolled straight past, so it is
+   drawn as a control: its own box, an accent edge, and a caret that turns. */
 .claims-toggle {
-  border: 0; border-top: 1px solid var(--n-line2); background: transparent;
-  color: var(--color-accent-700); font-family: var(--font-body); font-size: 12px;
-  letter-spacing: .02em; padding: 10px 0 0; cursor: pointer; text-align: left; width: 100%;
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 1px solid var(--n-line2); border-left: 3px solid var(--color-accent);
+  background: var(--n-panel); color: var(--color-accent-700);
+  font-family: var(--font-body); font-size: 12.5px; letter-spacing: .02em;
+  padding: 9px 14px 9px 12px; margin-top: 4px; cursor: pointer; text-align: left;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.claims-toggle:hover { color: var(--n-text); }
+.claims-toggle:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--n-panel));
+  border-color: var(--color-accent);
+  color: var(--n-text);
+}
+.claims-toggle.open { background: var(--n-panel2); color: var(--n-text); }
+.claims-toggle .caret {
+  flex: 0 0 auto; font-size: 9px; line-height: 1; color: var(--color-accent);
+  transition: transform .15s ease;
+}
+.claims-toggle.open .caret { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .claims-toggle, .claims-toggle .caret { transition: none; }
+}
 
 /* -- overlays ------------------------------------------------------------- */
 
