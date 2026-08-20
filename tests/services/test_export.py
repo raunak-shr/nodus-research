@@ -70,7 +70,7 @@ def report():
                 ],
             }
         ],
-        llm_model_used="azure/gpt-5.1",
+        llm_model_used="gemini/gemini-3.5-flash-lite",
         user_edited=False,
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -131,7 +131,7 @@ def test_html_escapes_user_content(query):
         key_findings=[],
         open_questions=[],
         sections=[],
-        llm_model_used="azure/gpt-5.1",
+        llm_model_used="gemini/gemini-3.5-flash-lite",
     )
     html = export.to_html(hostile, query)
 

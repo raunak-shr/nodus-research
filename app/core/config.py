@@ -37,29 +37,7 @@ class Settings(BaseSettings):
     db_client_headroom: int = 3
 
     # LLM
-    llm_provider: Literal["azure", "anthropic", "ollama", "gemini"] = "azure"
-
-    # Azure OpenAI (used when LLM_PROVIDER=azure).
-    # Auth is Entra ID client-credentials — no API key involved.
-    llm_azure_endpoint: str = ""
-    llm_azure_api_version: str = "2025-04-01-preview"
-    llm_azure_tenant_id: str = ""
-    llm_azure_client_id: str = ""
-    llm_azure_client_secret: str = ""
-    llm_azure_scope: str = ""
-    # Leave empty when LLM_AZURE_ENDPOINT already points at the deployment
-    # (APIM-style routes do). Set it for classic
-    # https://<resource>.openai.azure.com endpoints.
-    llm_azure_deployment: str = ""
-    llm_azure_model: str = "gpt-5.1"
-    # APIM subscription key (Ocp-Apim-Subscription-Key). Required in addition to
-    # the Entra ID bearer token when the deployment sits behind API Management.
-    llm_api_key: str = ""
-    # True when LLM_AZURE_ENDPOINT is a single flat APIM operation, i.e. the
-    # request goes to the endpoint itself rather than <endpoint>/chat/completions.
-    llm_azure_flat_route: bool = True
-    # Reasoning effort for GPT-5.x: minimal | low | medium | high
-    llm_azure_reasoning_effort: str = "low"
+    llm_provider: Literal["anthropic", "ollama", "gemini"] = "gemini"
 
     # Anthropic (used when LLM_PROVIDER=anthropic)
     anthropic_api_key: str = ""
@@ -102,18 +80,14 @@ class Settings(BaseSettings):
     ollama_synthesis_model: str = "qwen2.5:32b"
     ollama_embedding_model: str = "nomic-embed-text"
 
-    # Embeddings — kept separate from the chat provider because a chat-only
-    # Azure deployment cannot serve embeddings.
-    #   azure      — Azure OpenAI embedding deployment (dimensions forced to 768)
+    # Embeddings — chosen independently of the chat provider, because the two do
+    # not have to come from the same vendor and often should not.
     #   gemini     — gemini-embedding-001, width requested per call
     #   cloudflare — Workers AI, an HTTP call with nothing to host
     #   ollama     — nomic-embed-text via an Ollama server, local or hosted
     #   hash       — deterministic local lexical embedding, no external service
-    embedding_provider: Literal["azure", "gemini", "cloudflare", "ollama", "hash"] = "hash"
+    embedding_provider: Literal["gemini", "cloudflare", "ollama", "hash"] = "hash"
     embedding_dim: int = 768
-    llm_azure_embedding_endpoint: str = ""
-    llm_azure_embedding_deployment: str = ""
-    llm_azure_embedding_model: str = "text-embedding-3-small"
 
     # Cloudflare Workers AI (used when EMBEDDING_PROVIDER=cloudflare). The model
     # has to produce EMBEDDING_DIM-wide vectors: bge-base is 768 and fits the
@@ -304,15 +278,6 @@ class Settings(BaseSettings):
         if self.embedding_provider == "cloudflare":
             return self.bge_cluster_similarity_threshold
         return self.cluster_similarity_threshold
-
-    @property
-    def azure_configured(self) -> bool:
-        return bool(
-            self.llm_azure_endpoint
-            and self.llm_azure_tenant_id
-            and self.llm_azure_client_id
-            and self.llm_azure_client_secret
-        )
 
 
 settings = Settings()

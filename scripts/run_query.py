@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.core.events import hub
+from app.core.llm_provider import get_llm_name
 from app.db.session import AsyncSessionLocal, engine
 from app.models.claim import Claim
 from app.models.cluster import ClaimCluster
@@ -75,7 +76,7 @@ async def main() -> int:
         settings.max_claims_per_paper = args.max_claims
 
     print(f"query        : {args.query}")
-    print(f"llm          : {settings.llm_provider}/{settings.llm_azure_model}")
+    print(f"llm          : {get_llm_name()}")
     print(f"embeddings   : {settings.embedding_provider}")
     print(f"papers       : top {settings.top_k_papers}\n")
 

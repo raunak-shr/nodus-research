@@ -74,12 +74,6 @@ def test_embedder_selection_follows_setting():
 
 def test_llm_name_reflects_active_provider():
     with (
-        patch.object(llm_provider.settings, "llm_provider", "azure"),
-        patch.object(llm_provider.settings, "llm_azure_model", "gpt-5.1"),
-    ):
-        assert get_llm_name() == "azure/gpt-5.1"
-
-    with (
         patch.object(llm_provider.settings, "llm_provider", "anthropic"),
         patch.object(llm_provider.settings, "anthropic_model", "claude-sonnet-4-20250514"),
     ):
@@ -153,22 +147,6 @@ def test_gemini_embeddings_are_reported_and_warn_without_a_key():
         assert "GEMINI_API_KEY" in (embedder_warning() or "")
 
 
-def test_azure_client_carries_apim_key_and_flat_route():
-    with (
-        patch.object(llm_provider.settings, "llm_provider", "azure"),
-        patch.object(llm_provider.settings, "llm_azure_endpoint", "https://apim.example.net/dep"),
-        patch.object(llm_provider.settings, "llm_azure_deployment", ""),
-        patch.object(llm_provider.settings, "llm_api_key", "sub-key"),
-        patch.object(llm_provider.settings, "llm_azure_flat_route", True),
-    ):
-        llm = llm_provider.get_llm()
-
-    assert llm.default_headers["Ocp-Apim-Subscription-Key"] == "sub-key"
-    # Flat APIM routes address the deployment through base_url, not azure_deployment.
-    assert llm.deployment_name in (None, "")
-    assert str(llm.root_async_client.base_url).startswith("https://apim.example.net/dep")
-
-
 def test_ollama_clients_carry_the_configured_timeout():
     """ChatOllama/OllamaEmbeddings expose timeout only via client_kwargs."""
     with (
@@ -186,8 +164,16 @@ def test_ollama_clients_carry_the_configured_timeout():
     assert embedder.client_kwargs == {"timeout": 99.0}
 
 
-def test_azure_uses_json_schema_structured_output():
-    """GPT-5.1 decodes JSON schema natively; other providers use tool calls."""
+@pytest.mark.parametrize("provider", ["gemini", "anthropic", "ollama"])
+def test_structured_output_passes_no_method_kwarg(provider):
+    """No provider is special-cased here any more.
+
+    `method="json_schema"` existed for the Azure path. Gemini decodes against
+    its schema natively but does it by overriding `with_structured_output` in
+    `GeminiChat`, so the caller passes nothing; Anthropic and Ollama use tool
+    calls, which is langchain's default. A stray `method` kwarg would reach
+    providers that reject it.
+    """
     from pydantic import BaseModel
 
     class _Schema(BaseModel):
@@ -201,18 +187,10 @@ def test_azure_uses_json_schema_structured_output():
             return "runnable"
 
     with (
-        patch.object(llm_provider.settings, "llm_provider", "azure"),
+        patch.object(llm_provider.settings, "llm_provider", provider),
         patch.object(llm_provider, "get_llm", return_value=_FakeLLM()),
     ):
-        llm_provider.get_structured_llm(_Schema)
-    assert captured["method"] == "json_schema"
-
-    captured.clear()
-    with (
-        patch.object(llm_provider.settings, "llm_provider", "ollama"),
-        patch.object(llm_provider, "get_llm", return_value=_FakeLLM()),
-    ):
-        llm_provider.get_structured_llm(_Schema)
+        assert llm_provider.get_structured_llm(_Schema) == "runnable"
     assert captured == {}
 
 
@@ -305,8 +283,13 @@ def test_a_token_is_sent_to_a_hosted_ollama():
         assert "headers" not in llm_provider._ollama_client_kwargs()
 
 
-def test_other_providers_are_never_flagged(monkeypatch):
+def test_the_hash_provider_is_never_flagged(monkeypatch):
+    """`hash` needs nothing, so nothing about a host can make it unreachable.
+
+    It is the only provider with that property now: `cloudflare` and `gemini`
+    each warn when their credentials are missing, and `ollama` warns when it
+    points at loopback from a managed host.
+    """
     monkeypatch.setenv("VERCEL", "1")
-    for provider in ("hash", "azure"):
-        with patch.object(llm_provider.settings, "embedding_provider", provider):
-            assert embedder_warning() is None
+    with patch.object(llm_provider.settings, "embedding_provider", "hash"):
+        assert embedder_warning() is None

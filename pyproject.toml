@@ -17,7 +17,6 @@ dependencies = [
     "langchain-ollama>=0.2.0",
     "langgraph>=0.2.0",
     "python-dotenv>=1.0.0",
-    "langchain-openai>=1.5.1",
     "pypdf>=6.16.1",
     "truststore>=0.10.4",
     # PDF export renders the report in headless Chromium. The browser itself is

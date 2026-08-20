@@ -34,7 +34,7 @@ def _report(updated_at=None):
         key_findings=[],
         open_questions=[],
         sections=[],
-        llm_model_used="azure/gpt-5.1",
+        llm_model_used="gemini/gemini-3.5-flash-lite",
         user_edited=False,
         created_at=datetime(2026, 8, 17, tzinfo=UTC),
         updated_at=updated_at or datetime(2026, 8, 17, tzinfo=UTC),
