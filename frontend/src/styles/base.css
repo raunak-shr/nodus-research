@@ -226,12 +226,32 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
 .clamp-2 { -webkit-line-clamp: 2; }
 .clamp-3 { -webkit-line-clamp: 3; }
 
+/* The one control inside a report section, and the only way to the evidence the
+   section was written from. As a bare line of accent text under a hairline it
+   read as the section's last caption and was scrolled straight past, so it is
+   drawn as a control: its own box, an accent edge, and a caret that turns. */
 .claims-toggle {
-  border: 0; border-top: 1px solid var(--n-line2); background: transparent;
-  color: var(--color-accent-700); font-family: var(--font-body); font-size: 12px;
-  letter-spacing: .02em; padding: 10px 0 0; cursor: pointer; text-align: left; width: 100%;
+  display: inline-flex; align-items: center; gap: 10px;
+  border: 1px solid var(--n-line2); border-left: 3px solid var(--color-accent);
+  background: var(--n-panel); color: var(--color-accent-700);
+  font-family: var(--font-body); font-size: 12.5px; letter-spacing: .02em;
+  padding: 9px 14px 9px 12px; margin-top: 4px; cursor: pointer; text-align: left;
+  transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.claims-toggle:hover { color: var(--n-text); }
+.claims-toggle:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--n-panel));
+  border-color: var(--color-accent);
+  color: var(--n-text);
+}
+.claims-toggle.open { background: var(--n-panel2); color: var(--n-text); }
+.claims-toggle .caret {
+  flex: 0 0 auto; font-size: 9px; line-height: 1; color: var(--color-accent);
+  transition: transform .15s ease;
+}
+.claims-toggle.open .caret { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .claims-toggle, .claims-toggle .caret { transition: none; }
+}
 
 /* -- overlays ------------------------------------------------------------- */
 
@@ -293,4 +313,53 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
 @media (max-width: 900px) {
   .sidebar { display: none; }
   .screen { padding: 32px 24px 80px; }
+}
+
+/* -- scrollers ------------------------------------------------------------ */
+
+/* An inner scroller paints its own bar. The platform default is a white track
+   with a pair of stepper buttons, which on a --n-panel surface reads as a
+   bright strip down the edge of the panel rather than as part of it. The track
+   is transparent so whatever surface the scroller sits on shows through, and
+   the thumb is the same rule colour everything else on the screen is drawn in. */
+.n-scroll { scrollbar-width: thin; scrollbar-color: var(--n-line2) transparent; }
+.n-scroll::-webkit-scrollbar { width: 8px; height: 8px; background: transparent; }
+.n-scroll::-webkit-scrollbar-track { background: transparent; border: 0; }
+.n-scroll::-webkit-scrollbar-thumb { background: var(--n-line2); border: 0; }
+.n-scroll::-webkit-scrollbar-thumb:hover { background: var(--n-dim); }
+/* Chromium still draws the two arrows on Windows unless they are turned off. */
+.n-scroll::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.n-scroll::-webkit-scrollbar-corner { background: transparent; }
+
+/* -- the ask box ---------------------------------------------------------- */
+
+/* The question is the only thing this screen wants, so the box says so: an
+   accent rule along its top edge, a 2px frame rather than a hairline, and on
+   focus an accent border, a lighter surface and a ring — enough to read as the
+   page opening up for typing, without moving anything below it. */
+.ask-box {
+  position: relative;
+  border: 2px solid var(--n-line2);
+  background: var(--n-panel);
+  padding: 2px;
+  animation: ask-rise .38s ease both;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.ask-box::before {
+  content: ''; position: absolute; left: -2px; right: -2px; top: -2px;
+  height: 3px; background: var(--color-accent);
+}
+.ask-box:hover { border-color: color-mix(in srgb, var(--n-text) 55%, transparent); }
+.ask-box:focus-within {
+  border-color: var(--color-accent);
+  background: var(--n-inset);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+@keyframes ask-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-box { animation: none; transition: none; }
 }

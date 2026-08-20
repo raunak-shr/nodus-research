@@ -271,6 +271,7 @@ export function RunScreen(): ReactElement {
             // Scrolling the list keeps the panel — and what sits under it — the
             // same height however many sections the run writes.
             <div
+              className="n-scroll"
               style={{
                 display: 'flex',
                 flexDirection: 'column',

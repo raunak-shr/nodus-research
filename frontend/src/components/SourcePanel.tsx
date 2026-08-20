@@ -68,6 +68,7 @@ export function SourcePanel({
       </div>
 
       <div
+        className="n-scroll"
         style={{
           padding: '18px 22px 26px',
           overflow: 'auto',

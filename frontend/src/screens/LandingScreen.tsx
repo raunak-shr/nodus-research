@@ -17,6 +17,7 @@
 import { Fragment, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 
 import { HeroField } from '../components/HeroField'
+import { Mark } from '../components/Mark'
 import { useStore } from '../state/store'
 
 const REPO = 'https://github.com/raunak-shr/nodus-research'
@@ -810,39 +811,3 @@ function Repo({
   )
 }
 
-/** The mark, solid: two nodes and the edge between them, knocked out of the
- *  accent square. Scales with `size` — 34px in the header, 22px in the footer. */
-function Mark({ size }: { size: number }): ReactElement {
-  const dot = Math.round(size * 0.21)
-  const inset = Math.round(size * 0.18)
-  const edge = Math.round(size * 0.56)
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: size,
-        height: size,
-        flex: `0 0 ${size}px`,
-        background: 'var(--color-accent)',
-        position: 'relative',
-        display: 'block',
-      }}
-    >
-      <span style={{ position: 'absolute', left: inset, top: inset, width: dot, height: dot, background: 'var(--n-bg)', display: 'block' }} />
-      <span style={{ position: 'absolute', right: inset, bottom: inset, width: dot, height: dot, background: 'var(--n-bg)', display: 'block' }} />
-      <span
-        style={{
-          position: 'absolute',
-          left: inset + dot / 2,
-          top: inset + dot / 2,
-          width: edge,
-          height: 2,
-          background: 'var(--n-bg)',
-          transform: 'rotate(45deg)',
-          transformOrigin: 'left center',
-          display: 'block',
-        }}
-      />
-    </span>
-  )
-}

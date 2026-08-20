@@ -352,7 +352,8 @@ export function ReportScreen(): ReactElement {
 
                   <button
                     type="button"
-                    className="claims-toggle"
+                    className={`claims-toggle${claimsOpen ? ' open' : ''}`}
+                    aria-expanded={claimsOpen}
                     onClick={() =>
                       setOpenClaims((current) => ({
                         ...current,
@@ -360,8 +361,13 @@ export function ReportScreen(): ReactElement {
                       }))
                     }
                   >
-                    {claimsOpen ? 'Hide the ' : 'Show the '}
-                    {claims.length} claims behind this section
+                    <span className="caret" aria-hidden="true">
+                      &#9654;
+                    </span>
+                    <span>
+                      {claimsOpen ? 'Hide the ' : 'Show the '}
+                      {claims.length} claims behind this section
+                    </span>
                   </button>
 
                   {claimsOpen ? (
