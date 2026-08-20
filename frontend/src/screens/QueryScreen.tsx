@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 
 import type { QueryVerdict } from '../lib/types'
 import { useStore } from '../state/store'
@@ -11,6 +11,75 @@ const EXAMPLES = [
 
 const PLACEHOLDER =
   'Ask one question — name the intervention or subject, the outcome, and the population it is measured in.'
+
+/** What the empty box types to itself.
+ *
+ *  Only well-formed questions: the placeholder is the shape of a good question
+ *  demonstrated rather than described, so 'Is exercise good?' — which is in
+ *  EXAMPLES on purpose, to show what the Interpret check pushes back on —
+ *  has no business here. Each one names an intervention, an outcome and a
+ *  population, which is what the sentence under the heading asks for.
+ */
+const TYPED = [
+  'Does aerobic exercise reduce depression severity in adults with major depression?',
+  'Does intermittent fasting improve HbA1c in type 2 diabetes?',
+  'Does vitamin D supplementation lower fracture risk in adults over 65?',
+]
+
+const TYPE_MS = 34
+const ERASE_MS = 16
+const HOLD_MS = 2100
+const GAP_MS = 380
+
+/** Type the phrases out one character at a time, erase, move to the next.
+ *
+ *  `active` is "the box is empty" — a placeholder nobody can see is not worth
+ *  a timer, and stopping means the animation is not competing with the question
+ *  someone is in the middle of writing. Returns null when there is nothing to
+ *  animate, which is the caller's cue to show the static placeholder instead:
+ *  under prefers-reduced-motion this is every render.
+ */
+function useTypedPlaceholder(phrases: string[], active: boolean): string | null {
+  const [reduced] = useState(
+    () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false,
+  )
+  const [typed, setTyped] = useState('')
+
+  useEffect(() => {
+    if (!active || reduced || phrases.length === 0) return
+
+    let phrase = 0
+    let cut = 0
+    let erasing = false
+    let timer = 0
+
+    const step = (): void => {
+      const full = phrases[phrase]
+      if (!erasing) {
+        cut += 1
+        setTyped(full.slice(0, cut))
+        erasing = cut >= full.length
+        timer = window.setTimeout(step, erasing ? HOLD_MS : TYPE_MS)
+        return
+      }
+      cut -= 1
+      setTyped(full.slice(0, cut))
+      if (cut > 0) {
+        timer = window.setTimeout(step, ERASE_MS)
+        return
+      }
+      erasing = false
+      phrase = (phrase + 1) % phrases.length
+      timer = window.setTimeout(step, GAP_MS)
+    }
+
+    timer = window.setTimeout(step, GAP_MS)
+    return () => window.clearTimeout(timer)
+  }, [active, phrases, reduced])
+
+  if (!active || reduced) return null
+  return typed
+}
 
 /** How each verdict is presented. Only `ready` is quiet: the rest are a warning
  *  or a redirection, and none of them is a refusal — every one of these still
@@ -26,6 +95,15 @@ const VERDICTS: Record<QueryVerdict, { kicker: string; headline: string; accent:
 export function QueryScreen(): ReactElement {
   const store = useStore()
   const { question, structured, interpretation, interpreting } = store
+  const [focused, setFocused] = useState(false)
+  const typed = useTypedPlaceholder(TYPED, question.length === 0)
+
+  // The block is what makes it read as typing rather than as text that is
+  // already there, so it goes only where there is no real caret to confuse it
+  // with: the field's own caret sits at the start of the placeholder, and two
+  // cursors in one box is one too many.
+  const placeholder =
+    typed === null ? PLACEHOLDER : focused ? typed : `${typed}▌`
 
   return (
     <div style={{ padding: '0 0 90px' }}>
@@ -50,27 +128,26 @@ export function QueryScreen(): ReactElement {
           reports where they agree, where they conflict, and how far each finding can be trusted.
         </p>
 
-        <div
-          className="elev-sm"
-          style={{
-            border: '1px solid var(--n-line2)',
-            background: 'var(--n-panel)',
-            padding: 2,
-          }}
-        >
+        {/* The one thing this screen wants. It is drawn as the loudest element on
+            the page — accent edge, 2px frame, a ring when it takes focus — and
+            it types an example to itself while it is empty, because the shape of
+            a good question is easier to show than to describe. */}
+        <div className="ask-box elev-sm">
           <textarea
             className="bare"
             value={question}
             onChange={(event) => store.setQuestion(event.target.value)}
-            placeholder={PLACEHOLDER}
-            rows={2}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            placeholder={placeholder}
+            rows={3}
             spellCheck={false}
             maxLength={400}
             style={{
-              fontSize: 22,
+              fontSize: 24,
               lineHeight: 1.4,
-              letterSpacing: '-.01em',
-              padding: '20px 22px 8px',
+              letterSpacing: '-.015em',
+              padding: '26px 26px 10px',
             }}
           />
           <div
@@ -78,7 +155,7 @@ export function QueryScreen(): ReactElement {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              padding: '10px 16px 12px 22px',
+              padding: '10px 18px 16px 26px',
               gap: 12,
               flexWrap: 'wrap',
             }}

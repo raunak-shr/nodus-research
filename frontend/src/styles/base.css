@@ -330,3 +330,36 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
 /* Chromium still draws the two arrows on Windows unless they are turned off. */
 .n-scroll::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
 .n-scroll::-webkit-scrollbar-corner { background: transparent; }
+
+/* -- the ask box ---------------------------------------------------------- */
+
+/* The question is the only thing this screen wants, so the box says so: an
+   accent rule along its top edge, a 2px frame rather than a hairline, and on
+   focus an accent border, a lighter surface and a ring — enough to read as the
+   page opening up for typing, without moving anything below it. */
+.ask-box {
+  position: relative;
+  border: 2px solid var(--n-line2);
+  background: var(--n-panel);
+  padding: 2px;
+  animation: ask-rise .38s ease both;
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.ask-box::before {
+  content: ''; position: absolute; left: -2px; right: -2px; top: -2px;
+  height: 3px; background: var(--color-accent);
+}
+.ask-box:hover { border-color: color-mix(in srgb, var(--n-text) 55%, transparent); }
+.ask-box:focus-within {
+  border-color: var(--color-accent);
+  background: var(--n-inset);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+@keyframes ask-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ask-box { animation: none; transition: none; }
+}
