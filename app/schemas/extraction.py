@@ -1,6 +1,6 @@
 """LLM structured-output schemas for Stage 2 (normalization + extraction).
 
-Fields are deliberately flat: strict JSON-schema decoding (Azure/OpenAI) is far
+Fields are deliberately flat: strict JSON-schema decoding is far
 more reliable with scalars than with nested objects, so nested JSONB payloads
 (`methodology`, `effect_size`, …) are assembled from these on the Python side.
 """

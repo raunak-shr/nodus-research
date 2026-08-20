@@ -405,7 +405,7 @@ class GeminiChat(BaseChatModel):
     def with_structured_output(  # type: ignore[override]
         self, schema: type[BaseModel], **kwargs: Any
     ) -> Runnable:
-        """Native JSON-schema decoding, the way the Azure path uses it.
+        """Native JSON-schema decoding, rather than a tool-call round trip.
 
         Gemini constrains generation to the schema itself, so there is no tool
         call to unwrap and no instruction to add — which also means the model

@@ -74,9 +74,9 @@ Chosen over k-means because the number of distinct assertions in a query is unkn
 | ORM | SQLAlchemy async + asyncpg |
 | Migrations | Alembic |
 | Agent framework | LangGraph |
-| LLM (default) | Azure OpenAI `gpt-5.1` via Entra ID + APIM |
-| LLM (alternatives) | Google Gemini `gemini-3.5-flash-lite`, Anthropic, Ollama |
-| Embeddings | Cloudflare Workers AI `bge-base-en-v1.5` (768d), Gemini `gemini-embedding-001`, `nomic-embed-text` via Ollama, Azure embeddings, or a local lexical fallback |
+| LLM (default) | Google Gemini `gemini-3.5-flash-lite` via a direct REST client |
+| LLM (alternatives) | Anthropic, Ollama |
+| Embeddings | Cloudflare Workers AI `bge-base-en-v1.5` (768d), Gemini `gemini-embedding-001`, `nomic-embed-text` via Ollama, or a local lexical fallback |
 | HTTP client | httpx (async) |
 | Validation | Pydantic v2 + pydantic-settings |
 | Package manager | uv |
@@ -99,9 +99,7 @@ app/
 │   └── session.py              # per-connection dispatch, subscriptions, heartbeat
 ├── core/
 │   ├── config.py               # Settings from .env
-│   ├── llm_provider.py         # Azure ↔ Gemini ↔ Anthropic ↔ Ollama, embeddings
-│   ├── azure_auth.py           # Entra ID client-credentials token cache
-│   ├── azure_transport.py      # APIM flat-route URL rewriting
+│   ├── llm_provider.py         # Gemini ↔ Anthropic ↔ Ollama, embeddings
 │   ├── tls.py                  # OS trust store for outbound HTTPS
 │   └── events.py               # in-process progress pub/sub
 ├── models/                     # SQLAlchemy ORM models
@@ -136,7 +134,6 @@ app/
     └── migrations/
 scripts/
 ├── check_llm.py                # provider smoke test (chat, structured, embeddings)
-├── probe_azure_route.py        # discover the request path for a new endpoint
 ├── run_query.py                # run one query end to end from the CLI
 ├── smoke_api.py                # end-to-end test of the HTTP + WebSocket surface
 └── eval.py                     # run the evaluation suite
@@ -172,7 +169,7 @@ uv sync
 cp .env.example .env
 ```
 
-Fill in the Azure OpenAI block and `DATABASE_URL`. See [Configuration](#configuration).
+Fill in `GEMINI_API_KEY` and `DATABASE_URL`. See [Configuration](#configuration).
 
 **3. Database**
 
@@ -232,7 +229,7 @@ ollama pull nomic-embed-text
 
 Then set `EMBEDDING_PROVIDER=ollama`, and `OLLAMA_BASE_URL` if it is not on the default `http://localhost:11434`. Failing both, `EMBEDDING_PROVIDER=hash` runs everything offline using lexical overlap — the pipeline works, but clustering only catches claims that share vocabulary, not paraphrases.
 
-The cluster similarity threshold follows the provider, because cosine similarity is not comparable across models: `CLUSTER_SIMILARITY_THRESHOLD` (0.72) for nomic-embed-text and Azure, `BGE_CLUSTER_SIMILARITY_THRESHOLD` (0.80) for Workers AI, `LEXICAL_CLUSTER_SIMILARITY_THRESHOLD` (0.45) for the hash fallback. On a real 169-claim query, running BGE at 0.72 put 75% of the claims into one cluster — a single useless report section.
+The cluster similarity threshold follows the provider, because cosine similarity is not comparable across models: `CLUSTER_SIMILARITY_THRESHOLD` (0.72) for nomic-embed-text and Gemini, `BGE_CLUSTER_SIMILARITY_THRESHOLD` (0.80) for Workers AI, `LEXICAL_CLUSTER_SIMILARITY_THRESHOLD` (0.45) for the hash fallback. On a real 169-claim query, running BGE at 0.72 put 75% of the claims into one cluster — a single useless report section.
 
 Whichever you pick has to be reachable. `EMBEDDING_PROVIDER=ollama` with no Ollama server yields no vectors, and claims with no vector cannot be clustered — so the run fails at the clustering step with a 503 naming the provider. It does not finish as a report-less success.
 
@@ -247,7 +244,7 @@ uv run python scripts/check_llm.py
 Checks chat, structured output, and embeddings against whatever the `.env` selects:
 
 ```
-chat provider      : azure (azure/gpt-5.1)
+chat provider      : gemini (gemini/gemini-3.5-flash-lite)
 embedding provider : ollama (ollama/nomic-embed-text)
 [ok]   chat        -> 'PONG'
 [ok]   structured  -> topic='exercise' keywords=['aerobic exercise', 'depression severity']
@@ -272,20 +269,13 @@ uv run python scripts/run_query.py "Does aerobic exercise reduce depression seve
 
 ## Configuration
 
-### Azure OpenAI behind APIM
-
-The default provider targets an Azure OpenAI deployment fronted by API Management, which needs **two** credentials at once:
-
-- an **Entra ID bearer token**, minted from client credentials and cached in-process until 5 minutes before expiry (`app/core/azure_auth.py`)
-- an **APIM subscription key** (`LLM_API_KEY`), sent as `Ocp-Apim-Subscription-Key`
-
-APIM also exposes the deployment as a single flat operation — `POST https://…/openai5/az_openai_gpt-51_chat` — while the OpenAI SDK always appends `/deployments/<model>/chat/completions`. `LLM_AZURE_FLAT_ROUTE=true` installs an httpx transport that strips the appended path back off (`app/core/azure_transport.py`). Point Nodus at a new endpoint and `scripts/probe_azure_route.py` will tell you which shape it wants.
-
-GPT-5.1 rejects a non-default `temperature`, so it is deliberately never set; `LLM_AZURE_REASONING_EFFORT` controls the reasoning budget instead.
-
 ### Swapping providers
 
-`LLM_PROVIDER` selects `azure`, `gemini`, `anthropic`, or `ollama`; `EMBEDDING_PROVIDER` selects `cloudflare`, `gemini`, `ollama`, `azure`, or `hash`, independently. Every agent calls `get_llm()` / `get_structured_llm()` / `get_embedder()` — no agent constructs a client. Azure and Gemini both get native JSON-schema decoding; Anthropic and Ollama use tool-call structured output.
+`LLM_PROVIDER` selects `gemini`, `anthropic`, or `ollama`; `EMBEDDING_PROVIDER` selects `cloudflare`, `gemini`, `ollama`, or `hash`, independently. Every agent calls `get_llm()` / `get_structured_llm()` / `get_embedder()` — no agent constructs a client.
+
+Gemini constrains generation to a JSON schema natively, and does it by overriding `with_structured_output` inside `GeminiChat`; Anthropic and Ollama use tool-call structured output, which is langchain's default. `get_structured_llm` therefore passes no provider-specific argument and needs no branch of its own.
+
+An Azure OpenAI provider was removed once Gemini became the default: it carried fourteen settings, two modules of Entra ID and APIM-route machinery, and `langchain-openai` (which pulled in `openai` and `tiktoken`) for a path nothing used. Restoring it means reinstating `_azure_llm` and `_azure_embedder` in `llm_provider.py`, not just adding settings back.
 
 ### Running on Gemini's free tier
 

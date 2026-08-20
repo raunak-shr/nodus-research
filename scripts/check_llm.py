@@ -34,9 +34,6 @@ class _Probe(BaseModel):
 async def main() -> int:
     print(f"chat provider      : {settings.llm_provider} ({get_llm_name()})")
     print(f"embedding provider : {settings.embedding_provider} ({get_embedder_name()})")
-    if settings.llm_provider == "azure":
-        print(f"endpoint           : {settings.llm_azure_endpoint}")
-        print(f"api version        : {settings.llm_azure_api_version}")
 
     failures = 0
 

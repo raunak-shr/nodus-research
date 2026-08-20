@@ -13,9 +13,9 @@ Nodus is a research paper analysis tool that helps researchers by retrieving, no
 - **ORM:** SQLAlchemy (async) with asyncpg driver
 - **Migrations:** Alembic
 - **Agent framework:** LangGraph (not vanilla LangChain)
-- **LLM (default):** Azure OpenAI `gpt-5.1` via langchain-openai, authenticated with Entra ID client credentials + an APIM subscription key
-- **LLM (alternatives):** Google Gemini `gemini-3.5-flash-lite` (a direct REST client in `app/core/gemini.py`, not `langchain-google-genai`), Anthropic, Ollama — selected by `LLM_PROVIDER`
-- **Embeddings:** Cloudflare Workers AI `@cf/baai/bge-base-en-v1.5` (768d), Gemini `gemini-embedding-001` (width requested per call), `nomic-embed-text` (768d) via Ollama, an Azure embedding deployment, or a deterministic local lexical fallback — selected by `EMBEDDING_PROVIDER`
+- **LLM (default):** Google Gemini `gemini-3.5-flash-lite`, through a direct REST client in `app/core/gemini.py` rather than `langchain-google-genai`
+- **LLM (alternatives):** Anthropic, Ollama — selected by `LLM_PROVIDER`
+- **Embeddings:** Cloudflare Workers AI `@cf/baai/bge-base-en-v1.5` (768d), Gemini `gemini-embedding-001` (width requested per call), `nomic-embed-text` (768d) via Ollama, or a deterministic local lexical fallback — selected by `EMBEDDING_PROVIDER`
 - **HTTP client:** httpx (async)
 - **Validation:** Pydantic v2 with pydantic-settings
 - **Linting:** ruff
@@ -51,9 +51,8 @@ nodus/
 │   │   └── session.py          # per-connection dispatch, subscriptions, heartbeat
 │   ├── core/
 │   │   ├── config.py           # Settings via pydantic-settings (.env)
-│   │   ├── llm_provider.py     # Swappable Azure ↔ Anthropic ↔ Ollama + embeddings
-│   │   ├── azure_auth.py       # Entra ID client-credentials token cache
-│   │   ├── azure_transport.py  # APIM flat-route URL rewriting for the OpenAI SDK
+│   │   ├── llm_provider.py     # Swappable Gemini ↔ Anthropic ↔ Ollama + embeddings
+│   │   ├── gemini.py           # direct REST client, paced for the free tier
 │   │   ├── tls.py              # OS trust store for outbound HTTPS
 │   │   └── events.py           # in-process progress pub/sub (seq + phase + progress)
 │   ├── models/                 # SQLAlchemy ORM models
@@ -64,7 +63,7 @@ nodus/
 │       ├── session.py          # async engine (TLS by host) + session factory
 │       ├── sql_split.py        # statement splitter — asyncpg rejects multi-statement SQL
 │       └── migrations/         # Alembic migrations
-├── scripts/                    # check_llm, probe_azure_route, run_query, eval
+├── scripts/                    # check_llm, run_query, eval
 ├── tests/                      # mirrors app/, hermetic (no network/DB/LLM)
 │   ├── integration/            # live checks, run by hand — not collected by pytest
 │   └── reports/                # generated report output (git-ignored)
@@ -77,7 +76,7 @@ nodus/
 
 - **Papers are global, not per-query.** Deduplicated on semantic_scholar_id. The query_papers junction table links them to queries with per-query ranking.
 - **Claims are per-paper, clusters are per-query.** A paper's extracted claims don't change per query, but clustering depends on research context.
-- **LLM provider is swappable.** `llm_provider.py` returns Azure/Gemini/Anthropic/Ollama based on `LLM_PROVIDER`. Every agent calls `get_llm()` or `get_structured_llm()`, never instantiates a client directly. Azure and Gemini use native JSON-schema structured output; Anthropic and Ollama use tool calls.
+- **LLM provider is swappable.** `llm_provider.py` returns Gemini/Anthropic/Ollama based on `LLM_PROVIDER`. Every agent calls `get_llm()` or `get_structured_llm()`, never instantiates a client directly. Gemini constrains generation to a JSON schema natively — `GeminiChat` overrides `with_structured_output` to do it — while Anthropic and Ollama use tool calls. `get_structured_llm` passes no provider-specific arguments, so nothing there needs to know which is active.
 - **Gemini is a direct REST client, and it is paced.** The Google SDKs verify TLS against certifi, which this project cannot rely on (see TLS interception below), so `app/core/gemini.py` speaks to `generativelanguage.googleapis.com` over httpx with `outbound_verify()` — the same choice `CloudflareEmbeddings` made. Pacing lives in the client rather than at each call site, so every agent inherits it: a semaphore for concurrency, a minimum interval for RPM (concurrency alone cannot hold a per-minute ceiling), separate budgets for chat and embeddings because Google meters them separately, and 429 retried with the delay Google names.
 - **A question is structured once, not twice.** The Interpret check and the run started from the same screen would otherwise send the identical prompt seconds apart, so `query_structurer` memoises for `QUERY_STRUCTURE_MEMO_SECONDS`. Failures are not memoised — a degraded fallback is worth retrying.
 - **A paper's PDF is looked for in two places, and neither is the url Semantic Scholar gave.** `openAccessPdf` is often an article page rather than a file, and is absent for more than half the papers a query retrieves. Publishers advertise the file in a `citation_pdf_url` meta tag — the Highwire tag Google Scholar indexes — so `pdf.fetch_pdf_document` follows that when a fetch lands on HTML, and falls back to resolving the paper's DOI, which reaches the same page. Measured over 57 papers from five real runs this took full text from 15 papers to 34. Unpaywall was measured too and added nothing the landing page had not already given, so it is not a dependency.
@@ -117,7 +116,6 @@ nodus/
 - **TLS interception.** Corporate proxies *and* antivirus HTTPS scanning re-sign traffic, so outbound HTTPS uses the OS trust store (`USE_SYSTEM_CA=true`). Apply it per httpx client — injecting truststore globally replaces `ssl.SSLContext` and breaks asyncpg's TLS.
 - **Workers AI models have fixed widths, and the wrong one is silent.** `bge-base-en-v1.5` is 768 and fits `vector(768)`; `bge-small` is 384 and `bge-large` is 1024, and every vector from those is discarded on write by the dimension check in `embedding_store`. `/health/config` reports the mismatch as `embedding_warning`.
 - **`EMBEDDING_PROVIDER` has to point at something reachable.** No vectors means no clusters, and no clusters means no report — so an unreachable embedder fails the run at the clustering step with a 503 naming the provider, rather than completing with an empty report screen. `cloudflare` is what the deployment uses and needs nothing hosted; `hash` needs nothing at all. `ollama` needs a running server — a local install reachable at `OLLAMA_BASE_URL`, no longer a Compose service (Compose runs the API image now, and nothing in the deployed configuration wants a local model server). A self-hosted Ollama reached over the network needs a token-checking proxy and `OLLAMA_AUTH_TOKEN`, because Ollama authenticates nothing itself. `/health/config` exposes `embedding_warning`, which is non-null exactly when the configuration cannot work.
-- **GPT-5.1 rejects non-default `temperature`.** Never set it; use `LLM_AZURE_REASONING_EFFORT` instead.
 - **Gemini's `responseSchema` is not JSON Schema.** It is OpenAPI-shaped: no `$ref`, no `$defs`, no `additionalProperties`, and nullability is a `nullable` flag rather than a `null` type. `to_gemini_schema` inlines and translates what Pydantic emits, and drops every key outside the accepted set — an unknown one is a 400 on every call that agent ever makes, so any new LLM output schema should be run through `test_every_agent_schema_survives_translation`.
 - **Gemini 3 bills thinking as output tokens** and `thinkingBudget` is rejected — `thinkingLevel` (`minimal` | `low` | `high`) is the knob. `GEMINI_THINKING_LEVEL=low` is the default here because these agents decode against a schema rather than reasoning in prose.
 - **The free tier is paced, not just capped.** `GEMINI_RPM_LIMIT` (14) is what enforces requests-per-minute; `GEMINI_MAX_CONCURRENCY` (4) alone cannot, because four calls that each take two seconds is 120 RPM. A twenty-paper run is roughly 60–70 calls, so expect about five minutes of pacing, shared between `MAX_ACTIVE_QUERIES` runs. Set both to 0 on a paid key.

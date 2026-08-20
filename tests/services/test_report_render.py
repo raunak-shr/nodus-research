@@ -17,7 +17,7 @@ def _report(**overrides):
         executive_summary="First paragraph.\n\nSecond paragraph.",
         key_findings=["RAG reduces hallucination rates [Fan, 2024]."],
         open_questions=["How should hallucinations be measured across modalities?"],
-        llm_model_used="azure/gpt-5.1",
+        llm_model_used="gemini/gemini-3.5-flash-lite",
         user_edited=False,
         created_at=datetime(2026, 8, 17, tzinfo=UTC),
         updated_at=datetime(2026, 8, 17, tzinfo=UTC),
@@ -137,7 +137,7 @@ def test_runbar_summarises_the_run():
     assert "Papers" in html and ">20<" in html
     assert "Clusters" in html
     assert "Contradictions" in html
-    assert "azure/gpt-5.1" in html
+    assert "gemini/gemini-3.5-flash-lite" in html
 
 
 def test_print_variant_forces_light_theme_and_page_rules():
