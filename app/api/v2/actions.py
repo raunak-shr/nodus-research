@@ -97,9 +97,7 @@ _MAX_PDF_FRAME_BYTES = 32 * 1024 * 1024
 
 def action(name: str, params: type[BaseModel], summary: str, cost: str = "read"):
     def register(fn: Handler) -> Handler:
-        REGISTRY[name] = Action(
-            name=name, handler=fn, params=params, summary=summary, cost=cost
-        )
+        REGISTRY[name] = Action(name=name, handler=fn, params=params, summary=summary, cost=cost)
         return fn
 
     return register
@@ -261,7 +259,14 @@ async def queries_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, 
                 await db.execute(
                     select(QueryPaper)
                     .where(QueryPaper.query_id == params.query_id)
-                    .options(selectinload(QueryPaper.paper))
+                    .options(
+                        # Normalisation travels with the paper rather than being
+                        # fetched per row afterwards. A client that asked once
+                        # per paper needed twenty round trips for a twenty-paper
+                        # query, which is over the socket's in-flight ceiling —
+                        # so the tail was refused and read as failed papers.
+                        selectinload(QueryPaper.paper).selectinload(Paper.normalized_paper)
+                    )
                     .order_by(QueryPaper.rank)
                 )
             )
@@ -278,7 +283,7 @@ async def queries_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, 
             parent_query_id=query.parent_query_id,
             created_at=query.created_at,
             updated_at=query.updated_at,
-            papers=[QueryPaperRead.model_validate(qp) for qp in query_papers],
+            papers=[QueryPaperRead.from_query_paper(qp) for qp in query_papers],
         )
         data = _dump(payload)
         data["running"] = runner.is_running(params.query_id)
@@ -298,9 +303,7 @@ async def queries_stats(ctx: ActionContext, params: frames.QueryRef) -> dict[str
         ).scalar_one()
         cluster_count = (
             await db.execute(
-                select(func.count(ClaimCluster.id)).where(
-                    ClaimCluster.query_id == params.query_id
-                )
+                select(func.count(ClaimCluster.id)).where(ClaimCluster.query_id == params.query_id)
             )
         ).scalar_one()
         report = await synthesizer.load_report(params.query_id, db)
@@ -431,13 +434,13 @@ async def papers_list(ctx: ActionContext, params: frames.PapersForQuery) -> list
             await db.execute(
                 select(QueryPaper)
                 .where(QueryPaper.query_id == params.query_id)
-                .options(selectinload(QueryPaper.paper))
+                .options(selectinload(QueryPaper.paper).selectinload(Paper.normalized_paper))
                 .order_by(QueryPaper.rank)
                 .limit(params.limit)
                 .offset(params.offset)
             )
         ).scalars()
-        return [_dump(QueryPaperRead.model_validate(qp)) for qp in rows.all()]
+        return [_dump(QueryPaperRead.from_query_paper(qp)) for qp in rows.all()]
 
 
 @action("papers.get", frames.PaperRef, "One paper's metadata")

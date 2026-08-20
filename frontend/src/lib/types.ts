@@ -27,6 +27,18 @@ export type QueryStatus =
   | 'completed'
   | 'failed'
 
+/** Where one paper got to. Mirrors `ProcessingStatus` in app/models/paper.py.
+ *
+ *  `completed` and `failed` are the settled ones; the rest mean a paper is
+ *  still moving, which is not the same as a paper that went wrong.
+ */
+export type ProcessingStatus =
+  | 'pending'
+  | 'normalizing'
+  | 'extracting'
+  | 'completed'
+  | 'failed'
+
 export type Stance = 'supports' | 'contradicts' | 'neutral'
 export type QualityTier = 'high' | 'medium' | 'low' | 'unrated'
 export type SourceMatch = 'exact' | 'normalized' | 'fuzzy' | 'none'
@@ -155,10 +167,27 @@ export interface PaperRead {
   created_at: string
 }
 
+/** Normalisation as it arrives inline on a papers list.
+ *
+ *  A subset of `NormalizedPaperRead` — no `sections`, which carries the paper's
+ *  whole extracted full text and has no business in a table row.
+ */
+export interface NormalizedPaperSummary {
+  study_type: string
+  methodology: Record<string, unknown> | null
+  has_full_text: boolean
+  full_text_source: string | null
+  processing_status: ProcessingStatus
+}
+
 export interface QueryPaperRead {
   paper: PaperRead
   rank: number
   ranking_score: number | null
+  /** `null` means no normalisation row exists for this paper — not that
+   *  fetching one failed. The two used to be indistinguishable here, because
+   *  this arrived from a separate per-paper request that could be refused. */
+  normalized: NormalizedPaperSummary | null
 }
 
 export interface NormalizedPaperRead {

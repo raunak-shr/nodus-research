@@ -23,12 +23,12 @@ async def list_papers_for_query(
     result = await db.execute(
         select(QueryPaper)
         .where(QueryPaper.query_id == query_id)
-        .options(selectinload(QueryPaper.paper))
+        .options(selectinload(QueryPaper.paper).selectinload(Paper.normalized_paper))
         .order_by(QueryPaper.rank)
         .limit(page.limit)
         .offset(page.offset)
     )
-    return [QueryPaperRead.model_validate(qp) for qp in result.scalars().all()]
+    return [QueryPaperRead.from_query_paper(qp) for qp in result.scalars().all()]
 
 
 @router.get("/{paper_id}", response_model=PaperRead)

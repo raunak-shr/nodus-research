@@ -19,7 +19,7 @@ from app.api.v1.deps import (
     RunRateLimit,
 )
 from app.core.events import hub
-from app.models.paper import QueryPaper
+from app.models.paper import Paper, QueryPaper
 from app.models.query import Query, QueryStatus
 from app.schemas.paper import QueryPaperRead
 from app.schemas.query import (
@@ -37,6 +37,7 @@ from app.services.pipeline import run_pipeline_safe
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/queries", tags=["queries"])
+
 
 def _require_admin_for_wait(wait: bool, admin: bool) -> None:
     """`wait=true` runs the pipeline inside the request.
@@ -124,7 +125,7 @@ async def get_query(query_id: UUID, db: DBSession) -> QueryWithPapersRead:
     qp_result = await db.execute(
         select(QueryPaper)
         .where(QueryPaper.query_id == query_id)
-        .options(selectinload(QueryPaper.paper))
+        .options(selectinload(QueryPaper.paper).selectinload(Paper.normalized_paper))
         .order_by(QueryPaper.rank)
     )
     query_papers = qp_result.scalars().all()
@@ -139,7 +140,7 @@ async def get_query(query_id: UUID, db: DBSession) -> QueryWithPapersRead:
         parent_query_id=query.parent_query_id,
         created_at=query.created_at,
         updated_at=query.updated_at,
-        papers=[QueryPaperRead.model_validate(qp) for qp in query_papers],
+        papers=[QueryPaperRead.from_query_paper(qp) for qp in query_papers],
     )
 
 
