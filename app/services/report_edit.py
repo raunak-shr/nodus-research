@@ -52,8 +52,7 @@ async def refresh_sources(query_id: UUID, db: AsyncSession) -> Report:
 
     clusters = await synthesizer.load_clusters(query_id, db)
     rows_by_cluster = {
-        str(cluster.id): await synthesizer.section_claim_rows(cluster, db)
-        for cluster in clusters
+        str(cluster.id): await synthesizer.section_claim_rows(cluster, db) for cluster in clusters
     }
 
     refreshed = 0
@@ -70,9 +69,7 @@ async def refresh_sources(query_id: UUID, db: AsyncSession) -> Report:
         refreshed += 1
 
     if not refreshed:
-        raise Conflict(
-            "No section matched a current cluster", query_id=str(query_id)
-        )
+        raise Conflict("No section matched a current cluster", query_id=str(query_id))
 
     # Reassigned rather than mutated in place: SQLAlchemy does not track changes
     # inside a JSONB value.

@@ -77,9 +77,7 @@ async def test_located_claim_returns_a_highlightable_paragraph():
     claim = _claim()
     normalized = SimpleNamespace(full_text=BODY, page_offsets=[0, 40], sections=None)
 
-    source = await provenance.load_claim_source(
-        claim.id, _StubDb((claim, paper, normalized))
-    )
+    source = await provenance.load_claim_source(claim.id, _StubDb((claim, paper, normalized)))
 
     assert source.available is True
     assert source.match == "exact"
@@ -95,14 +93,10 @@ async def test_located_claim_returns_a_highlightable_paragraph():
 async def test_unlocated_claim_is_unavailable_but_keeps_the_quote():
     """A reader can still search the PDF by hand for what the model said it read."""
     paper = _paper()
-    claim = _claim(
-        source_match="none", source_start=None, source_end=None, source_page=None
-    )
+    claim = _claim(source_match="none", source_start=None, source_end=None, source_page=None)
     normalized = SimpleNamespace(full_text=BODY, page_offsets=None, sections=None)
 
-    source = await provenance.load_claim_source(
-        claim.id, _StubDb((claim, paper, normalized))
-    )
+    source = await provenance.load_claim_source(claim.id, _StubDb((claim, paper, normalized)))
 
     assert source.available is False
     assert source.match == "none"
@@ -204,9 +198,7 @@ async def test_origin_is_read_from_the_claim_not_re_derived():
     # Full text exists now, but this claim was not resolved against it.
     normalized = SimpleNamespace(full_text=BODY, page_offsets=[0], sections=None)
 
-    source = await provenance.load_claim_source(
-        claim.id, _StubDb((claim, paper, normalized))
-    )
+    source = await provenance.load_claim_source(claim.id, _StubDb((claim, paper, normalized)))
 
     assert source.origin == "abstract"
     assert "abstract" in source.reason.lower()
@@ -229,9 +221,7 @@ async def test_a_fuzzy_span_says_it_is_approximate():
     claim = _claim(source_match="fuzzy")
     normalized = SimpleNamespace(full_text=BODY, page_offsets=[0], sections=None)
 
-    source = await provenance.load_claim_source(
-        claim.id, _StubDb((claim, paper, normalized))
-    )
+    source = await provenance.load_claim_source(claim.id, _StubDb((claim, paper, normalized)))
 
     assert source.available is True
     assert "approximate" in source.reason.lower()
@@ -242,9 +232,7 @@ async def test_an_unlocated_body_quote_blames_truncation_not_the_reader():
     claim = _claim(source_match="none", source_start=None, source_end=None)
     normalized = SimpleNamespace(full_text=BODY, page_offsets=[0], sections=None)
 
-    source = await provenance.load_claim_source(
-        claim.id, _StubDb((claim, paper, normalized))
-    )
+    source = await provenance.load_claim_source(claim.id, _StubDb((claim, paper, normalized)))
 
     assert source.available is False
     assert "truncated" in source.reason.lower()
@@ -264,9 +252,9 @@ async def test_no_source_text_at_all_explains_itself():
 
 def test_explain_covers_every_state():
     """Every state a chip can render must have words to go with it."""
-    assert provenance.explain(
-        match="exact", origin="full_text", has_source=True, located=True
-    ) is None
+    assert (
+        provenance.explain(match="exact", origin="full_text", has_source=True, located=True) is None
+    )
     for kwargs in (
         {"match": "exact", "origin": None, "has_source": False, "located": False},
         {"match": "normalized", "origin": "abstract", "has_source": True, "located": True},
@@ -297,9 +285,7 @@ async def test_context_comes_from_the_text_the_offsets_were_resolved_against():
     )
     normalized = SimpleNamespace(full_text=BODY, page_offsets=[0], sections=None)
 
-    source = await provenance.load_claim_source(
-        claim.id, _StubDb((claim, paper, normalized))
-    )
+    source = await provenance.load_claim_source(claim.id, _StubDb((claim, paper, normalized)))
 
     assert source.origin == "abstract"
     assert source.context[source.highlight_start : source.highlight_end] == quote
@@ -313,9 +299,7 @@ async def test_a_claim_whose_recorded_text_is_gone_is_unavailable():
     claim = _claim(source_origin="full_text")
     normalized = SimpleNamespace(full_text=None, page_offsets=None, sections=None)
 
-    source = await provenance.load_claim_source(
-        claim.id, _StubDb((claim, paper, normalized))
-    )
+    source = await provenance.load_claim_source(claim.id, _StubDb((claim, paper, normalized)))
 
     assert source.available is False
     assert source.context is None

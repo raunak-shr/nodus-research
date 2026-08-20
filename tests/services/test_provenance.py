@@ -23,8 +23,12 @@ PAPER_TEXT = (
 
 def _paper(abstract: str | None = None, pdf_url: str | None = None):
     return SimpleNamespace(
-        id="paper-1", title="Exercise and depression", abstract=abstract,
-        open_access_pdf_url=pdf_url, publication_year=2021, authors=[{"name": "Ada Lovelace"}],
+        id="paper-1",
+        title="Exercise and depression",
+        abstract=abstract,
+        open_access_pdf_url=pdf_url,
+        publication_year=2021,
+        authors=[{"name": "Ada Lovelace"}],
     )
 
 

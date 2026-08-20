@@ -284,9 +284,7 @@ async def survey() -> None:
             select(func.count(NormalizedPaper.id)).where(NormalizedPaper.page_offsets.isnot(None))
         )
         claims = await count(select(func.count(Claim.id)))
-        quoted = await count(
-            select(func.count(Claim.id)).where(Claim.source_quote.isnot(None))
-        )
+        quoted = await count(select(func.count(Claim.id)).where(Claim.source_quote.isnot(None)))
         located = await count(select(func.count(Claim.id)).where(Claim.source_match != "none"))
         pages = await count(select(func.count(Claim.id)).where(Claim.source_page.isnot(None)))
         completed = await count(
@@ -316,9 +314,7 @@ async def main() -> int:
         help="allow step 2, which rewrites claims and clears cluster membership",
     )
     parser.add_argument("--limit", type=int, default=None, help="cap rows per step")
-    parser.add_argument(
-        "--dry-run", action="store_true", help="report what each step would touch"
-    )
+    parser.add_argument("--dry-run", action="store_true", help="report what each step would touch")
     args = parser.parse_args()
 
     steps = [step.strip() for step in args.steps.split(",") if step.strip()]

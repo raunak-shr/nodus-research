@@ -99,9 +99,7 @@ NOT_LOCATED = Resolved(
 )
 
 
-def source_text_for(
-    normalized, paper, *, origin: SourceOrigin | None = None
-) -> SourceText | None:
+def source_text_for(normalized, paper, *, origin: SourceOrigin | None = None) -> SourceText | None:
     """The text claim offsets are relative to, or None when it is unavailable.
 
     Pass the `origin` a claim recorded to get *that* text rather than whichever

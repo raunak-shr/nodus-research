@@ -42,12 +42,7 @@ def rank_papers(
 
         relevance_rank = 1.0 - (i / n)
 
-        score = (
-            0.4 * norm_cit[i]
-            + 0.3 * norm_inf[i]
-            + 0.2 * recency
-            + 0.1 * relevance_rank
-        )
+        score = 0.4 * norm_cit[i] + 0.3 * norm_inf[i] + 0.2 * recency + 0.1 * relevance_rank
         scored.append((score, paper))
 
     scored.sort(key=lambda x: x[0], reverse=True)

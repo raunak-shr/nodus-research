@@ -118,9 +118,7 @@ async def _collect(query_id: UUID, case: EvalCase, duration: float) -> EvalResul
         )
 
         paper_ids = list(
-            (
-                await db.execute(select(QueryPaper.paper_id).where(QueryPaper.query_id == query_id))
-            )
+            (await db.execute(select(QueryPaper.paper_id).where(QueryPaper.query_id == query_id)))
             .scalars()
             .all()
         )
@@ -155,9 +153,7 @@ async def _collect(query_id: UUID, case: EvalCase, duration: float) -> EvalResul
             result.mean_claim_confidence = round(
                 statistics.fmean(float(c.confidence_score or 0.0) for c in claims), 3
             )
-            per_paper = [
-                sum(1 for c in claims if c.paper_id == paper_id) for paper_id in paper_ids
-            ]
+            per_paper = [sum(1 for c in claims if c.paper_id == paper_id) for paper_id in paper_ids]
             result.median_claims_per_paper = float(statistics.median(per_paper))
             result.papers_without_claims = sum(1 for count in per_paper if count == 0)
             for claim in claims:
@@ -181,9 +177,7 @@ async def _collect(query_id: UUID, case: EvalCase, duration: float) -> EvalResul
                 )
 
         clusters = list(
-            (
-                await db.execute(select(ClaimCluster).where(ClaimCluster.query_id == query_id))
-            )
+            (await db.execute(select(ClaimCluster).where(ClaimCluster.query_id == query_id)))
             .scalars()
             .all()
         )

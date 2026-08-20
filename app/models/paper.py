@@ -34,9 +34,7 @@ class ProcessingStatus(enum.StrEnum):
 class Paper(Base):
     __tablename__ = "papers"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     semantic_scholar_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     doi: Mapped[str | None] = mapped_column(String(255))
     #: `externalIds.ArXiv`, kept because it is the cheapest route to a paper's
@@ -57,9 +55,7 @@ class Paper(Base):
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
-    query_papers: Mapped[list["QueryPaper"]] = relationship(
-        "QueryPaper", back_populates="paper"
-    )
+    query_papers: Mapped[list["QueryPaper"]] = relationship("QueryPaper", back_populates="paper")
     normalized_paper: Mapped["NormalizedPaper | None"] = relationship(
         "NormalizedPaper", back_populates="paper", uselist=False
     )
@@ -91,9 +87,7 @@ class QueryPaper(Base):
 class NormalizedPaper(Base):
     __tablename__ = "normalized_papers"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     paper_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("papers.id", ondelete="CASCADE"),

@@ -85,9 +85,7 @@ def assess_cluster(
     parsed_sizes = [n for n in (parse_sample_size(s) for s in sample_sizes) if n]
     sample = _sample_size_score(parsed_sizes)
     corroboration = _corroboration_score(paper_count)
-    confidence = (
-        sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.5
-    )
+    confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.5
 
     decisive = support_count + contradiction_count
     conflict_ratio = (contradiction_count / decisive) if decisive else 0.0
@@ -95,11 +93,7 @@ def assess_cluster(
     conflict_penalty = 0.15 * conflict_ratio
 
     score = (
-        0.40 * design
-        + 0.20 * sample
-        + 0.20 * corroboration
-        + 0.20 * confidence
-        - conflict_penalty
+        0.40 * design + 0.20 * sample + 0.20 * corroboration + 0.20 * confidence - conflict_penalty
     )
     score = max(0.0, min(1.0, score))
 

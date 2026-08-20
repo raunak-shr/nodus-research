@@ -132,9 +132,7 @@ async def _fetch(
             logger.debug("Following citation_pdf_url from %s to %s", url, advertised)
             return await _fetch(client, advertised, allow_landing=False)
 
-    logger.debug(
-        "Not a PDF (content-type=%s): %s", response.headers.get("content-type", ""), url
-    )
+    logger.debug("Not a PDF (content-type=%s): %s", response.headers.get("content-type", ""), url)
     return None
 
 
@@ -203,7 +201,6 @@ def is_thin(document: PdfDocument | None) -> bool:
     text would end the search for real full text on a false positive.
     """
     return document is None or len(document.text) < settings.pdf_min_full_text_chars
-
 
 
 def _extract_document(data: bytes, source: str | None = None) -> PdfDocument | None:

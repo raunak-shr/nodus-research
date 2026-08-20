@@ -53,9 +53,7 @@ class TooManyRequests(NodusError):
     code = "too_many_requests"
     status_code = 429
 
-    def __init__(
-        self, message: str, *, retry_after: float | None = None, **detail: object
-    ) -> None:
+    def __init__(self, message: str, *, retry_after: float | None = None, **detail: object) -> None:
         if retry_after is not None:
             detail["retry_after"] = round(retry_after, 1)
         super().__init__(message, **detail)
