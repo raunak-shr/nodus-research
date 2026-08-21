@@ -54,10 +54,81 @@ def test_split_sections_empty_input():
     assert split_sections("no headings here, just prose") == {}
 
 
-def test_split_sections_keeps_first_occurrence():
-    text = "Methods\nfirst body\n\nResults\nresults body\n\nMethods\nrunning header noise\n"
+#: Four lines lifted verbatim from a real paper's extracted text (Adaptive-RAG,
+#: arXiv 2403.14403). Every one of them used to open a section: pypdf flattens
+#: a two-column layout into short lines, and a prefix match cannot tell one that
+#: begins with "results" from a heading that says Results.
+PROSE_THAT_LOOKS_LIKE_HEADINGS = [
+    "method can offer a robust middle ground among the",
+    "limitations, particularly when dealing with com-",
+    "results and offer in-depth analyses of our method.",
+    "results averaged over all considered datasets, which",
+]
+
+
+def test_wrapped_prose_is_not_a_heading():
+    """The bug that emptied the results section.
+
+    On the paper these lines come from, the false heading at "results and
+    offer..." gave a 49-character `results`, and the one at "limitations,
+    particularly..." gave a 15,000-character `limitations` holding the method
+    section. The real results section sat inside the latter and reached the
+    extractor labelled as limitations, which returned no claims at all.
+    """
+    for line in PROSE_THAT_LOOKS_LIKE_HEADINGS:
+        text = f"1 Introduction\nopening\n\n{line}\nbody that follows\n"
+        assert set(split_sections(text)) == {"introduction"}, line
+
+
+def test_a_heading_may_qualify_its_keyword():
+    """Real headings are rarely the bare word.
+
+    "5 Experimental Results and Analyses" is the heading whose results the
+    extractor never saw, because the keyword had to come first.
+    """
+    text = (
+        "4 Experimental Setups\nhow we ran it\n\n"
+        "5 Experimental Results and Analyses\nwhat we found\n\n"
+        "6 Conclusion and Future Work\nwhat it means\n"
+    )
     sections = split_sections(text)
-    assert sections["methods"] == "first body"
+
+    assert sections["methods"] == "how we ran it"
+    assert sections["results"] == "what we found"
+    assert sections["conclusion"] == "what it means"
+
+
+def test_repeated_sections_are_joined_not_dropped():
+    """A paper that splits its findings must not lose the second half.
+
+    The old rule kept the first occurrence, on the reasoning that a repeat is a
+    running header. Joining cannot duplicate anything — the bodies are disjoint
+    spans of one document — and it is the difference between reading a paper's
+    results and reading its first page of them.
+    """
+    text = "5 Results\nfirst half\n\n6 Results and Analysis\nsecond half\n"
+    sections = split_sections(text)
+
+    assert "first half" in sections["results"]
+    assert "second half" in sections["results"]
+
+
+def test_nothing_after_the_bibliography_is_read():
+    """Past References there are other people's titles, then an appendix.
+
+    A heading in there labels the wrong text — an appendix "Limitations" would
+    be read as the paper's own.
+    """
+    text = (
+        "3 Results\nwhat we found\n\n"
+        "References\n[1] Someone et al.\n\n"
+        "A Limitations of Prior Work\nnot this paper's limitations\n"
+    )
+    sections = split_sections(text)
+
+    assert sections["results"] == "what we found"
+    assert "limitations" not in sections
+    assert "references" not in sections
 
 
 def test_build_paper_text_prefers_sections_over_full_text():
@@ -163,6 +234,42 @@ def test_extract_document_records_where_each_page_starts():
     assert document.text[document.page_offsets[2] :] == "Page three"
     assert pdf.page_for_offset(0, document.page_offsets) == 1
     assert pdf.page_for_offset(15, document.page_offsets) == 3
+
+
+def test_extract_document_stops_at_the_page_cap():
+    """Reading is bounded in pages, and the bound is a whole page.
+
+    The budget used to be characters, which stops wherever it runs out: on a
+    dense two-column paper 60k landed inside the experiments section, so the
+    results and conclusion the extractor is asked for were precisely the part
+    that never arrived — measured on one run as seven of twenty papers, all of
+    them the longest and highest-ranked.
+    """
+    pages = [SimpleNamespace(extract_text=lambda n=n: f"Page {n}") for n in range(40)]
+    reader = SimpleNamespace(pages=pages)
+
+    with (
+        patch.object(pdf.settings, "pdf_max_pages", 10),
+        patch.dict("sys.modules", {"pypdf": SimpleNamespace(PdfReader=lambda _stream: reader)}),
+    ):
+        document = pdf._extract_document(b"%PDF-fake")
+
+    assert document.page_count == 10
+    assert document.text.endswith("Page 9")
+    assert "Page 10" not in document.text
+
+
+def test_extract_document_reads_a_short_paper_whole():
+    pages = [SimpleNamespace(extract_text=lambda n=n: f"Page {n}") for n in range(4)]
+    reader = SimpleNamespace(pages=pages)
+
+    with (
+        patch.object(pdf.settings, "pdf_max_pages", 10),
+        patch.dict("sys.modules", {"pypdf": SimpleNamespace(PdfReader=lambda _stream: reader)}),
+    ):
+        document = pdf._extract_document(b"%PDF-fake")
+
+    assert document.page_count == 4
 
 
 def test_extract_document_is_none_when_every_page_is_blank():

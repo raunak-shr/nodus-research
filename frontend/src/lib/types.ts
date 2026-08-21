@@ -192,6 +192,12 @@ export interface QueryPaperRead {
    *  fetching one failed. The two used to be indistinguishable here, because
    *  this arrived from a separate per-paper request that could be refused. */
   normalized: NormalizedPaperSummary | null
+  /** Claims the extractor stored for this paper — all of them, not the subset
+   *  that reached a report section. Clustering keeps only the largest clusters,
+   *  so a paper can hold real evidence and still appear nowhere in the report;
+   *  counting from the report made that indistinguishable from a paper nothing
+   *  was extracted from. */
+  claim_count: number
 }
 
 export interface NormalizedPaperRead {

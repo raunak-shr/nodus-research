@@ -223,6 +223,7 @@ function demoPaperRows(): PaperRow[] {
     methodology: paper.method,
     sampleSize: `n = ${paper.n.toLocaleString('en-US')}`,
     claimCount: DEMO_FAILURES[paper.id] ? 0 : paper.claims,
+    processingStatus: DEMO_FAILURES[paper.id] ? 'failed' : 'completed',
     failureReason: DEMO_FAILURES[paper.id] ?? null,
     claims: claimsByPaper.get(paper.id) ?? [],
   }))
@@ -1458,7 +1459,12 @@ function livePaperRows(
       studyType: norm?.study_type ?? null,
       methodology: methodologyLine(methodology),
       sampleSize: sampleLine(methodology),
-      claimCount: claims.length,
+      // The extractor's count, carried on the row. Counting `claims` instead
+      // counts only what a report section cites, and clustering truncates to
+      // the largest clusters — so a paper whose claims all landed in small ones
+      // read as a paper nothing was found in.
+      claimCount: qp.claim_count,
+      processingStatus: norm?.processing_status ?? null,
       failureReason: normalisationFailure(norm, detail.status),
       claims,
     }

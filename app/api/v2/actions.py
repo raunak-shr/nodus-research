@@ -33,7 +33,7 @@ from app.models.query import Query, QueryStatus
 from app.schemas import stream as frames
 from app.schemas.claim import ClaimRead
 from app.schemas.cluster import ClaimClusterRead
-from app.schemas.paper import NormalizedPaperRead, PaperRead, QueryPaperRead
+from app.schemas.paper import NormalizedPaperRead, PaperRead
 from app.schemas.query import QueryRead, QueryWithPapersRead
 from app.schemas.report import ReportRead
 from app.services import (
@@ -41,6 +41,7 @@ from app.services import (
     export,
     limits,
     ownership,
+    paper_listing,
     pdf_export,
     provenance,
     query_assessor,
@@ -312,7 +313,7 @@ async def queries_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, 
             parent_query_id=query.parent_query_id,
             created_at=query.created_at,
             updated_at=query.updated_at,
-            papers=[QueryPaperRead.from_query_paper(qp) for qp in query_papers],
+            papers=await paper_listing.read_query_papers(query_papers, db),
         )
         data = _dump(payload)
         data["running"] = runner.is_running(params.query_id)
@@ -488,7 +489,7 @@ async def papers_list(ctx: ActionContext, params: frames.PapersForQuery) -> list
                 .offset(params.offset)
             )
         ).scalars()
-        return [_dump(QueryPaperRead.from_query_paper(qp)) for qp in rows.all()]
+        return [_dump(read) for read in await paper_listing.read_query_papers(list(rows.all()), db)]
 
 
 @action("papers.get", frames.PaperRef, "One paper's metadata")

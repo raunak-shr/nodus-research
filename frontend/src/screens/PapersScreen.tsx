@@ -9,7 +9,28 @@ import { useState, type ReactElement } from 'react'
 
 import { CoverageBar, ProvChip, coverageText } from '../components/Evidence'
 import { num, score as fmtScore } from '../lib/format'
+import type { PaperRow } from '../lib/viewmodels'
 import { useStore } from '../state/store'
+
+/** What the claims column says underneath the count.
+ *
+ *  Four states, and they used to collapse into two. The count itself came from
+ *  the report, so a paper whose claims all fell outside the cluster cap looked
+ *  identical to a paper nothing was extracted from — both `0 claims`, both
+ *  captioned as having no indexed provenance. They are not the same thing and
+ *  they do not have the same remedy: the first is a synthesis cap, the second
+ *  is a paper the extractor could not read. */
+function claimsCaption(paper: PaperRow): string {
+  if (paper.failureReason) return 'no claims extracted'
+  if (paper.claims.length) {
+    const unreported = paper.claimCount - paper.claims.length
+    const cover = coverageText(paper.claims)
+    return unreported > 0 ? `${cover} · ${unreported} in no report cluster` : cover
+  }
+  if (paper.claimCount > 0) return 'extracted, but no cluster large enough to reach the report'
+  if (paper.processingStatus !== 'completed') return 'not extracted yet'
+  return 'no claims extracted from this paper'
+}
 
 export function PapersScreen(): ReactElement {
   const store = useStore()
@@ -128,17 +149,15 @@ export function PapersScreen(): ReactElement {
                         color: paper.failureReason ? 'var(--n-con)' : 'var(--n-dim)',
                       }}
                     >
-                      {paper.failureReason ? '—' : `${paper.claimCount} claims`}
+                      {paper.failureReason
+                        ? '—'
+                        : `${paper.claimCount} claim${paper.claimCount === 1 ? '' : 's'}`}
                     </div>
                     <div style={{ margin: '6px 0 5px' }}>
                       <CoverageBar claims={paper.claims} height={4} />
                     </div>
                     <div className="faint num" style={{ fontSize: 10.5, lineHeight: 1.4 }}>
-                      {paper.claims.length
-                        ? coverageText(paper.claims)
-                        : paper.failureReason
-                          ? 'no claims extracted'
-                          : 'provenance not indexed for this paper'}
+                      {claimsCaption(paper)}
                     </div>
                     {paper.claims.length ? (
                       <button

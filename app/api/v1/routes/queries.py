@@ -22,7 +22,6 @@ from app.api.v1.deps import (
 from app.core.events import hub
 from app.models.paper import Paper, QueryPaper
 from app.models.query import Query, QueryStatus
-from app.schemas.paper import QueryPaperRead
 from app.schemas.query import (
     QueryCreate,
     QueryInterpret,
@@ -31,7 +30,15 @@ from app.schemas.query import (
     QueryWithPapersRead,
 )
 from app.schemas.report import FollowUpCreate, ReportRead, ReportUpdate, SectionNarrativeUpdate
-from app.services import export, ownership, query_assessor, report_edit, runner, synthesizer
+from app.services import (
+    export,
+    ownership,
+    paper_listing,
+    query_assessor,
+    report_edit,
+    runner,
+    synthesizer,
+)
 from app.services.errors import Forbidden
 from app.services.pipeline import run_pipeline_safe
 
@@ -154,7 +161,7 @@ async def get_query(
         parent_query_id=query.parent_query_id,
         created_at=query.created_at,
         updated_at=query.updated_at,
-        papers=[QueryPaperRead.from_query_paper(qp) for qp in query_papers],
+        papers=await paper_listing.read_query_papers(query_papers, db),
     )
 
 
