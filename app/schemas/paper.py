@@ -71,11 +71,19 @@ class QueryPaperRead(BaseModel):
     #: dropped. A row whose `processing_status` is `failed` is a different
     #: state, and a reader must not collapse the two.
     normalized: NormalizedPaperSummary | None = None
+    #: How many claims the extractor stored for this paper — every one of them,
+    #: not the subset that reached a report section. Clustering truncates to the
+    #: largest `max_clusters_per_query` clusters, so a paper can contribute real
+    #: claims and appear nowhere in the report; counting from the report made
+    #: those papers indistinguishable from papers nothing was extracted from.
+    #: Like `normalized`, it travels with the row rather than being fetched per
+    #: paper afterwards.
+    claim_count: int = 0
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_query_paper(cls, query_paper: Any) -> "QueryPaperRead":
+    def from_query_paper(cls, query_paper: Any, *, claim_count: int) -> "QueryPaperRead":
         """Build from a `QueryPaper` with `paper.normalized_paper` eager-loaded.
 
         `model_validate` cannot do this on its own: `normalized` has no matching
@@ -87,6 +95,11 @@ class QueryPaperRead(BaseModel):
         The caller must have eager-loaded the relationship. A lazy load here
         raises `MissingGreenlet` under asyncio, and were it to succeed it would
         be one query per paper inside a serialisation loop.
+
+        `claim_count` has no default for the same reason: a caller that forgot
+        it would publish a confident zero, which is the state this field exists
+        to distinguish from. `paper_listing.read_query_papers` counts a whole
+        list at once and is what every caller should use.
         """
         record = getattr(query_paper.paper, "normalized_paper", None)
         return cls(
@@ -94,4 +107,5 @@ class QueryPaperRead(BaseModel):
             rank=query_paper.rank,
             ranking_score=query_paper.ranking_score,
             normalized=NormalizedPaperSummary.model_validate(record) if record else None,
+            claim_count=claim_count,
         )

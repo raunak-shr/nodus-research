@@ -117,6 +117,16 @@ class Settings(BaseSettings):
     max_claims_per_paper: int = 12
     fetch_pdfs: bool = True
     pdf_max_bytes: int = 15_000_000
+    # How much of a PDF is read, and it is counted in pages rather than
+    # characters. A character budget cuts wherever 60k lands, which on a dense
+    # two-column paper is the middle of the experiments section — so the results
+    # and conclusion the extractor is asked for were the part that never
+    # arrived, and the highest-ranked papers (the longest ones) were exactly the
+    # ones it happened to. Ten pages is the body of a conference paper and stops
+    # before the appendix.
+    pdf_max_pages: int = 10
+    # The prompt budget, not the parse budget: what `build_paper_text` will hand
+    # an agent once the sections it wants have been picked out.
     pdf_max_chars: int = 60_000
     # Publishers serve these PDFs to browsers and refuse unfamiliar clients: one
     # journal answered a tool-shaped agent with 403 and the same URL with 200 and

@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.api.v1.deps import AdminCaller, DBSession, Owner, PageParams
 from app.models.paper import NormalizedPaper, Paper, QueryPaper
 from app.schemas.paper import NormalizedPaperRead, PaperRead, QueryPaperRead
-from app.services import ownership
+from app.services import ownership, paper_listing
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
@@ -36,7 +36,7 @@ async def list_papers_for_query(
         .limit(page.limit)
         .offset(page.offset)
     )
-    return [QueryPaperRead.from_query_paper(qp) for qp in result.scalars().all()]
+    return await paper_listing.read_query_papers(list(result.scalars().all()), db)
 
 
 @router.get("/{paper_id}", response_model=PaperRead)

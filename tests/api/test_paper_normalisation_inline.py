@@ -62,7 +62,7 @@ def _query_paper(normalized=None):
 
 
 def test_normalisation_travels_with_the_paper():
-    row = QueryPaperRead.from_query_paper(_query_paper(_normalized()))
+    row = QueryPaperRead.from_query_paper(_query_paper(_normalized()), claim_count=0)
 
     assert row.normalized is not None
     assert row.normalized.study_type == StudyType.rct
@@ -76,13 +76,13 @@ def test_sections_are_not_carried():
     Twenty of those would be megabytes on the wire to fill three table columns,
     which is why the inline shape is a summary rather than NormalizedPaperRead.
     """
-    row = QueryPaperRead.from_query_paper(_query_paper(_normalized()))
+    row = QueryPaperRead.from_query_paper(_query_paper(_normalized()), claim_count=0)
 
     assert "sections" not in row.normalized.model_dump()
 
 
 def test_missing_record_is_none_not_an_error():
-    row = QueryPaperRead.from_query_paper(_query_paper(None))
+    row = QueryPaperRead.from_query_paper(_query_paper(None), claim_count=0)
 
     assert row.normalized is None
     assert row.paper.title == "Aerobic exercise and depression severity"
@@ -95,7 +95,9 @@ def test_a_failed_record_is_not_a_missing_one():
     `failed` was normalised and then lost its claims. Collapsing them into one
     message is what made a refused request look like a dead paper.
     """
-    row = QueryPaperRead.from_query_paper(_query_paper(_normalized(ProcessingStatus.failed)))
+    row = QueryPaperRead.from_query_paper(
+        _query_paper(_normalized(ProcessingStatus.failed)), claim_count=0
+    )
 
     assert row.normalized is not None
     assert row.normalized.processing_status == ProcessingStatus.failed
@@ -112,7 +114,7 @@ def test_model_validate_alone_would_have_dropped_it():
     query_paper = _query_paper(_normalized())
 
     assert QueryPaperRead.model_validate(query_paper).normalized is None
-    assert QueryPaperRead.from_query_paper(query_paper).normalized is not None
+    assert QueryPaperRead.from_query_paper(query_paper, claim_count=0).normalized is not None
 
 
 def test_a_full_page_of_papers_fits_in_one_request():
@@ -129,7 +131,7 @@ def test_a_full_page_of_papers_fits_in_one_request():
     )
 
     rows = [
-        QueryPaperRead.from_query_paper(_query_paper(_normalized()))
+        QueryPaperRead.from_query_paper(_query_paper(_normalized()), claim_count=0)
         for _ in range(settings.top_k_papers)
     ]
 

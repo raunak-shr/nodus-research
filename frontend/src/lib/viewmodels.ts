@@ -8,6 +8,7 @@ import type {
   DisagreementDriver,
   EventFrame,
   Phase,
+  ProcessingStatus,
   QueryStatus,
 } from './types'
 
@@ -32,9 +33,15 @@ export interface PaperRow {
   studyType: string | null
   methodology: string | null
   sampleSize: string | null
+  /** Claims extracted from this paper. Not `claims.length`: that is only the
+   *  ones a report section cites, and clustering drops the rest. */
   claimCount: number
+  /** Normalisation status, or null when the paper has no record yet. Tells
+   *  "nothing was extracted" apart from "extraction has not run yet". */
+  processingStatus: ProcessingStatus | null
   /** Set when this paper never made it through normalisation or extraction. */
   failureReason: string | null
+  /** The claims a report section cites — a subset of `claimCount`. */
   claims: ClaimRow[]
 }
 

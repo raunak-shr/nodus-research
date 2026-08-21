@@ -28,25 +28,53 @@ from app.core.tls import outbound_verify
 
 logger = logging.getLogger(__name__)
 
+#: A word a heading is allowed to contain besides its keyword. Either something
+#: title-cased (or an acronym, or a number), or one of the small words a title
+#: leaves lowercase. Deliberately *not* case-insensitive: it is the only thing
+#: separating "Experimental Results and Analyses" from a wrapped line of prose
+#: that happens to begin with the word "results".
+_HEADING_WORD = r"(?:[A-Z0-9][^\s]*|and|of|for|the|in|on|to|with|a|an|from|its)"
+
+
+def _heading(keyword: str) -> re.Pattern[str]:
+    """A pattern matching a whole line that is a heading built on `keyword`.
+
+    Anchored at both ends, which is the point. Matching a *prefix* is what let
+    ordinary prose become a section boundary: pypdf flattens a two-column paper
+    into short lines, and any one of them starting "results", "limitations" or
+    "method" opened a section that ran until the next such line. On one measured
+    paper that produced a 49-character `results` and a 15,000-character
+    `limitations` holding the method section — and the real results section,
+    which no heading pattern had matched, was inside the latter.
+
+    Room is left for a leading section number, a few qualifying words before the
+    keyword ("Experimental Results") and a few after ("Results and Analyses"),
+    because real headings have them. Only the keyword is case-insensitive.
+    """
+    return re.compile(
+        r"^(?:\d+(?:\.\d+)*\.?\s*)?"  # 1  ·  3.2  ·  4.
+        rf"(?:{_HEADING_WORD}\s+){{0,3}}"  # Experimental · Materials and
+        rf"(?i:{keyword})"
+        rf"(?:\s+{_HEADING_WORD}){{0,4}}"  # and Analyses · and Future Work
+        r"\s*[:.]?$"
+    )
+
+
 _SECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("abstract", re.compile(r"^\s*(?:\d+\.?\s*)?abstract\b", re.IGNORECASE)),
-    ("introduction", re.compile(r"^\s*(?:\d+\.?\s*)?(?:introduction|background)\b", re.IGNORECASE)),
+    ("abstract", _heading(r"abstract")),
+    ("introduction", _heading(r"introduction|background")),
     (
         "methods",
-        re.compile(
-            r"^\s*(?:\d+\.?\s*)?(?:methods?|materials\s+and\s+methods|methodology|"
-            r"experimental\s+setup|study\s+design)\b",
-            re.IGNORECASE,
+        _heading(
+            r"methods?|materials\s+and\s+methods|methodology|"
+            r"experimental\s+setups?|study\s+design"
         ),
     ),
-    ("results", re.compile(r"^\s*(?:\d+\.?\s*)?(?:results?|findings)\b", re.IGNORECASE)),
-    ("discussion", re.compile(r"^\s*(?:\d+\.?\s*)?discussion\b", re.IGNORECASE)),
-    ("conclusion", re.compile(r"^\s*(?:\d+\.?\s*)?(?:conclusions?|summary)\b", re.IGNORECASE)),
-    ("limitations", re.compile(r"^\s*(?:\d+\.?\s*)?limitations\b", re.IGNORECASE)),
-    (
-        "references",
-        re.compile(r"^\s*(?:\d+\.?\s*)?(?:references|bibliography|works\s+cited)\b", re.IGNORECASE),
-    ),
+    ("results", _heading(r"results?|findings")),
+    ("discussion", _heading(r"discussion")),
+    ("conclusion", _heading(r"conclusions?|summary")),
+    ("limitations", _heading(r"limitations?")),
+    ("references", _heading(r"references|bibliography|works\s+cited")),
 ]
 
 
@@ -211,7 +239,12 @@ def _extract_document(data: bytes, source: str | None = None) -> PdfDocument | N
         chunks: list[str] = []
         offsets: list[int] = []
         total = 0
-        for page in reader.pages:
+        # Bounded in pages, not characters. A character budget stops wherever it
+        # runs out, which on a dense paper is mid-experiments — and everything
+        # this text is read for is after that point. A page is the unit the
+        # document is actually divided into, so stopping on one leaves whole
+        # sections rather than half a sentence.
+        for page in reader.pages[: settings.pdf_max_pages]:
             # Clean per page: cleaning after the join would collapse whitespace
             # across boundaries and invalidate every offset recorded here.
             page_text = _clean(page.extract_text() or "")
@@ -219,8 +252,6 @@ def _extract_document(data: bytes, source: str | None = None) -> PdfDocument | N
             chunks.append(page_text)
             # +1 for the newline the join adds after every page but the last.
             total += len(page_text) + 1
-            if total >= settings.pdf_max_chars:
-                break
         text = "\n".join(chunks)
         # Deliberately not stripped. A blank leading page would make `strip()`
         # remove the joined newline and silently shift every offset above by one.
@@ -244,7 +275,8 @@ def split_sections(full_text: str) -> dict[str, str]:
     """Split full text into canonical sections by heading heuristics.
 
     Returns only the sections that were confidently located; `references` is
-    detected purely so it can be cut off, and is never returned.
+    detected purely so everything from it on can be cut off, and is never
+    returned.
     """
     if not full_text:
         return {}
@@ -255,24 +287,43 @@ def split_sections(full_text: str) -> dict[str, str]:
         stripped = line.strip()
         if not stripped or len(stripped) > 80:
             continue
+        # A heading starts with a capital or its section number. Prose that a
+        # column break has left starting with "results" does not, and that one
+        # test rejects most of what used to be mistaken for a heading.
+        if not (stripped[0].isupper() or stripped[0].isdigit()):
+            continue
         for name, pattern in _SECTION_PATTERNS:
             if pattern.match(stripped):
                 marks.append((index, name))
                 break
 
+    # Everything from the bibliography on is other people's titles and, after
+    # them, an appendix. A heading found in there labels the wrong text, so the
+    # document ends here rather than at its last line.
+    for position, (line_index, name) in enumerate(marks):
+        if name == "references":
+            lines = lines[:line_index]
+            marks = marks[:position]
+            break
+
     if not marks:
         return {}
 
-    sections: dict[str, str] = {}
+    # A section that appears twice is joined, not discarded. The old rule kept
+    # the first occurrence and dropped the rest, on the reasoning that a repeat
+    # is a running header — but a paper that splits its findings across "5
+    # Experimental Results" and "6 Analysis", or reprints a heading at a page
+    # break, then loses everything after the first. Joining cannot duplicate
+    # text: the bodies are disjoint spans of the same document.
+    found: dict[str, list[str]] = {}
     for position, (line_index, name) in enumerate(marks):
         end = marks[position + 1][0] if position + 1 < len(marks) else len(lines)
         body = "\n".join(lines[line_index + 1 : end]).strip()
-        if name == "references" or not body:
+        if not body:
             continue
-        # Keep the first occurrence: later repeats are usually running headers.
-        sections.setdefault(name, body)
+        found.setdefault(name, []).append(body)
 
-    return sections
+    return {name: "\n\n".join(bodies) for name, bodies in found.items()}
 
 
 #: Every section, in the order the normalizer wants them — it is classifying the
