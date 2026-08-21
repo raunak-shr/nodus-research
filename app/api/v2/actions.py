@@ -40,9 +40,11 @@ from app.services import (
     cluster_edit,
     export,
     limits,
+    ownership,
     pdf_export,
     provenance,
     query_assessor,
+    report_chat,
     report_edit,
     report_render,
     runner,
@@ -71,6 +73,11 @@ class ActionContext:
     #: the handshake. An action that reports budgets must read the same key the
     #: limiter charges, or it would report someone else's allowance.
     client_key: str = "unknown"
+    #: Whose history this connection sees. Resolved once at the handshake from
+    #: the owner token, falling back to the client address — see
+    #: `app/services/ownership.py`. Every query is stamped with it, and anything
+    #: reached through a query or a cluster id is refused to anyone else.
+    owner_key: str = "a:unknown"
 
 
 Handler = Callable[[ActionContext, Any], Awaitable[Any]]
@@ -121,11 +128,23 @@ def _dump(model: BaseModel) -> dict[str, Any]:
     return model.model_dump(mode="json")
 
 
-async def _require_query(query_id: UUID, db: AsyncSession) -> Query:
-    query = (await db.execute(select(Query).where(Query.id == query_id))).scalar_one_or_none()
-    if not query:
-        raise NotFound("Query not found", query_id=str(query_id))
-    return query
+async def _require_query(ctx: ActionContext, query_id: UUID, db: AsyncSession) -> Query:
+    """The query, if it is this caller's to read.
+
+    Every query-scoped action goes through here rather than loading the row
+    itself: "no such query" and "not your query" have to be the same answer, or
+    the difference between them enumerates other people's runs.
+    """
+    return await ownership.require_query(query_id, db, owner=ctx.owner_key, is_admin=ctx.is_admin)
+
+
+async def _require_cluster(ctx: ActionContext, cluster_id: UUID, db: AsyncSession) -> None:
+    """Refuse a cluster whose query belongs to someone else.
+
+    Clusters are per-query, so this is the query check reached through
+    `cluster.query_id` — the same rule, not a second one.
+    """
+    await ownership.require_cluster(cluster_id, db, owner=ctx.owner_key, is_admin=ctx.is_admin)
 
 
 # ------------------------------------------------------------------- meta
@@ -196,7 +215,11 @@ async def queries_create(ctx: ActionContext, params: frames.CreateQuery) -> dict
     # capacity does not leave a `pending` query nothing will ever pick up.
     async with runner.admission() as reserved:
         async with AsyncSessionLocal() as db:
-            query = Query(raw_query=params.query, status=QueryStatus.pending)
+            query = Query(
+                raw_query=params.query,
+                status=QueryStatus.pending,
+                owner_key=ctx.owner_key,
+            )
             db.add(query)
             await db.commit()
             await db.refresh(query)
@@ -213,7 +236,7 @@ async def queries_create(ctx: ActionContext, params: frames.CreateQuery) -> dict
 
             await run_pipeline_safe(query_id, params.query)
             async with AsyncSessionLocal() as db:
-                query = await _require_query(query_id, db)
+                query = await _require_query(ctx, query_id, db)
                 payload = _dump(QueryRead.model_validate(query))
         else:
             reserved.launch(query_id, params.query)
@@ -236,12 +259,18 @@ async def queries_interpret(ctx: ActionContext, params: frames.InterpretQuery) -
     return _dump(await query_assessor.interpret(params.query))
 
 
-@action("queries.list", frames.Page, "List queries, newest first")
+@action("queries.list", frames.Page, "List this caller's queries, newest first")
 async def queries_list(ctx: ActionContext, params: frames.Page) -> list[dict[str, Any]]:
+    """One caller's history, not the deployment's.
+
+    Scoped on `owner_key`, which is why the index behind it is
+    `(owner_key, created_at DESC)`. The admin key sees everything, including the
+    rows written before ownership existed.
+    """
     async with AsyncSessionLocal() as db:
         rows = (
             await db.execute(
-                select(Query)
+                ownership.scope(select(Query), ctx.owner_key, is_admin=ctx.is_admin)
                 .order_by(Query.created_at.desc())
                 .limit(params.limit)
                 .offset(params.offset)
@@ -253,7 +282,7 @@ async def queries_list(ctx: ActionContext, params: frames.Page) -> list[dict[str
 @action("queries.get", frames.QueryRef, "Query status with its ranked papers")
 async def queries_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
-        query = await _require_query(params.query_id, db)
+        query = await _require_query(ctx, params.query_id, db)
         query_papers = (
             (
                 await db.execute(
@@ -293,7 +322,7 @@ async def queries_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, 
 @action("queries.stats", frames.QueryRef, "Counts across the pipeline for one query")
 async def queries_stats(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
-        query = await _require_query(params.query_id, db)
+        query = await _require_query(ctx, params.query_id, db)
         claim_count = (
             await db.execute(
                 select(func.count(Claim.id))
@@ -328,7 +357,7 @@ async def queries_stats(ctx: ActionContext, params: frames.QueryRef) -> dict[str
 async def queries_delete(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     runner.cancel(params.query_id)
     async with AsyncSessionLocal() as db:
-        query = await _require_query(params.query_id, db)
+        query = await _require_query(ctx, params.query_id, db)
         await db.delete(query)
         await db.commit()
     ctx.connection.unsubscribe(params.query_id)
@@ -338,12 +367,20 @@ async def queries_delete(ctx: ActionContext, params: frames.QueryRef) -> dict[st
 
 @action("queries.cancel", frames.QueryRef, "Cancel an in-flight pipeline run")
 async def queries_cancel(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
+    # Checked against the database rather than the run registry: cancelling
+    # somebody else's run is the one write that needs no id but the query's.
+    async with AsyncSessionLocal() as db:
+        await _require_query(ctx, params.query_id, db)
     cancelled = runner.cancel(params.query_id)
     return {"cancelled": cancelled, "query_id": str(params.query_id)}
 
 
 @action("queries.subscribe", frames.Subscribe, "Stream a query's progress on this connection")
 async def queries_subscribe(ctx: ActionContext, params: frames.Subscribe) -> dict[str, Any]:
+    # A stream is a read of someone's run in progress, so it is scoped like any
+    # other. Without this, a query id would be enough to watch it live.
+    async with AsyncSessionLocal() as db:
+        await _require_query(ctx, params.query_id, db)
     return await ctx.connection.subscribe(params.query_id, since=params.since)
 
 
@@ -359,7 +396,7 @@ async def queries_unsubscribe(ctx: ActionContext, params: frames.QueryRef) -> di
 @action("queries.events", frames.Events, "Replay buffered progress events (gap recovery)")
 async def queries_events(ctx: ActionContext, params: frames.Events) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
-        query = await _require_query(params.query_id, db)
+        query = await _require_query(ctx, params.query_id, db)
         return {
             "query_id": str(params.query_id),
             "status": str(query.status),
@@ -380,12 +417,16 @@ async def queries_followup(ctx: ActionContext, params: frames.FollowUp) -> dict[
 
     async with runner.admission() as reserved:
         async with AsyncSessionLocal() as db:
-            parent = await _require_query(params.query_id, db)
+            parent = await _require_query(ctx, params.query_id, db)
             combined = f"{parent.raw_query} — follow-up: {params.query}"
             child = Query(
                 raw_query=params.query,
                 status=QueryStatus.pending,
                 parent_query_id=parent.id,
+                # The child is the same reader's, so it inherits the owner
+                # rather than the connection's — an admin asking a follow-up on
+                # someone's run must not take the run away from them.
+                owner_key=parent.owner_key or ctx.owner_key,
             )
             db.add(child)
             await db.commit()
@@ -402,7 +443,7 @@ async def queries_followup(ctx: ActionContext, params: frames.FollowUp) -> dict[
 
             await run_pipeline_safe(child_id, combined)
             async with AsyncSessionLocal() as db:
-                child = await _require_query(child_id, db)
+                child = await _require_query(ctx, child_id, db)
                 payload = _dump(QueryRead.model_validate(child))
         else:
             reserved.launch(child_id, combined)
@@ -413,7 +454,7 @@ async def queries_followup(ctx: ActionContext, params: frames.FollowUp) -> dict[
 @action("queries.followups", frames.QueryRef, "List follow-ups of a query")
 async def queries_followups(ctx: ActionContext, params: frames.QueryRef) -> list[dict[str, Any]]:
     async with AsyncSessionLocal() as db:
-        await _require_query(params.query_id, db)
+        await _require_query(ctx, params.query_id, db)
         rows = (
             await db.execute(
                 select(Query)
@@ -425,11 +466,18 @@ async def queries_followups(ctx: ActionContext, params: frames.QueryRef) -> list
 
 
 # ----------------------------------------------------------------- papers
+#
+# Papers and claims are the global cache — one paper normalised once is reused by
+# every query that retrieves it — so they carry no owner and these reads are not
+# scoped. What is scoped is anything that reveals *which question* someone asked:
+# a paper's row says nothing about that, while `papers.list` for a query id says
+# all of it, and is checked accordingly.
 
 
 @action("papers.list", frames.PapersForQuery, "Ranked papers retrieved for a query")
 async def papers_list(ctx: ActionContext, params: frames.PapersForQuery) -> list[dict[str, Any]]:
     async with AsyncSessionLocal() as db:
+        await _require_query(ctx, params.query_id, db)
         rows = (
             await db.execute(
                 select(QueryPaper)
@@ -498,6 +546,7 @@ async def claims_source(ctx: ActionContext, params: frames.ClaimRef) -> dict[str
 @action("clusters.list", frames.QueryRef, "Clusters for a query, best evidence first")
 async def clusters_list(ctx: ActionContext, params: frames.QueryRef) -> list[dict[str, Any]]:
     async with AsyncSessionLocal() as db:
+        await _require_query(ctx, params.query_id, db)
         clusters = await cluster_edit.list_for_query(params.query_id, db)
         return [_dump(ClaimClusterRead.model_validate(c)) for c in clusters]
 
@@ -505,6 +554,7 @@ async def clusters_list(ctx: ActionContext, params: frames.QueryRef) -> list[dic
 @action("clusters.get", frames.ClusterRef, "A cluster with its member claims and stances")
 async def clusters_get(ctx: ActionContext, params: frames.ClusterRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
+        await _require_cluster(ctx, params.cluster_id, db)
         return _dump(await cluster_edit.get_detail(params.cluster_id, db))
 
 
@@ -516,6 +566,7 @@ async def clusters_get(ctx: ActionContext, params: frames.ClusterRef) -> dict[st
 )
 async def clusters_update(ctx: ActionContext, params: frames.ClusterPatch) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
+        await _require_cluster(ctx, params.cluster_id, db)
         return _dump(await cluster_edit.update_cluster(params.cluster_id, params.patch, db))
 
 
@@ -527,6 +578,7 @@ async def clusters_update(ctx: ActionContext, params: frames.ClusterPatch) -> di
 )
 async def clusters_set_stance(ctx: ActionContext, params: frames.ClusterStance) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
+        await _require_cluster(ctx, params.cluster_id, db)
         return _dump(
             await cluster_edit.set_stance(params.cluster_id, params.claim_id, params.stance, db)
         )
@@ -535,6 +587,7 @@ async def clusters_set_stance(ctx: ActionContext, params: frames.ClusterStance) 
 @action("clusters.add_claim", frames.ClusterStance, "Move a claim into a cluster", cost="edit")
 async def clusters_add_claim(ctx: ActionContext, params: frames.ClusterStance) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
+        await _require_cluster(ctx, params.cluster_id, db)
         return _dump(
             await cluster_edit.add_claim(params.cluster_id, params.claim_id, params.stance, db)
         )
@@ -545,6 +598,7 @@ async def clusters_remove_claim(
     ctx: ActionContext, params: frames.ClusterClaimRef
 ) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
+        await _require_cluster(ctx, params.cluster_id, db)
         await cluster_edit.remove_claim(params.cluster_id, params.claim_id, db)
         return {"removed": True, "claim_id": str(params.claim_id)}
 
@@ -555,7 +609,7 @@ async def clusters_remove_claim(
 @action("report.get", frames.QueryRef, "The synthesized three-axis report")
 async def report_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
-        await _require_query(params.query_id, db)
+        await _require_query(ctx, params.query_id, db)
         report = await report_edit.require_report(params.query_id, db)
         return _dump(ReportRead.model_validate(report))
 
@@ -568,7 +622,7 @@ async def report_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, A
 )
 async def report_regenerate(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
-        query = await _require_query(params.query_id, db)
+        query = await _require_query(ctx, params.query_id, db)
         report = await report_edit.regenerate(query, db)
         return _dump(ReportRead.model_validate(report))
 
@@ -581,6 +635,7 @@ async def report_regenerate(ctx: ActionContext, params: frames.QueryRef) -> dict
 )
 async def report_refresh_sources(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
+        await _require_query(ctx, params.query_id, db)
         report = await report_edit.refresh_sources(params.query_id, db)
         return _dump(ReportRead.model_validate(report))
 
@@ -588,6 +643,7 @@ async def report_refresh_sources(ctx: ActionContext, params: frames.QueryRef) ->
 @action("report.update", frames.ReportPatch, "Edit report front matter or sections", cost="edit")
 async def report_update(ctx: ActionContext, params: frames.ReportPatch) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
+        await _require_query(ctx, params.query_id, db)
         report = await report_edit.update(params.query_id, params.patch, db)
         return _dump(ReportRead.model_validate(report))
 
@@ -600,6 +656,7 @@ async def report_update(ctx: ActionContext, params: frames.ReportPatch) -> dict[
 )
 async def report_section_update(ctx: ActionContext, params: frames.SectionPatch) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
+        await _require_query(ctx, params.query_id, db)
         report = await report_edit.update_section(
             params.query_id, params.cluster_id, params.patch, db
         )
@@ -609,7 +666,7 @@ async def report_section_update(ctx: ActionContext, params: frames.SectionPatch)
 @action("report.render", frames.RenderReport, "Rendered report HTML (screen or print variant)")
 async def report_render_action(ctx: ActionContext, params: frames.RenderReport) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
-        query = await _require_query(params.query_id, db)
+        query = await _require_query(ctx, params.query_id, db)
         report = await report_edit.require_report(params.query_id, db)
         html = report_render.render_report_html(report, query, variant=params.variant)
         return {
@@ -630,7 +687,7 @@ async def report_export(ctx: ActionContext, params: frames.ExportReport) -> dict
     render, media_type, suffix = renderers[params.format]
 
     async with AsyncSessionLocal() as db:
-        query = await _require_query(params.query_id, db)
+        query = await _require_query(ctx, params.query_id, db)
         report = await report_edit.require_report(params.query_id, db)
         content = render(report, query)
 
@@ -643,10 +700,30 @@ async def report_export(ctx: ActionContext, params: frames.ExportReport) -> dict
     }
 
 
+@action(
+    "chat.ask",
+    frames.AskReport,
+    "Ask a question about one query's report, answered from it alone",
+    cost="chat",
+)
+async def chat_ask(ctx: ActionContext, params: frames.AskReport) -> dict[str, Any]:
+    """Grounded in this query's report and clusters, and in nothing else.
+
+    Not a retrieval path: no paper is fetched and no claim is re-extracted, so a
+    question the report does not cover comes back `covered: false` rather than
+    answered from the model's own recall. Asking something the report cannot
+    settle is what `queries.followup` is for — a run, with a run's cost.
+    """
+    async with AsyncSessionLocal() as db:
+        await _require_query(ctx, params.query_id, db)
+        answer = await report_chat.answer(params.query_id, params.question, params.history, db)
+        return _dump(answer)
+
+
 @action("report.pdf", frames.QueryRef, "Report as a PDF, base64-encoded for download")
 async def report_pdf(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
-        query = await _require_query(params.query_id, db)
+        query = await _require_query(ctx, params.query_id, db)
         report = await report_edit.require_report(params.query_id, db)
         payload = await pdf_export.render_pdf(report, query)
 

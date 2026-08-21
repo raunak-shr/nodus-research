@@ -12,9 +12,8 @@ const ICONS: Record<Screen, string> = {
   cluster:
     'M6 12a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M16 6a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M16 18a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M11.2 10.8l5-3M11.2 13.2l5 3',
   edits: 'M4 20h4L20 8l-4-4L4 16z',
-  followup: 'M9 10L4 15l5 5M4 15h9a7 7 0 0 0 7-7V5',
+  chat: 'M4 5h16v11H9l-5 4z',
   history: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l4 2',
-  states: 'M12 4L2 20h20zM12 10v5M12 17.4v.2',
   print: 'M7 8V3h10v5M7 16H5V9h14v7h-2M7 13h10v8H7z',
 }
 
@@ -26,9 +25,8 @@ const ITEMS: { id: Screen; label: string }[] = [
   { id: 'papers', label: 'Papers' },
   { id: 'cluster', label: 'Cluster detail' },
   { id: 'edits', label: 'Edits' },
-  { id: 'followup', label: 'Follow-up' },
+  { id: 'chat', label: 'Ask the report' },
   { id: 'history', label: 'History' },
-  { id: 'states', label: 'States' },
   { id: 'print', label: 'Print sheet' },
 ]
 

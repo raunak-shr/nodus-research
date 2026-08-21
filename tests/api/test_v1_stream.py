@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.core.events import hub
 from app.main import app
+from tests.conftest import owns_queries
 
 
 def test_v1_stream_replays_history_and_closes_on_terminal_status():
@@ -20,6 +21,7 @@ def test_v1_stream_replays_history_and_closes_on_terminal_status():
 
     try:
         with (
+            owns_queries(),
             TestClient(app) as client,
             client.websocket_connect(f"/api/v1/queries/{query_id}/stream") as socket,
         ):

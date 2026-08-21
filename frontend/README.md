@@ -60,6 +60,8 @@ src/
 ├── lib/
 │   ├── ws.ts           # the /api/v2/ws client: request/reply, events, seq gaps, resume
 │   ├── types.ts        # hand-written mirrors of app/schemas/* — the contract
+│   ├── reportChat.ts   # offline answering: report passages matched, never written
+│   ├── owner.ts        # the per-browser owner token: which history this client reads
 │   ├── evidence.ts     # provenance kinds, coverage, stance/tier, quality arithmetic
 │   ├── viewmodels.ts   # what screens read; both data sources produce these
 │   └── format.ts       # numbers, clocks, dates, citations
@@ -89,3 +91,22 @@ src/
   hard-coded numbers.
 - **The print sheet is a layout, not a screenshot.** It matches what the backend's
   PDF export renders in Chromium.
+- **Ask the report is grounded, and says when it is not.** The thread calls
+  `chat.ask`, which answers from the report and its clusters only. An answer with
+  `covered: false` is rendered as the loudest state on the screen, with the one
+  remedy the chat does not have — `queries.followup`, a real run — attached to it.
+  Citations are chips that open the cluster behind them, so provenance is a
+  destination rather than a label.
+- **A thread belongs to one report.** It is dropped whenever the active query
+  changes: nothing on screen would say which report an old answer came from.
+- **The history is this browser's, and the screen says so.** `src/lib/owner.ts`
+  mints a token on first use and keeps it in local storage; it rides on every
+  handshake and the server scopes every listing and query read to it. The
+  server echoes back what it resolved (`ready.owner`), and when that comes back
+  as an address rather than a token the History screen says so — a silently
+  dropped token means sharing a history with everything on the same address.
+  Clearing site data mints a new identity, so those runs stop being reachable
+  from here; the screen says that too, rather than implying they are gone.
+- **Offline, answers are matched, not written.** With no socket there is no model,
+  so `reportChat.ts` quotes the report's own best-matching sentences and the turn
+  is labelled as matched. The demo build never implies a model answered.

@@ -21,8 +21,11 @@ import {
   type ReactNode,
 } from 'react'
 
+import { describeOwner, ownerToken } from '../lib/owner'
 import { NodusError, NodusSocket, resolveSocketUrl, type SocketGap, type SocketStatus } from '../lib/ws'
 import type {
+  ChatAnswerRead,
+  ChatTurn,
   ClaimClusterDetail,
   ClaimClusterRead,
   ClaimSourceRead,
@@ -42,8 +45,15 @@ import type {
   Stance,
   StructuredQuery,
 } from '../lib/types'
+import { answerFromReport } from '../lib/reportChat'
 import { RunFeed } from '../lib/runFeed'
-import { claimRef, type EditEntry, type PaperRow, type RunView } from '../lib/viewmodels'
+import {
+  claimRef,
+  type ChatMessage,
+  type EditEntry,
+  type PaperRow,
+  type RunView,
+} from '../lib/viewmodels'
 import {
   DEMO_CLUSTERS,
   DEMO_FAILURES,
@@ -69,9 +79,8 @@ export type Screen =
   | 'cluster'
   | 'papers'
   | 'edits'
-  | 'followup'
+  | 'chat'
   | 'history'
-  | 'states'
   | 'print'
 
 /** A designed screen the run can be in, rather than a thrown error. */
@@ -91,6 +100,11 @@ interface Store {
    *  rendering an empty list that reads like "nothing here". */
   lastError: { action: string; message: string } | null
   config: ServerConfig | null
+  /** Whose history this session is reading, as the server resolved it, and a
+   *  sentence saying which of the two kinds it is. `queries` is only ever this
+   *  owner's runs — a listing is a history, and one reader's is not another's. */
+  owner: string | null
+  ownerNote: string | null
 
   question: string
   structured: StructuredQuery | null
@@ -114,13 +128,20 @@ interface Store {
   sourceRef: string
 
   edits: EditEntry[]
-  followupQuestion: string
+
+  /** The thread on the Ask-the-report screen, oldest first. It belongs to the
+   *  client — `chat.ask` keeps no session — and it is dropped whenever the
+   *  active query changes, because a thread about one report must never sit
+   *  under another one's answers. */
+  chat: ChatMessage[]
+  chatDraft: string
+  chatPending: boolean
 
   setTheme(theme: 'light' | 'dark'): void
   go(screen: Screen, flag?: Flag): void
   setFlag(flag: Flag): void
   setQuestion(value: string): void
-  setFollowupQuestion(value: string): void
+  setChatDraft(value: string): void
   /** Ask the server how it reads the question and whether running it is worth
    *  the five minutes. Never starts a run. `draft` overrides the box, for a
    *  caller that is setting the question and interpreting it in one go — the
@@ -134,9 +155,6 @@ interface Store {
   cancelRun(): void
   skipToEnd(): void
   reloadRun(): void
-  /** Stage a representative gap so the recovery screen can be inspected
-   *  without waiting for the socket to actually drop events. */
-  simulateGap(): void
   openQuery(queryId: string): void
   openCluster(clusterId: string): void
   openSource(claim: ClusterClaimRead, ref: string): void
@@ -146,7 +164,15 @@ interface Store {
   clearTierOverride(clusterId: string): void
   flipStance(clusterId: string, claimId: string, next: Stance): void
   saveExecutiveSummary(text: string): void
-  runFollowup(): void
+  /** Ask the active query's report a question, answered from that report and
+   *  its clusters alone. `draft` overrides the box for a caller that sets the
+   *  question and sends it in one go. */
+  askReport(draft?: string): void
+  clearChat(): void
+  /** The one thing the chat cannot do: put a question the report does not cover
+   *  through the pipeline, scoped to the papers the parent run already
+   *  retrieved. Offered from an uncovered answer, where it is the real remedy. */
+  runFollowup(question: string): void
   exportReport(format: 'markdown' | 'json' | 'html'): void
   downloadPdf(): void
 }
@@ -237,6 +263,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const [connectionNote, setConnectionNote] = useState<string | null>(null)
   const [lastError, setLastError] = useState<{ action: string; message: string } | null>(null)
   const [config, setConfig] = useState<ServerConfig | null>(null)
+  const [owner, setOwner] = useState<string | null>(null)
 
   // Empty, deliberately: a question already in the box is a question somebody
   // is one click away from running by accident. The demo build is the exception
@@ -263,9 +290,9 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const [sourceRef, setSourceRef] = useState('')
 
   const [edits, setEdits] = useState<EditEntry[]>([])
-  const [followupQuestion, setFollowupQuestion] = useState(
-    'Does the effect hold once trials with blinded outcome assessment are separated out?',
-  )
+  const [chat, setChat] = useState<ChatMessage[]>([])
+  const [chatDraft, setChatDraft] = useState('')
+  const [chatPending, setChatPending] = useState(false)
 
   const socketRef = useRef<NodusSocket | null>(null)
   const tickRef = useRef<number | null>(null)
@@ -283,6 +310,18 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+
+  // -- one thread per report -----------------------------------------------
+
+  // A chat is grounded in one query's report, so it does not outlive it.
+  // Opening another run — or finishing a new one — drops the thread instead of
+  // leaving answers about the previous report sitting above the next question,
+  // where nothing on screen would say which report each turn came from.
+  useEffect(() => {
+    setChat([])
+    setChatDraft('')
+    setChatPending(false)
+  }, [activeQueryId])
 
   // -- demo fallback -------------------------------------------------------
 
@@ -311,6 +350,9 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     const socket = new NodusSocket({
       url: resolveSocketUrl(),
       apiKey: import.meta.env.VITE_NODUS_API_KEY,
+      // Which history to read. Minted once per browser and kept in local
+      // storage, so this session sees its own runs and nobody else's.
+      owner: ownerToken(),
       maxRetries: 3,
       // Short: a real Nodus socket sends `ready` on the same round trip as the
       // upgrade, so waiting longer only leaves a reader looking at a blank app.
@@ -330,6 +372,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         everOpened = true
         setMode('live')
         setConnectionNote(null)
+        setOwner(socket.owner)
         // A reconnect re-subscribes, but the instance that answers may never
         // have seen this run. Ask the database where it actually got to.
         if (reconnected) {
@@ -728,18 +771,6 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     if (mode === 'live' && activeQueryId) void loadQueryArtifacts(activeQueryId)
   }, [activeQueryId, loadQueryArtifacts, mode])
 
-  const simulateGap = useCallback(() => {
-    const lastApplied = seq || 1840
-    setGap({
-      topic: `query:${activeQueryId ?? DEMO_QUERY_ID}`,
-      lastApplied,
-      received: lastApplied + 18,
-      missed: 17,
-    })
-    setScreen('run')
-    setFlag('seqgap')
-  }, [activeQueryId, seq])
-
   const openQuery = useCallback(
     (queryId: string) => {
       const record = queries.find((q) => q.id === queryId)
@@ -997,34 +1028,155 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     [activeQueryId, mode, recordEdit],
   )
 
-  const runFollowup = useCallback(() => {
-    setFlag(null)
-    setScreen('run')
-    if (mode === 'demo' || !socketRef.current || !activeQueryId) {
-      runDemoClock(0)
-      return
-    }
-    const parentId = activeQueryId
-    releaseRun()
-    feedRef.current = new RunFeed(null, followupQuestion, config?.top_k_papers ?? 20)
-    setRun(feedRef.current.view())
-    void socketRef.current
-      .request<{ query: QueryRead }>('queries.followup', {
-        query_id: parentId,
-        query: followupQuestion,
-        subscribe: true,
-      })
-      .then((created) => {
-        const id = created.query.id
-        activeTopicRef.current = `query:${id}`
-        setActiveQueryId(id)
-        setQuestion(followupQuestion)
-        socketRef.current?.adopt(id)
-        feedRef.current?.adopt(id)
-        setRun((current) => feedRef.current?.view() ?? current)
-      })
-      .catch(() => setFlag('busy'))
-  }, [activeQueryId, config, followupQuestion, mode, releaseRun, runDemoClock])
+  const runFollowup = useCallback(
+    (question: string) => {
+      const asked = question.trim()
+      if (asked.length < 3) return
+      setFlag(null)
+      setScreen('run')
+      if (mode === 'demo' || !socketRef.current || !activeQueryId) {
+        runDemoClock(0, asked)
+        return
+      }
+      const parentId = activeQueryId
+      releaseRun()
+      feedRef.current = new RunFeed(null, asked, config?.top_k_papers ?? 20)
+      setRun(feedRef.current.view())
+      void socketRef.current
+        .request<{ query: QueryRead }>('queries.followup', {
+          query_id: parentId,
+          query: asked,
+          subscribe: true,
+        })
+        .then((created) => {
+          const id = created.query.id
+          activeTopicRef.current = `query:${id}`
+          setActiveQueryId(id)
+          setQuestion(asked)
+          socketRef.current?.adopt(id)
+          feedRef.current?.adopt(id)
+          setRun((current) => feedRef.current?.view() ?? current)
+        })
+        .catch(() => setFlag('busy'))
+    },
+    [activeQueryId, config, mode, releaseRun, runDemoClock],
+  )
+
+  // -- asking the report ---------------------------------------------------
+
+  /** Ask the report a question, answered from the report and its clusters.
+   *
+   *  Nothing is retrieved and no paper is re-read: `chat.ask` assembles the
+   *  material from what this query already produced, so an answer can only ever
+   *  be as good as the report — and a question it does not cover comes back
+   *  uncovered rather than answered from the model's own recall. The thread is
+   *  sent with every question because the server keeps none.
+   *
+   *  With no socket there is no model, so the passages that match are quoted out
+   *  of the report instead and the turn is marked `matched`. That is the only
+   *  honest offline behaviour: the screen says which it is showing.
+   */
+  const askReport = useCallback(
+    (draft?: string) => {
+      const asked = (draft ?? chatDraft).trim()
+      if (asked.length < 3 || chatPending) return
+
+      const at = nowLabel()
+      const stamp = `${Date.now()}`
+      const turn: ChatMessage = { id: `q-${stamp}`, role: 'user', text: asked, at }
+      // The history the server is given is what was on screen before this
+      // question — the question itself travels separately.
+      const history: ChatTurn[] = chat
+        .filter((message) => !message.pending && !message.failed)
+        .map((message) => ({ role: message.role, content: message.text }))
+
+      setChatDraft('')
+
+      if (!report) {
+        setChat((current) => [
+          ...current,
+          turn,
+          {
+            id: `a-${stamp}`,
+            role: 'assistant',
+            text: 'There is no report to ask about yet. Run a question first — this thread can only answer from a finished report and its clusters.',
+            at,
+            covered: false,
+          },
+        ])
+        return
+      }
+
+      if (mode === 'demo' || !socketRef.current || !activeQueryId) {
+        const local = answerFromReport(asked, report, clusters)
+        setChat((current) => [
+          ...current,
+          turn,
+          {
+            id: `a-${stamp}`,
+            role: 'assistant',
+            text: local.answer,
+            at,
+            covered: local.covered,
+            citations: local.citations,
+            grounding: local.grounding,
+            matched: true,
+          },
+        ])
+        return
+      }
+
+      setChat((current) => [
+        ...current,
+        turn,
+        { id: `a-${stamp}`, role: 'assistant', text: '', at, pending: true },
+      ])
+      setChatPending(true)
+
+      void socketRef.current
+        .request<ChatAnswerRead>('chat.ask', {
+          query_id: activeQueryId,
+          question: asked,
+          history,
+        })
+        .then((result) => {
+          setChat((current) =>
+            current.map((message) =>
+              message.id === `a-${stamp}`
+                ? {
+                    ...message,
+                    text: result.answer,
+                    covered: result.covered,
+                    citations: result.citations,
+                    grounding: result.grounding,
+                    pending: false,
+                  }
+                : message,
+            ),
+          )
+        })
+        .catch((error: unknown) => {
+          const described = describe('chat.ask', error)
+          setLastError(described)
+          // A failed request is not an answer, and must not be dressed as one:
+          // the turn says the question did not reach the report.
+          setChat((current) =>
+            current.map((message) =>
+              message.id === `a-${stamp}`
+                ? { ...message, pending: false, failed: described.message, text: '' }
+                : message,
+            ),
+          )
+        })
+        .finally(() => setChatPending(false))
+    },
+    [activeQueryId, chat, chatDraft, chatPending, clusters, mode, report],
+  )
+
+  const clearChat = useCallback(() => {
+    setChat([])
+    setChatDraft('')
+  }, [])
 
 
   // -- export --------------------------------------------------------------
@@ -1088,6 +1240,8 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       connectionNote,
       lastError,
       config,
+      owner,
+      ownerNote: mode === 'demo' ? 'Demo corpus — no history is stored' : describeOwner(owner),
       question,
       structured,
       interpretation,
@@ -1104,7 +1258,9 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       sourceClaimId,
       sourceRef,
       edits,
-      followupQuestion,
+      chat,
+      chatDraft,
+      chatPending,
       setTheme: setThemeState,
       go,
       setFlag,
@@ -1115,7 +1271,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         setInterpretation(null)
         setStructured(null)
       },
-      setFollowupQuestion,
+      setChatDraft,
       interpret,
       // Applying a suggestion leaves the question runnable. Sending it straight
       // back to be interpreted would spend a second call asking the model about
@@ -1146,7 +1302,6 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       cancelRun,
       skipToEnd,
       reloadRun,
-      simulateGap,
       openQuery,
       openCluster,
       openSource,
@@ -1156,6 +1311,8 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       clearTierOverride,
       flipStance,
       saveExecutiveSummary,
+      askReport,
+      clearChat,
       runFollowup,
       exportReport,
       downloadPdf,
@@ -1173,9 +1330,13 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       downloadPdf,
       edits,
       exportReport,
+      askReport,
+      chat,
+      chatDraft,
+      chatPending,
+      clearChat,
       flag,
       flipStance,
-      followupQuestion,
       gap,
       go,
       interpret,
@@ -1185,6 +1346,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       openCluster,
       openQuery,
       openSource,
+      owner,
       papers,
       queries,
       question,
@@ -1194,7 +1356,6 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       reloadRun,
       run,
       runFollowup,
-      simulateGap,
       saveExecutiveSummary,
       screen,
       seq,

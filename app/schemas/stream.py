@@ -27,6 +27,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.chat import ChatTurn
 from app.schemas.cluster import ClusterUpdate
 from app.schemas.report import ReportUpdate, SectionNarrativeUpdate
 
@@ -89,6 +90,11 @@ class ReadyFrame(BaseModel):
     heartbeat_seconds: float
     actions: list[str]
     resumed_subscriptions: list[str] = Field(default_factory=list)
+    #: Whose history this connection reads — the resolved owner key, echoed so a
+    #: client can see whether the token it sent arrived (`t:…`) or whether it is
+    #: falling back to its address (`a:…`), which is shared with anything else on
+    #: that address. Not a credential: it is the identity the caller supplied.
+    owner: str = ""
 
 
 class HeartbeatFrame(BaseModel):
@@ -199,6 +205,23 @@ class RenderReport(BaseModel):
 class ExportReport(BaseModel):
     query_id: UUID
     format: Literal["markdown", "json", "html"] = "markdown"
+
+
+class AskReport(BaseModel):
+    """A question about one query's finished report.
+
+    `history` is the thread so far, sent by the client on every question: this
+    action stores nothing, so the socket has no chat state to lose on a
+    reconnect and two readers of the same report never see each other's turns.
+    """
+
+    query_id: UUID
+    question: str = Field(min_length=3, max_length=600)
+    history: list[ChatTurn] = Field(
+        default_factory=list,
+        max_length=40,
+        description="Earlier turns, oldest first. Only the last few are shown to the model.",
+    )
 
 
 class FollowUp(BaseModel):

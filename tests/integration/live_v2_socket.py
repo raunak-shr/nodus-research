@@ -4,7 +4,14 @@ Read-only apart from the PDF render, so it is safe to point at any completed
 query. Requires a server, the database and Chromium — no LLM calls.
 
     uv run uvicorn app.main:app --port 8077
-    uv run python tests/integration/live_v2_socket.py
+    uv run python tests/integration/live_v2_socket.py --owner my-dev-token-1
+
+`--owner` decides whose history this run sees. Without one the connection
+falls back to its address, which owns only what was created from it — so runs
+submitted before ownership existed (`owner_key IS NULL`) are invisible unless
+`--admin-key` is passed. That is the point of the scoping, and this script is
+the end-to-end check of it: the last block opens a second connection under a
+different token and expects to be refused.
 
 Exits non-zero on the first failed expectation, so it works as a smoke check.
 """
@@ -46,6 +53,16 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="ws://127.0.0.1:8077/api/v2/ws")
     parser.add_argument("--api-key", default=None, help="Required when API_KEY is set")
+    parser.add_argument(
+        "--owner",
+        default=None,
+        help="Owner token: whose history to read. Omitted means this address's.",
+    )
+    parser.add_argument(
+        "--admin-key",
+        default=None,
+        help="ADMIN_API_KEY. Needed to see runs submitted before ownership existed.",
+    )
     parser.add_argument("--query-id", default=None, help="Defaults to the newest completed query")
     parser.add_argument(
         "--out-dir",
@@ -54,7 +71,21 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    url = f"{args.url}?api_key={args.api_key}" if args.api_key else args.url
+    def socket_url(owner: str | None, *, admin: bool = True) -> str:
+        params = []
+        if args.api_key:
+            params.append(f"api_key={args.api_key}")
+        # The admin key is unscoped by design, so the second reader below must
+        # connect without it or it would legitimately see everything and the
+        # scoping check would fail for the wrong reason.
+        if args.admin_key and admin:
+            params.append(f"admin_key={args.admin_key}")
+        if owner:
+            params.append(f"owner={owner}")
+        joined = "&".join(params)
+        return f"{args.url}?{joined}" if params else args.url
+
+    url = socket_url(args.owner)
     failures: list[str] = []
 
     def check(label: str, ok: bool, detail: str = "") -> None:
@@ -69,6 +100,12 @@ async def main() -> int:
             "handshake",
             ready.get("protocol") == "nodus.v2" and bool(ready.get("actions")),
             f"{len(ready.get('actions', []))} actions, heartbeat={beat}s",
+        )
+
+        check(
+            "handshake owner",
+            bool(ready.get("owner")),
+            f"{ready.get('owner')} — t: is a presented token, a: an address",
         )
 
         described = await call(socket, "meta.describe", request_id="describe")
@@ -172,6 +209,22 @@ async def main() -> int:
         # The socket must still be usable after all of that.
         health = await call(socket, "meta.health", request_id="health")
         check("socket still open", health["data"]["status"] == "ok")
+
+    # Whose history is whose. A second connection under a different token must
+    # not be able to read this query at all — and the refusal has to be
+    # `not_found`, because a `forbidden` would confirm the id exists.
+    async with websockets.connect(socket_url("other-reader-token-1", admin=False)) as intruder:
+        await asyncio.wait_for(intruder.recv(), timeout=30)
+        listed = await call(intruder, "queries.list", {"limit": 50}, request_id="theirs")
+        fetched = await call(intruder, "queries.get", {"query_id": query_id}, request_id="steal")
+        check(
+            "owner scoping",
+            query_id not in {row["id"] for row in listed["data"]}
+            and fetched.get("type") == "error"
+            and fetched["error"]["code"] == "not_found",
+            f"{len(listed['data'])} rows for the other reader, "
+            f"get={fetched.get('error', {}).get('code', 'ALLOWED')}",
+        )
 
     print(f"\n{'all checks passed' if not failures else f'{len(failures)} failed: {failures}'}")
     return 1 if failures else 0

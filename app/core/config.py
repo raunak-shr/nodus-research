@@ -166,6 +166,12 @@ class Settings(BaseSettings):
     # the run started from the same screen structure the same text seconds
     # apart; without this that is two identical calls. 0 disables the memo.
     query_structure_memo_seconds: int = 900
+    # How much of a report's material one chat answer may be grounded in. The
+    # material is assembled locally (front matter, sections, orphaned clusters)
+    # and trimmed to this, so the ceiling is the context the active model can
+    # take rather than anything about the report: a 25-section run is well past
+    # what a small local model will accept in one call.
+    report_chat_context_chars: int = 24000
 
     # Clustering. The bar depends on the embedding model, not on taste: each
     # model spreads its vectors differently, so one number cannot serve all of
@@ -221,8 +227,17 @@ class Settings(BaseSettings):
     # Concurrent pipeline runs. Each run is tens of LLM calls and holds database
     # sessions for minutes, so this caps both spend and pool use. Submissions
     # beyond it are refused with 429 rather than queued.
+    #
+    # This default governs local runs and CI only: the deployment supplies
+    # MAX_ACTIVE_QUERIES from Secret Manager so the ceiling can be moved without
+    # a code push, which means changing the number here does not reach
+    # production. `/health/config` reports the resolved value as `runs.limit`.
     max_active_queries: int = 2
     # Runs admitted per UTC day, charged on admission. 0 disables the ceiling.
+    # Also supplied from Secret Manager in the deployment, and for the same
+    # reason — so this default, too, is a local and CI number only. Reported as
+    # `runs.daily_limit`. Note the count it is charged against, `runs_today`,
+    # lives in the process: the restart that applies a new value resets it.
     max_daily_runs: int = 0
     rate_limit_enabled: bool = True
     # Pipeline submissions, follow-ups and report regeneration.
@@ -236,6 +251,12 @@ class Settings(BaseSettings):
     # few times, tight enough that a script cannot spend the day's budget on it.
     rate_limit_interprets_per_minute: int = 6
     rate_limit_interprets_burst: int = 3
+    # Asking a finished report a question: one LLM call, no run slot and no
+    # write, but a chat invites a burst of them where the Interpret button
+    # invites one. Loose enough to hold a conversation, tight enough that it
+    # cannot become the way a script spends the day's model budget.
+    rate_limit_chat_per_minute: int = 12
+    rate_limit_chat_burst: int = 4
     # Only enable behind a proxy that rewrites X-Forwarded-For (Cloudflare,
     # nginx). With nothing in front, the header is caller-controlled and every
     # request can claim a fresh identity, which defeats per-IP limiting.

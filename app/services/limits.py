@@ -386,12 +386,24 @@ interprets_limiter = RateLimiter(
     enabled=lambda: settings.rate_limit_enabled,
 )
 
+#: Asking a finished report a question — one LLM call over material already in
+#: the database. Its own bucket because a chat is used in bursts: borrowing the
+#: interpret budget would mean four questions locked the Interpret button, and
+#: borrowing the runs budget would price a question like a pipeline run.
+chat_limiter = RateLimiter(
+    "chat",
+    rate_per_second=lambda: max(0, settings.rate_limit_chat_per_minute) / 60.0,
+    capacity=lambda: settings.rate_limit_chat_burst,
+    enabled=lambda: settings.rate_limit_enabled,
+)
+
 #: Cost classes used by the v2 action registry, mapped to the bucket that
 #: governs them. Anything absent (i.e. a read) is not rate limited.
 _LIMITER_BY_COST = {
     "run": runs_limiter,
     "edit": edits_limiter,
     "interpret": interprets_limiter,
+    "chat": chat_limiter,
 }
 
 
@@ -411,7 +423,7 @@ def budgets_for(key: str) -> dict[str, dict[str, object]]:
             "capacity": budget.capacity,
             "refill_seconds": budget.refill_seconds,
         }
-        for limiter in (runs_limiter, edits_limiter, interprets_limiter)
+        for limiter in (runs_limiter, edits_limiter, interprets_limiter, chat_limiter)
         for budget in (limiter.peek(key),)
     }
 

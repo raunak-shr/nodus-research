@@ -55,6 +55,10 @@ export interface ReadyFrame {
   heartbeat_seconds: number
   actions: string[]
   resumed_subscriptions: string[]
+  /** The owner key the server resolved for this connection: `t:…` when the
+   *  token arrived, `a:…` when it fell back to the connection's address. Echoed
+   *  so a client can tell which of the two its history is scoped to. */
+  owner?: string
 }
 
 export interface ResultFrame {
@@ -364,6 +368,46 @@ export interface ReportRead {
   user_edited: boolean
   created_at: string
   updated_at: string
+}
+
+// -- chat over a finished report --------------------------------------------
+
+/** One turn as the server wants it back. The thread is the client's: `chat.ask`
+ *  stores nothing, so every question carries the conversation it belongs to. */
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+/** A block of the report the answer used, resolved to something openable. */
+export interface ChatCitation {
+  label: string
+  kind: 'front_matter' | 'section' | 'cluster'
+  heading: string
+  cluster_id: string | null
+}
+
+/** What was in scope. `truncated` is the difference between "the report does
+ *  not say" and "the part of the report the model was sent does not say". */
+export interface ChatGrounding {
+  report_title: string
+  sections_total: number
+  clusters_total: number
+  clusters_without_section: number
+  blocks_sent: number
+  truncated: boolean
+}
+
+export interface ChatAnswerRead {
+  query_id: string
+  question: string
+  answer: string
+  /** False when the report does not answer the question. Not an error: it is
+   *  the answer, and the screen says so rather than hiding it. */
+  covered: boolean
+  citations: ChatCitation[]
+  grounding: ChatGrounding
+  llm_model_used: string | null
 }
 
 export interface RunGate {

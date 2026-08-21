@@ -1,11 +1,18 @@
 """The v2 endpoint: one WebSocket carrying the whole API.
 
-    ws://host/api/v2/ws?api_key=…            (or the X-API-Key header)
+    ws://host/api/v2/ws?api_key=…&owner=…    (or the X-API-Key / X-Nodus-Owner headers)
 
 Auth runs inline on the handshake: FastAPI's HTTP security dependencies do not
 execute for a WebSocket upgrade, so `require_api_key` cannot be reused here.
 The admin key is resolved once here too and carried on the connection, so an
 action never has to re-derive it from the socket.
+
+`owner` is *not* auth — it says which history this connection reads, not whether
+it may connect. A client keeps one and sends it on every handshake; without one
+the connection falls back to an identity derived from its address, so scripts
+still see what they created. `ready.owner` echoes the resolved key, which is how
+a client can tell whether the token it thinks it sent actually arrived. See
+`app/services/ownership.py`.
 
 `/api/v2/ws/{query_id}` is the same socket with one subscription pre-attached,
 for a client that only wants to watch a single run.
@@ -24,7 +31,10 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.api.v2.actions import REGISTRY
 from app.api.v2.session import Connection
 from app.core.config import settings
+from app.db.session import AsyncSessionLocal
 from app.schemas import stream as frames
+from app.services import ownership
+from app.services.errors import NotFound
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +71,31 @@ async def _serve(websocket: WebSocket, query_id: UUID | None = None) -> None:
         return
 
     await websocket.accept()
-    connection = Connection(websocket, is_admin=_is_admin(websocket))
+    connection = Connection(
+        websocket,
+        is_admin=_is_admin(websocket),
+        owner_token=_presented(websocket, "x-nodus-owner", "owner"),
+    )
     heartbeat = asyncio.create_task(connection.heartbeat_forever(), name="ws-heartbeat")
 
     try:
         resumed: list[str] = []
         if query_id is not None:
+            # A run in the URL is still a read of somebody's run, so it is
+            # checked before it is attached. Closed rather than answered: the
+            # frame that would say "not yours" is the frame that confirms the id
+            # exists, and there is no request id to attach an error to yet.
+            try:
+                async with AsyncSessionLocal() as db:
+                    await ownership.require_query(
+                        query_id,
+                        db,
+                        owner=connection.owner_key,
+                        is_admin=connection.is_admin,
+                    )
+            except NotFound:
+                await websocket.close(code=4404, reason="Query not found")
+                return
             since = int(websocket.query_params.get("since") or 0)
             await connection.subscribe(query_id, since=since)
             resumed = connection.subscriptions()
@@ -76,6 +105,7 @@ async def _serve(websocket: WebSocket, query_id: UUID | None = None) -> None:
                 heartbeat_seconds=settings.ws_heartbeat_seconds,
                 actions=sorted(REGISTRY),
                 resumed_subscriptions=resumed,
+                owner=connection.owner_key,
             )
         )
 

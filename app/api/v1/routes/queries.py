@@ -15,6 +15,7 @@ from app.api.v1.deps import (
     DBSession,
     EditRateLimit,
     InterpretRateLimit,
+    Owner,
     PageParams,
     RunRateLimit,
 )
@@ -30,7 +31,7 @@ from app.schemas.query import (
     QueryWithPapersRead,
 )
 from app.schemas.report import FollowUpCreate, ReportRead, ReportUpdate, SectionNarrativeUpdate
-from app.services import export, query_assessor, report_edit, runner, synthesizer
+from app.services import export, ownership, query_assessor, report_edit, runner, synthesizer
 from app.services.errors import Forbidden
 from app.services.pipeline import run_pipeline_safe
 
@@ -64,6 +65,7 @@ async def create_query(
     body: QueryCreate,
     db: DBSession,
     admin: AdminCaller,
+    owner: Owner,
     wait: bool = QueryParam(
         False,
         description="Admin only. Run the pipeline inline and return only when it "
@@ -79,7 +81,7 @@ async def create_query(
     _require_admin_for_wait(wait, admin)
 
     async with runner.admission() as reserved:
-        query = Query(raw_query=body.query, status=QueryStatus.pending)
+        query = Query(raw_query=body.query, status=QueryStatus.pending, owner_key=owner)
         db.add(query)
         await db.commit()
         await db.refresh(query)
@@ -109,18 +111,30 @@ async def interpret_query(body: QueryInterpret) -> QueryInterpretation:
 
 
 @router.get("/", response_model=list[QueryRead])
-async def list_queries(db: DBSession, page: PageParams) -> list[QueryRead]:
-    """List queries, newest first."""
+async def list_queries(
+    db: DBSession, page: PageParams, owner: Owner, admin: AdminCaller
+) -> list[QueryRead]:
+    """List this caller's queries, newest first.
+
+    Scoped on `owner_key`: a listing is a history, and one reader's history is
+    not another's. Rows written before ownership existed carry no owner and are
+    visible with the admin key only.
+    """
     result = await db.execute(
-        select(Query).order_by(Query.created_at.desc()).limit(page.limit).offset(page.offset)
+        ownership.scope(select(Query), owner, is_admin=admin)
+        .order_by(Query.created_at.desc())
+        .limit(page.limit)
+        .offset(page.offset)
     )
     return [QueryRead.model_validate(q) for q in result.scalars().all()]
 
 
 @router.get("/{query_id}", response_model=QueryWithPapersRead)
-async def get_query(query_id: UUID, db: DBSession) -> QueryWithPapersRead:
+async def get_query(
+    query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller
+) -> QueryWithPapersRead:
     """Return query status and ranked papers."""
-    query = await _get_query_or_404(query_id, db)
+    query = await _get_query_or_404(query_id, db, owner, admin)
 
     qp_result = await db.execute(
         select(QueryPaper)
@@ -145,9 +159,9 @@ async def get_query(query_id: UUID, db: DBSession) -> QueryWithPapersRead:
 
 
 @router.get("/{query_id}/progress")
-async def get_progress(query_id: UUID, db: DBSession) -> dict:
+async def get_progress(query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller) -> dict:
     """Replay the progress events recorded for a query (WebSocket alternative)."""
-    query = await _get_query_or_404(query_id, db)
+    query = await _get_query_or_404(query_id, db, owner, admin)
     return {
         "query_id": str(query_id),
         "status": str(query.status),
@@ -157,9 +171,9 @@ async def get_progress(query_id: UUID, db: DBSession) -> dict:
 
 
 @router.get("/{query_id}/report", response_model=ReportRead)
-async def get_report(query_id: UUID, db: DBSession) -> ReportRead:
+async def get_report(query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller) -> ReportRead:
     """Return the synthesized three-axis report."""
-    await _get_query_or_404(query_id, db)
+    await _get_query_or_404(query_id, db, owner, admin)
     report = await synthesizer.load_report(query_id, db)
     if not report:
         raise HTTPException(status_code=404, detail="Report not generated yet")
@@ -172,9 +186,11 @@ async def get_report(query_id: UUID, db: DBSession) -> ReportRead:
     status_code=201,
     dependencies=[RunRateLimit],
 )
-async def regenerate_report(query_id: UUID, db: DBSession) -> ReportRead:
+async def regenerate_report(
+    query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller
+) -> ReportRead:
     """Regenerate the report from current clusters (after user edits)."""
-    query = await _get_query_or_404(query_id, db)
+    query = await _get_query_or_404(query_id, db, owner, admin)
     report = await synthesizer.generate_report(query_id, query.raw_query, db)
     if not report:
         raise HTTPException(status_code=409, detail="No clusters available to synthesize")
@@ -186,21 +202,25 @@ async def regenerate_report(query_id: UUID, db: DBSession) -> ReportRead:
     response_model=ReportRead,
     dependencies=[EditRateLimit],
 )
-async def refresh_report_sources(query_id: UUID, db: DBSession) -> ReportRead:
+async def refresh_report_sources(
+    query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller
+) -> ReportRead:
     """Refresh the claim rows behind each section without re-synthesising.
 
     An edit, not a run: no model is called, so it is throttled as a database
     write rather than through the pipeline gate. Narratives and caveats are left
     untouched, which is the point — a regeneration would rewrite them.
     """
-    await _get_query_or_404(query_id, db)
+    await _get_query_or_404(query_id, db, owner, admin)
     return ReportRead.model_validate(await report_edit.refresh_sources(query_id, db))
 
 
 @router.patch("/{query_id}/report", response_model=ReportRead, dependencies=[EditRateLimit])
-async def update_report(query_id: UUID, body: ReportUpdate, db: DBSession) -> ReportRead:
+async def update_report(
+    query_id: UUID, body: ReportUpdate, db: DBSession, owner: Owner, admin: AdminCaller
+) -> ReportRead:
     """Phase 9 — edit report front matter or replace sections wholesale."""
-    await _get_query_or_404(query_id, db)
+    await _get_query_or_404(query_id, db, owner, admin)
     report = await synthesizer.load_report(query_id, db)
     if not report:
         raise HTTPException(status_code=404, detail="Report not generated yet")
@@ -226,9 +246,11 @@ async def update_report_section(
     cluster_id: UUID,
     body: SectionNarrativeUpdate,
     db: DBSession,
+    owner: Owner,
+    admin: AdminCaller,
 ) -> ReportRead:
     """Phase 9 — edit one section's prose in place."""
-    await _get_query_or_404(query_id, db)
+    await _get_query_or_404(query_id, db, owner, admin)
     report = await synthesizer.load_report(query_id, db)
     if not report:
         raise HTTPException(status_code=404, detail="Report not generated yet")
@@ -253,10 +275,12 @@ async def update_report_section(
 async def export_report(
     query_id: UUID,
     db: DBSession,
+    owner: Owner,
+    admin: AdminCaller,
     format: str = QueryParam("markdown", pattern="^(markdown|md|json|html)$"),
 ) -> Response:
     """Export the report as markdown, JSON, or print-ready HTML (→ PDF)."""
-    query = await _get_query_or_404(query_id, db)
+    query = await _get_query_or_404(query_id, db, owner, admin)
     report = await synthesizer.load_report(query_id, db)
     if not report:
         raise HTTPException(status_code=404, detail="Report not generated yet")
@@ -288,6 +312,7 @@ async def create_followup(
     body: FollowUpCreate,
     db: DBSession,
     admin: AdminCaller,
+    owner: Owner,
     wait: bool = QueryParam(
         False, description="Admin only. Run inline instead of in the background"
     ),
@@ -303,12 +328,15 @@ async def create_followup(
     # Admitted before the parent lookup, so a submission refused for capacity
     # does not cost a database round trip — and so this matches the v2 action.
     async with runner.admission() as reserved:
-        parent = await _get_query_or_404(query_id, db)
+        parent = await _get_query_or_404(query_id, db, owner, admin)
         combined = f"{parent.raw_query} — follow-up: {body.query}"
         child = Query(
             raw_query=body.query,
             status=QueryStatus.pending,
             parent_query_id=parent.id,
+            # The follow-up is the parent's owner's, not the caller's: an admin
+            # narrowing someone's question must not take the run away from them.
+            owner_key=parent.owner_key or owner,
         )
         db.add(child)
         await db.commit()
@@ -324,8 +352,10 @@ async def create_followup(
 
 
 @router.get("/{query_id}/followups", response_model=list[QueryRead])
-async def list_followups(query_id: UUID, db: DBSession) -> list[QueryRead]:
-    await _get_query_or_404(query_id, db)
+async def list_followups(
+    query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller
+) -> list[QueryRead]:
+    await _get_query_or_404(query_id, db, owner, admin)
     result = await db.execute(
         select(Query).where(Query.parent_query_id == query_id).order_by(Query.created_at)
     )
@@ -333,9 +363,9 @@ async def list_followups(query_id: UUID, db: DBSession) -> list[QueryRead]:
 
 
 @router.delete("/{query_id}", status_code=204, dependencies=[EditRateLimit])
-async def delete_query(query_id: UUID, db: DBSession) -> Response:
+async def delete_query(query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller) -> Response:
     """Delete a query and everything derived from it (papers stay global)."""
-    query = await _get_query_or_404(query_id, db)
+    query = await _get_query_or_404(query_id, db, owner, admin)
     await db.delete(query)
     await db.commit()
     hub.clear(query_id)
@@ -343,12 +373,12 @@ async def delete_query(query_id: UUID, db: DBSession) -> Response:
 
 
 @router.get("/{query_id}/stats")
-async def query_stats(query_id: UUID, db: DBSession) -> dict:
+async def query_stats(query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller) -> dict:
     """Counts across the pipeline — the quickest health check for a run."""
     from app.models.claim import Claim
     from app.models.cluster import ClaimCluster
 
-    query = await _get_query_or_404(query_id, db)
+    query = await _get_query_or_404(query_id, db, owner, admin)
 
     claim_count = (
         await db.execute(
@@ -374,8 +404,14 @@ async def query_stats(query_id: UUID, db: DBSession) -> dict:
     }
 
 
-async def _get_query_or_404(query_id: UUID, db: DBSession) -> Query:
-    query = (await db.execute(select(Query).where(Query.id == query_id))).scalar_one_or_none()
-    if not query:
-        raise HTTPException(status_code=404, detail="Query not found")
-    return query
+async def _get_query_or_404(
+    query_id: UUID, db: DBSession, owner: str, admin: bool = False
+) -> Query:
+    """The query, if it belongs to this caller.
+
+    Every route here goes through this one function, which is why scoping the
+    surface was a change to it rather than to twelve handlers. Someone else's
+    query is a 404 and not a 403: a 403 confirms the id exists, which is the
+    fact being withheld.
+    """
+    return await ownership.require_query(query_id, db, owner=owner, is_admin=admin)

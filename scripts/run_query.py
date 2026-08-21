@@ -25,7 +25,7 @@ from app.models.claim import Claim
 from app.models.cluster import ClaimCluster
 from app.models.paper import QueryPaper
 from app.models.query import Query, QueryStatus
-from app.services import synthesizer
+from app.services import ownership, synthesizer
 from app.services.pipeline import run_pipeline_safe
 
 # Reports contain non-breaking hyphens and dashes that a cp1252 console cannot
@@ -63,6 +63,13 @@ async def main() -> int:
         default="tests/reports",
         help="Where exports are written (created if missing)",
     )
+    parser.add_argument(
+        "--owner",
+        default=None,
+        help="Owner token this run belongs to. Pass the token from a browser's "
+        "local storage (nodus.owner) to have the run show up in that browser's "
+        "history; the default owns it to the CLI, which no browser reads.",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -80,8 +87,14 @@ async def main() -> int:
     print(f"embeddings   : {settings.embedding_provider}")
     print(f"papers       : top {settings.top_k_papers}\n")
 
+    # A run with no owner is invisible to every UI (see
+    # app/services/ownership.py), which would make a CLI run look like it never
+    # happened. `--owner` is how a CLI run lands in a browser's history.
+    owner = ownership.resolve_owner(args.owner, client_host="cli")
+    print(f"owner        : {owner}\n")
+
     async with AsyncSessionLocal() as db:
-        query = Query(raw_query=args.query, status=QueryStatus.pending)
+        query = Query(raw_query=args.query, status=QueryStatus.pending, owner_key=owner)
         db.add(query)
         await db.commit()
         await db.refresh(query)

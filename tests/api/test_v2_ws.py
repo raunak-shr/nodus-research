@@ -5,7 +5,7 @@ here (`meta.*`, subscription management). The data-path actions are thin wrapper
 over services covered by their own tests and by scripts/run_query.py end to end.
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -16,6 +16,9 @@ from app.core.config import settings
 from app.core.events import hub
 from app.main import app
 from app.schemas.stream import PROTOCOL_VERSION
+from app.services import ownership, runner
+from app.services.errors import NotFound
+from tests.conftest import owns_queries
 
 
 def _ready(socket) -> dict:
@@ -108,7 +111,11 @@ def test_subscribe_replays_buffered_events_then_streams_live_ones():
     hub.publish(query_id, "papers_retrieved", count=20)
 
     try:
-        with TestClient(app) as client, client.websocket_connect("/api/v2/ws") as socket:
+        with (
+            owns_queries(),
+            TestClient(app) as client,
+            client.websocket_connect("/api/v2/ws") as socket,
+        ):
             _ready(socket)
             socket.send_json(
                 {"id": "s", "action": "queries.subscribe", "params": {"query_id": str(query_id)}}
@@ -149,7 +156,11 @@ def test_subscribe_since_skips_events_the_client_already_has():
         hub.publish(query_id, "tick", index=index)
 
     try:
-        with TestClient(app) as client, client.websocket_connect("/api/v2/ws") as socket:
+        with (
+            owns_queries(),
+            TestClient(app) as client,
+            client.websocket_connect("/api/v2/ws") as socket,
+        ):
             _ready(socket)
             socket.send_json(
                 {
@@ -170,6 +181,7 @@ def test_preattached_socket_subscribes_on_connect():
 
     try:
         with (
+            owns_queries(),
             TestClient(app) as client,
             client.websocket_connect(f"/api/v2/ws/{query_id}") as socket,
         ):
@@ -186,7 +198,11 @@ def test_preattached_socket_subscribes_on_connect():
 def test_unsubscribe_stops_delivery():
     query_id = uuid4()
     try:
-        with TestClient(app) as client, client.websocket_connect("/api/v2/ws") as socket:
+        with (
+            owns_queries(),
+            TestClient(app) as client,
+            client.websocket_connect("/api/v2/ws") as socket,
+        ):
             _ready(socket)
             socket.send_json(
                 {"id": "1", "action": "queries.subscribe", "params": {"query_id": str(query_id)}}
@@ -223,3 +239,183 @@ def test_socket_requires_the_api_key_when_one_is_configured():
 
         with client.websocket_connect("/api/v2/ws", headers={"X-API-Key": "secret-key"}) as socket:
             assert _ready(socket)["protocol"] == PROTOCOL_VERSION
+
+
+def test_chat_ask_answers_from_the_report_over_the_socket():
+    """The frontend's whole chat surface is this one action, so its wiring —
+    params, dispatch, serialisation — is worth pinning without a model."""
+    from app.schemas.chat import ChatAnswerRead, ChatCitation, ChatGrounding
+
+    query_id, cluster_id = uuid4(), uuid4()
+    answer = ChatAnswerRead(
+        query_id=query_id,
+        question="Does blinding change the estimate?",
+        answer="Blinded trials halve it [S1].",
+        covered=True,
+        citations=[
+            ChatCitation(
+                label="S1", kind="section", heading="Blinding shrinks it", cluster_id=cluster_id
+            )
+        ],
+        grounding=ChatGrounding(
+            report_title="Exercise and depression",
+            sections_total=2,
+            clusters_total=3,
+            clusters_without_section=1,
+            blocks_sent=4,
+            truncated=False,
+        ),
+        llm_model_used="stub-model",
+    )
+
+    with (
+        owns_queries(),
+        patch("app.services.report_chat.answer", AsyncMock(return_value=answer)) as asked,
+        TestClient(app) as client,
+        client.websocket_connect("/api/v2/ws") as socket,
+    ):
+        _ready(socket)
+        socket.send_json(
+            {
+                "id": "1",
+                "action": "chat.ask",
+                "params": {
+                    "query_id": str(query_id),
+                    "question": "Does blinding change the estimate?",
+                    "history": [{"role": "user", "content": "What did this find?"}],
+                },
+            }
+        )
+        frame = socket.receive_json()
+
+    assert frame["type"] == "result"
+    data = frame["data"]
+    assert data["covered"] is True
+    assert data["citations"][0]["cluster_id"] == str(cluster_id)
+    assert data["grounding"]["clusters_without_section"] == 1
+    # The thread travels with the question: the socket keeps no chat state.
+    history = asked.await_args.args[2]
+    assert [turn.role for turn in history] == ["user"]
+
+
+def test_chat_ask_is_rate_limited_as_a_chat_rather_than_as_a_read():
+    """One LLM call per question, so it cannot be free like a database read."""
+    from app.api.v2.actions import REGISTRY
+    from app.services import limits
+
+    assert REGISTRY["chat.ask"].cost == "chat"
+    assert limits.limiter_for_cost("chat") is limits.chat_limiter
+
+
+def test_a_question_too_short_to_be_one_is_refused_before_the_handler():
+    with TestClient(app) as client, client.websocket_connect("/api/v2/ws") as socket:
+        _ready(socket)
+        socket.send_json(
+            {"id": "2", "action": "chat.ask", "params": {"query_id": str(uuid4()), "question": "?"}}
+        )
+        frame = socket.receive_json()
+
+        assert frame["type"] == "error"
+        assert frame["error"]["code"] == "bad_request"
+
+
+# ------------------------------------------------------- whose history it is
+
+
+def test_the_ready_frame_echoes_the_owner_the_handshake_resolved():
+    """A client has to be able to see whether the token it sent arrived: a
+    silently dropped one means its history quietly becomes somebody else's
+    bucket, shared with everything on the same address."""
+    with TestClient(app) as client:
+        with client.websocket_connect("/api/v2/ws?owner=browser-abc-123456") as socket:
+            assert _ready(socket)["owner"] == "t:browser-abc-123456"
+
+        # No token: the address stands in for one, and the prefix says so.
+        with client.websocket_connect("/api/v2/ws") as socket:
+            assert _ready(socket)["owner"].startswith("a:")
+
+
+def test_the_owner_may_also_arrive_as_a_header():
+    with TestClient(app) as client:
+        with client.websocket_connect(
+            "/api/v2/ws", headers={"X-Nodus-Owner": "header-owner-1234"}
+        ) as socket:
+            assert _ready(socket)["owner"] == "t:header-owner-1234"
+
+
+def test_subscribing_to_someone_elses_run_is_refused_as_not_found():
+    """A query id is not a capability. `not_found` rather than `forbidden`,
+    because the alternative confirms the id exists."""
+    query_id = uuid4()
+    hub.publish(query_id, "pipeline_started", raw_query="not yours")
+
+    try:
+        with (
+            patch.object(
+                ownership,
+                "require_query",
+                AsyncMock(side_effect=NotFound("Query not found", query_id=str(query_id))),
+            ),
+            TestClient(app) as client,
+            client.websocket_connect("/api/v2/ws?owner=someone-else-9999") as socket,
+        ):
+            _ready(socket)
+            socket.send_json(
+                {"id": "s", "action": "queries.subscribe", "params": {"query_id": str(query_id)}}
+            )
+            frame = socket.receive_json()
+
+            assert frame["type"] == "error"
+            assert frame["error"]["code"] == "not_found"
+
+            # And no events leak afterwards: the next frame is a plain reply.
+            hub.publish(query_id, "papers_retrieved", count=20)
+            socket.send_json({"id": "h", "action": "meta.health"})
+            assert socket.receive_json()["id"] == "h"
+    finally:
+        hub.clear(query_id)
+
+
+def test_a_preattached_socket_for_someone_elses_run_is_closed():
+    """The URL form has no request id to answer, so the refusal is the close.
+
+    After the accept, deliberately: a close sent before it reaches a browser as
+    a bare 1006, while this one carries the code and reason the client can read.
+    So the disconnect surfaces on the first read, not on connect.
+    """
+    query_id = uuid4()
+    with (
+        patch.object(
+            ownership,
+            "require_query",
+            AsyncMock(side_effect=NotFound("Query not found", query_id=str(query_id))),
+        ),
+        TestClient(app) as client,
+        client.websocket_connect(f"/api/v2/ws/{query_id}?owner=someone-else-9999") as socket,
+    ):
+        with pytest.raises(WebSocketDisconnect) as closed:
+            socket.receive_json()
+
+    assert closed.value.code == 4404
+
+
+def test_cancelling_someone_elses_run_is_refused_before_the_registry_is_touched():
+    query_id = uuid4()
+    with (
+        patch.object(
+            ownership,
+            "require_query",
+            AsyncMock(side_effect=NotFound("Query not found", query_id=str(query_id))),
+        ),
+        patch.object(runner, "cancel") as cancel,
+        TestClient(app) as client,
+        client.websocket_connect("/api/v2/ws?owner=someone-else-9999") as socket,
+    ):
+        _ready(socket)
+        socket.send_json(
+            {"id": "c", "action": "queries.cancel", "params": {"query_id": str(query_id)}}
+        )
+        frame = socket.receive_json()
+
+    assert frame["error"]["code"] == "not_found"
+    cancel.assert_not_called()

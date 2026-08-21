@@ -510,10 +510,10 @@ export function ReportScreen(): ReactElement {
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={() => store.go('followup')}
+                onClick={() => store.go('chat')}
                 style={{ whiteSpace: 'nowrap', fontSize: 13 }}
               >
-                Ask a follow-up
+                Ask the report
               </button>
               <button
                 type="button"
