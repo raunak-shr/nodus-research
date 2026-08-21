@@ -1,4 +1,7 @@
-# Nodus
+<h1>
+  <img src="frontend/public/favicon.svg" alt="" width="30" height="30" align="top">
+  Nodus
+</h1>
 
 Research paper analysis tool that retrieves, normalizes, and extracts structured claims from academic papers, then clusters them across papers to surface evidence lineage, disagreement, and quality weighting.
 
@@ -316,7 +319,7 @@ Building a frontend? Skip to [API v2](#api-v2--the-whole-api-on-one-websocket) â
 |---|---|---|
 | `POST` | `/api/v1/queries/` | Submit a query. Runs in the background; add `?wait=true` to block. |
 | `POST` | `/api/v1/queries/interpret` | Read a draft question back and say whether running it is worth the five minutes. Stores nothing, starts nothing. |
-| `GET` | `/api/v1/queries/` | List queries, newest first |
+| `GET` | `/api/v1/queries/` | List this caller's queries, newest first |
 | `GET` | `/api/v1/queries/{id}` | Status, structured query, ranked papers |
 | `GET` | `/api/v1/queries/{id}/stats` | Counts across every pipeline stage |
 | `GET` | `/api/v1/queries/{id}/progress` | Replay recorded progress events |
@@ -425,6 +428,7 @@ Heartbeats continue for as long as the connection is open, including after a run
 | papers | `papers.list`, `papers.get`, `papers.normalized` |
 | claims | `claims.list`, `clusters.list`, `clusters.get`, `clusters.update`, `clusters.set_stance`, `clusters.add_claim`, `clusters.remove_claim` |
 | report | `report.get`, `report.regenerate`, `report.update`, `report.section.update`, `report.render`, `report.export`, `report.pdf` |
+| chat | `chat.ask` |
 
 ```js
 const ws = new WebSocket("ws://localhost:8000/api/v2/ws")

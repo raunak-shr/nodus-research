@@ -60,6 +60,7 @@ src/
 ├── lib/
 │   ├── ws.ts           # the /api/v2/ws client: request/reply, events, seq gaps, resume
 │   ├── types.ts        # hand-written mirrors of app/schemas/* — the contract
+│   ├── reportChat.ts   # offline answering: report passages matched, never written
 │   ├── evidence.ts     # provenance kinds, coverage, stance/tier, quality arithmetic
 │   ├── viewmodels.ts   # what screens read; both data sources produce these
 │   └── format.ts       # numbers, clocks, dates, citations
@@ -89,3 +90,14 @@ src/
   hard-coded numbers.
 - **The print sheet is a layout, not a screenshot.** It matches what the backend's
   PDF export renders in Chromium.
+- **Ask the report is grounded, and says when it is not.** The thread calls
+  `chat.ask`, which answers from the report and its clusters only. An answer with
+  `covered: false` is rendered as the loudest state on the screen, with the one
+  remedy the chat does not have — `queries.followup`, a real run — attached to it.
+  Citations are chips that open the cluster behind them, so provenance is a
+  destination rather than a label.
+- **A thread belongs to one report.** It is dropped whenever the active query
+  changes: nothing on screen would say which report an old answer came from.
+- **Offline, answers are matched, not written.** With no socket there is no model,
+  so `reportChat.ts` quotes the report's own best-matching sentences and the turn
+  is labelled as matched. The demo build never implies a model answered.

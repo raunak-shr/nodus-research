@@ -5,7 +5,7 @@ here (`meta.*`, subscription management). The data-path actions are thin wrapper
 over services covered by their own tests and by scripts/run_query.py end to end.
 """
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
@@ -223,3 +223,80 @@ def test_socket_requires_the_api_key_when_one_is_configured():
 
         with client.websocket_connect("/api/v2/ws", headers={"X-API-Key": "secret-key"}) as socket:
             assert _ready(socket)["protocol"] == PROTOCOL_VERSION
+
+
+def test_chat_ask_answers_from_the_report_over_the_socket():
+    """The frontend's whole chat surface is this one action, so its wiring —
+    params, dispatch, serialisation — is worth pinning without a model."""
+    from app.schemas.chat import ChatAnswerRead, ChatCitation, ChatGrounding
+
+    query_id, cluster_id = uuid4(), uuid4()
+    answer = ChatAnswerRead(
+        query_id=query_id,
+        question="Does blinding change the estimate?",
+        answer="Blinded trials halve it [S1].",
+        covered=True,
+        citations=[
+            ChatCitation(
+                label="S1", kind="section", heading="Blinding shrinks it", cluster_id=cluster_id
+            )
+        ],
+        grounding=ChatGrounding(
+            report_title="Exercise and depression",
+            sections_total=2,
+            clusters_total=3,
+            clusters_without_section=1,
+            blocks_sent=4,
+            truncated=False,
+        ),
+        llm_model_used="stub-model",
+    )
+
+    with (
+        patch("app.services.report_chat.answer", AsyncMock(return_value=answer)) as asked,
+        TestClient(app) as client,
+        client.websocket_connect("/api/v2/ws") as socket,
+    ):
+        _ready(socket)
+        socket.send_json(
+            {
+                "id": "1",
+                "action": "chat.ask",
+                "params": {
+                    "query_id": str(query_id),
+                    "question": "Does blinding change the estimate?",
+                    "history": [{"role": "user", "content": "What did this find?"}],
+                },
+            }
+        )
+        frame = socket.receive_json()
+
+    assert frame["type"] == "result"
+    data = frame["data"]
+    assert data["covered"] is True
+    assert data["citations"][0]["cluster_id"] == str(cluster_id)
+    assert data["grounding"]["clusters_without_section"] == 1
+    # The thread travels with the question: the socket keeps no chat state.
+    history = asked.await_args.args[2]
+    assert [turn.role for turn in history] == ["user"]
+
+
+def test_chat_ask_is_rate_limited_as_a_chat_rather_than_as_a_read():
+    """One LLM call per question, so it cannot be free like a database read."""
+    from app.api.v2.actions import REGISTRY
+    from app.services import limits
+
+    assert REGISTRY["chat.ask"].cost == "chat"
+    assert limits.limiter_for_cost("chat") is limits.chat_limiter
+
+
+def test_a_question_too_short_to_be_one_is_refused_before_the_handler():
+    with TestClient(app) as client, client.websocket_connect("/api/v2/ws") as socket:
+        _ready(socket)
+        socket.send_json(
+            {"id": "2", "action": "chat.ask", "params": {"query_id": str(uuid4()), "question": "?"}}
+        )
+        frame = socket.receive_json()
+
+        assert frame["type"] == "error"
+        assert frame["error"]["code"] == "bad_request"

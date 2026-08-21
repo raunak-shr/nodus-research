@@ -71,6 +71,7 @@ def test_every_agent_schema_survives_translation():
         ReportSummary,
         SectionHeading,
     )
+    from app.schemas.chat import ReportAnswer
     from app.schemas.extraction import ExtractionOutput, NormalizationOutput
     from app.schemas.query import QueryAssessment, StructuredQuery
 
@@ -83,6 +84,7 @@ def test_every_agent_schema_survives_translation():
         ClusterNarrative,
         SectionHeading,
         ReportSummary,
+        ReportAnswer,
     ):
         rendered = str(gemini.to_gemini_schema(model))
         assert "$ref" not in rendered, model.__name__

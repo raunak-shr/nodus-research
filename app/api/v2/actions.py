@@ -43,6 +43,7 @@ from app.services import (
     pdf_export,
     provenance,
     query_assessor,
+    report_chat,
     report_edit,
     report_render,
     runner,
@@ -641,6 +642,25 @@ async def report_export(ctx: ActionContext, params: frames.ExportReport) -> dict
         "encoding": "utf-8",
         "content": content,
     }
+
+
+@action(
+    "chat.ask",
+    frames.AskReport,
+    "Ask a question about one query's report, answered from it alone",
+    cost="chat",
+)
+async def chat_ask(ctx: ActionContext, params: frames.AskReport) -> dict[str, Any]:
+    """Grounded in this query's report and clusters, and in nothing else.
+
+    Not a retrieval path: no paper is fetched and no claim is re-extracted, so a
+    question the report does not cover comes back `covered: false` rather than
+    answered from the model's own recall. Asking something the report cannot
+    settle is what `queries.followup` is for — a run, with a run's cost.
+    """
+    async with AsyncSessionLocal() as db:
+        answer = await report_chat.answer(params.query_id, params.question, params.history, db)
+        return _dump(answer)
 
 
 @action("report.pdf", frames.QueryRef, "Report as a PDF, base64-encoded for download")

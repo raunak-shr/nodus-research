@@ -2,6 +2,8 @@
  *  fixtures — produce these, so no screen knows which one it is showing. */
 
 import type {
+  ChatCitation,
+  ChatGrounding,
   ClaimSourceFields,
   DisagreementDriver,
   EventFrame,
@@ -108,6 +110,30 @@ export interface DegradedPaper {
   id: string
   title: string
   reason: string
+}
+
+/** One turn in the thread on the Ask-the-report screen.
+ *
+ *  Answers carry where they came from: the blocks cited, whether the report
+ *  covered the question at all, and — when there was no backend to answer — that
+ *  the passages were matched out of the report rather than written about it. A
+ *  reader has to be able to tell those two apart at a glance, so nothing here
+ *  is allowed to be inferred from the prose.
+ */
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  text: string
+  at: string
+  /** Assistant turns only. False when the report does not answer the question. */
+  covered?: boolean
+  citations?: ChatCitation[]
+  grounding?: ChatGrounding
+  /** Quoted out of the report by lexical match, with no model involved. */
+  matched?: boolean
+  /** The turn is in flight, or the request for it failed. */
+  pending?: boolean
+  failed?: string | null
 }
 
 export interface DriverView {

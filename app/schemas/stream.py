@@ -27,6 +27,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.chat import ChatTurn
 from app.schemas.cluster import ClusterUpdate
 from app.schemas.report import ReportUpdate, SectionNarrativeUpdate
 
@@ -199,6 +200,23 @@ class RenderReport(BaseModel):
 class ExportReport(BaseModel):
     query_id: UUID
     format: Literal["markdown", "json", "html"] = "markdown"
+
+
+class AskReport(BaseModel):
+    """A question about one query's finished report.
+
+    `history` is the thread so far, sent by the client on every question: this
+    action stores nothing, so the socket has no chat state to lose on a
+    reconnect and two readers of the same report never see each other's turns.
+    """
+
+    query_id: UUID
+    question: str = Field(min_length=3, max_length=600)
+    history: list[ChatTurn] = Field(
+        default_factory=list,
+        max_length=40,
+        description="Earlier turns, oldest first. Only the last few are shown to the model.",
+    )
 
 
 class FollowUp(BaseModel):
