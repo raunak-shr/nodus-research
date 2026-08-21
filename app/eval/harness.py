@@ -248,7 +248,13 @@ async def _collect(query_id: UUID, case: EvalCase, duration: float) -> EvalResul
 async def run_case(case: EvalCase) -> EvalResult:
     """Run one question end to end and collect metrics."""
     async with AsyncSessionLocal() as db:
-        query = Query(raw_query=case.question, status=QueryStatus.pending)
+        # Owned to the harness rather than left NULL: a NULL owner is a row that
+        # predates ownership and is admin-only, and eval runs are neither.
+        query = Query(
+            raw_query=case.question,
+            status=QueryStatus.pending,
+            owner_key="a:eval-harness",
+        )
         db.add(query)
         await db.commit()
         await db.refresh(query)

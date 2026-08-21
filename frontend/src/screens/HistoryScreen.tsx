@@ -6,13 +6,22 @@ import { useStore } from '../state/store'
 
 export function HistoryScreen(): ReactElement {
   const store = useStore()
+  // A history is one reader's, so the screen says whose rather than leaving a
+  // short list looking like the deployment has only ever run four questions.
+  const scope = store.ownerNote
 
   return (
     <div className="screen" style={{ maxWidth: 1060 }}>
       <div className="kicker" style={{ marginBottom: 14 }}>
         History
       </div>
-      <h2 style={{ fontSize: 30, letterSpacing: '-.022em', margin: '0 0 30px' }}>Past runs</h2>
+      <h2 style={{ fontSize: 30, letterSpacing: '-.022em', margin: '0 0 8px' }}>Past runs</h2>
+      <p className="dim" style={{ fontSize: 13.5, lineHeight: 1.6, margin: '0 0 30px', maxWidth: 620 }}>
+        {store.mode === 'demo'
+          ? 'Fixture runs from the demo corpus. Nothing here was stored, and nothing is scoped — on a live connection this list is only the runs this browser started.'
+          : 'Only the runs started from here. Nodus has no accounts, so a history belongs to the browser that made it: clearing site data mints a new identity, and these runs stop being reachable from this one.'}
+        {scope && store.mode !== 'demo' ? <span className="faint"> {scope}.</span> : null}
+      </p>
 
       <div
         className="kicker-sm"

@@ -3,13 +3,13 @@
 import secrets
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Query, Request, Security, status
+from fastapi import Depends, Header, HTTPException, Query, Request, Security, status
 from fastapi.security import APIKeyHeader
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import get_session
-from app.services import limits
+from app.services import limits, ownership
 
 DBSession = Annotated[AsyncSession, Depends(get_session)]
 
@@ -50,6 +50,29 @@ async def is_admin(key: str | None = Security(_admin_key_header)) -> bool:
 
 
 AdminCaller = Annotated[bool, Depends(is_admin)]
+
+
+async def resolve_owner(
+    request: Request,
+    x_nodus_owner: Annotated[
+        str | None, Header(description="Owner token: which history this request reads")
+    ] = None,
+) -> str:
+    """Whose history this request reads.
+
+    Not a credential — it is the identity the caller supplied, and it decides
+    which queries exist as far as this request is concerned. A caller that sends
+    nothing gets one derived from its address, so `curl` and the scripts can
+    still read back the runs they started. See `app/services/ownership.py`.
+    """
+    return ownership.resolve_owner(
+        x_nodus_owner,
+        client_host=request.client.host if request.client else None,
+        forwarded_for=request.headers.get("x-forwarded-for"),
+    )
+
+
+Owner = Annotated[str, Depends(resolve_owner)]
 
 
 def _client_key(request: Request) -> str:

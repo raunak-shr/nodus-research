@@ -21,6 +21,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { describeOwner, ownerToken } from '../lib/owner'
 import { NodusError, NodusSocket, resolveSocketUrl, type SocketGap, type SocketStatus } from '../lib/ws'
 import type {
   ChatAnswerRead,
@@ -99,6 +100,11 @@ interface Store {
    *  rendering an empty list that reads like "nothing here". */
   lastError: { action: string; message: string } | null
   config: ServerConfig | null
+  /** Whose history this session is reading, as the server resolved it, and a
+   *  sentence saying which of the two kinds it is. `queries` is only ever this
+   *  owner's runs — a listing is a history, and one reader's is not another's. */
+  owner: string | null
+  ownerNote: string | null
 
   question: string
   structured: StructuredQuery | null
@@ -257,6 +263,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const [connectionNote, setConnectionNote] = useState<string | null>(null)
   const [lastError, setLastError] = useState<{ action: string; message: string } | null>(null)
   const [config, setConfig] = useState<ServerConfig | null>(null)
+  const [owner, setOwner] = useState<string | null>(null)
 
   // Empty, deliberately: a question already in the box is a question somebody
   // is one click away from running by accident. The demo build is the exception
@@ -343,6 +350,9 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     const socket = new NodusSocket({
       url: resolveSocketUrl(),
       apiKey: import.meta.env.VITE_NODUS_API_KEY,
+      // Which history to read. Minted once per browser and kept in local
+      // storage, so this session sees its own runs and nobody else's.
+      owner: ownerToken(),
       maxRetries: 3,
       // Short: a real Nodus socket sends `ready` on the same round trip as the
       // upgrade, so waiting longer only leaves a reader looking at a blank app.
@@ -362,6 +372,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         everOpened = true
         setMode('live')
         setConnectionNote(null)
+        setOwner(socket.owner)
         // A reconnect re-subscribes, but the instance that answers may never
         // have seen this run. Ask the database where it actually got to.
         if (reconnected) {
@@ -1229,6 +1240,8 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       connectionNote,
       lastError,
       config,
+      owner,
+      ownerNote: mode === 'demo' ? 'Demo corpus — no history is stored' : describeOwner(owner),
       question,
       structured,
       interpretation,
@@ -1333,6 +1346,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       openCluster,
       openQuery,
       openSource,
+      owner,
       papers,
       queries,
       question,

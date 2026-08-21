@@ -126,6 +126,8 @@ app/
 │   ├── pdf_export.py           # print variant → PDF via headless Chromium
 │   ├── report_edit.py          # Phase 9 report edits (both surfaces)
 │   ├── cluster_edit.py         # Phase 9 cluster edits (both surfaces)
+│   ├── report_chat.py          # grounded Q&A over one finished report
+│   ├── ownership.py            # whose run is whose: history scoping
 │   ├── runner.py               # in-flight run registry: launch, cancel
 │   ├── errors.py               # transport-neutral domain errors
 │   ├── prompts.py              # every agent prompt, in one file
@@ -311,6 +313,8 @@ Embeddings are cached per claim, keyed by model: a provider swap discards stale 
 
 All `/api/v1` routes require `X-API-Key` when `API_KEY` is set; otherwise the API is open. `/health` stays public.
 
+Send `X-Nodus-Owner: <token>` to say **whose history this request reads** — listings and every query-scoped route are filtered on it, and a request without one falls back to an identity derived from its address. See [Whose history is whose](#whose-history-is-whose).
+
 Building a frontend? Skip to [API v2](#api-v2--the-whole-api-on-one-websocket) — one WebSocket carries every call plus the live pipeline stream. The v1 REST surface below remains supported.
 
 ### Queries
@@ -474,6 +478,68 @@ PDFs are cached by a hash of the rendered HTML, so re-downloading an unedited re
 uv run playwright install chromium
 ```
 
+### Asking the report
+
+`chat.ask` answers a question about one query's report, **from that report and its clusters and from nothing else**. It retrieves no paper, re-reads no PDF, and admits none of the model's own recall: the material is assembled server-side — front matter, one block per report section, plus any cluster the section cap dropped — each block labelled, ranked by overlap with the question, and trimmed to `REPORT_CHAT_CONTEXT_CHARS`.
+
+```js
+// chat.ask → {answer, covered, citations[], grounding, llm_model_used}
+ws.send(JSON.stringify({ id: "1", action: "chat.ask", params: {
+  query_id, question: "Does assessor blinding change the estimate?",
+  history: thread,      // the client's thread; nothing is stored server-side
+}}))
+```
+
+Three things a caller should rely on:
+
+- **`covered: false` is an answer, not an error.** A question the report cannot settle comes back saying so, with what the report does establish nearby. Answering it anyway would put untraceable sentences beside traceable ones, which is the one thing an evidence tool must not do. The remedy is `queries.followup` — a run, with a run's cost.
+- **Citations resolve to clusters.** Each cited label comes back with its heading and, for a section or cluster, its `cluster_id`, so a citation opens the cluster behind it rather than being a claim about provenance. A label the model invents is dropped.
+- **`grounding.truncated`** says the material did not all fit, which is the difference between "the report does not say" and "the part we sent does not say".
+
+Nothing is persisted: no chat table, no server-side session, and two readers of the same report never see each other's questions. Rate-limited in its own bucket (`RATE_LIMIT_CHAT_PER_MINUTE`), because a chat is used in bursts where the Interpret check is used once.
+
+### Whose history is whose
+
+Nodus has no accounts, and `API_KEY` — where it is set — is one shared value that
+says *this deployment is not open to the internet*. It says nothing about which of
+several readers is asking, so until now `GET /queries` returned every question
+anyone had ever run and a query id was enough to read anyone's report.
+
+A run is now stamped with an **owner**, and listings and query-scoped reads are
+filtered on it:
+
+| Presented | Resolved owner | Who that is |
+|---|---|---|
+| `?owner=<token>` or `X-Nodus-Owner: <token>` | `t:<token>` | One client. The frontend mints a token per browser and keeps it in local storage. |
+| nothing | `a:<address>` | Everything on that client address — the fallback that keeps `curl` and the scripts able to read back what they created. |
+| `owner_key IS NULL` in the database | — | Rows written before ownership existed. Visible with the admin key only. |
+
+The v2 handshake echoes the resolved key as `ready.owner`, so a client can tell
+whether the token it sent actually arrived — a dropped token silently means the
+address bucket, which is shared. The admin key (`X-Admin-Key` / `admin_key=`) is
+unscoped, because an operator debugging a deployment needs to see what is in it.
+
+**What is scoped**: everything addressed by a query or a cluster — `queries.list`,
+`queries.get`, `stats`, `delete`, `cancel`, `subscribe`, `events`, `followup(s)`,
+`papers.list`, `clusters.*`, every `report.*`, `chat.ask`, and both progress
+sockets. Someone else's id answers `not_found`, never `forbidden`: a 403 confirms
+the id exists, which is the fact being withheld.
+
+**What is not**: papers and claims. They are the global cache every query shares —
+a paper normalised once is reused — so they have no owner to check. A paper row
+cannot reveal *which question* someone asked about it, and that is what the
+scoping protects.
+
+**What this is not** is a security boundary, and the code says so where it lives
+(`app/services/ownership.py`): a token is a bearer secret in local storage, there
+is nothing to sign in to and nothing to revoke, and clearing site data mints a new
+one — the old runs become unreachable from that browser rather than deleted. If
+you need real isolation between people, that is accounts, and it starts here.
+
+One deployment note: `TRUST_FORWARDED_FOR` now also decides what the address
+fallback resolves to. Off (the default) it is the peer address; on, behind a proxy
+that rewrites `X-Forwarded-For`, it is the client-most entry.
+
 ### Operational limits
 
 The progress hub is in-process memory, by design: FastAPI WebSockets and heartbeats, no broker. Two consequences to plan around — **run the API with a single worker** (a client connected to worker B cannot see a run on worker A), and event history dies with the process (`queries.events` returns what is still buffered, `EVENT_REPLAY_MAX` events per query). Moving to multiple workers means Redis pub/sub plus a persisted event table.
@@ -545,6 +611,8 @@ Migrations do not run on container start — a failure mid-rollout would take th
 - **Claims are per-paper; clusters are per-query.** A paper's claims do not change with the question; the grouping does.
 - **One LLM call per cluster.** Theme, stances, and disagreement drivers are the same judgement — splitting them would double cost and let the passes disagree.
 - **Quality scoring is deterministic, not LLM-judged.** A reviewer must be able to see why a tier was assigned, and override it.
+- **A history belongs to a reader, not to the deployment.** Queries carry an `owner_key`; listings filter on it and a foreign query id answers `not_found`. See *Whose history is whose*.
+- **Chat over a report is grounded or it refuses.** `chat.ask` answers from the report and its clusters only, and says `covered: false` rather than filling a gap from the model. See *Asking the report*.
 - **Failures are isolated.** A dead PDF, an unparseable paper, or one failed cluster analysis degrades that unit only; the run continues and says so.
 - **Async everywhere**, with `asyncio.Semaphore` capping concurrent papers (default 10).
 
@@ -563,6 +631,8 @@ Migrations do not run on container start — a failure mid-rollout would take th
 | 8 | Done | Synthesizer + report, markdown/JSON/HTML export |
 | 9 | Done | Human-in-the-loop editing at every level |
 | 10 | Done | Follow-up queries with parent linkage |
+| 11 | Done | Grounded chat over a finished report (`chat.ask`) |
+| 12 | Done | Per-owner history scoping (`queries.owner_key`) |
 
 ### Known limitations
 

@@ -55,6 +55,10 @@ export interface ReadyFrame {
   heartbeat_seconds: number
   actions: string[]
   resumed_subscriptions: string[]
+  /** The owner key the server resolved for this connection: `t:…` when the
+   *  token arrived, `a:…` when it fell back to the connection's address. Echoed
+   *  so a client can tell which of the two its history is scoped to. */
+  owner?: string
 }
 
 export interface ResultFrame {

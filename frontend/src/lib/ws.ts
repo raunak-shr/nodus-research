@@ -10,6 +10,10 @@
  *    interpolated: the caller reloads state instead of assuming continuity.
  *  - A dropped connection re-subscribes with the last seq it applied, so the
  *    server replays only what was missed.
+ *
+ *  The handshake also carries the owner token, which is not auth: it says which
+ *  history this connection reads. `ready.owner` echoes what the server made of
+ *  it — see `src/lib/owner.ts`.
  */
 
 import type { ErrorFrame, EventFrame, ServerFrame } from './types'
@@ -46,6 +50,9 @@ interface Pending {
 export interface SocketOptions {
   url: string
   apiKey?: string
+  /** Which history to read. Sent on every handshake, including reconnects —
+   *  the server resolves it once per connection and never asks again. */
+  owner?: string
   /** Give up reconnecting after this many consecutive failures. */
   maxRetries?: number
   /** How long a socket may stay silent after the upgrade before it is judged
@@ -61,6 +68,9 @@ export class NodusSocket {
   private ws: WebSocket | null = null
   private readonly url: string
   private readonly apiKey?: string
+  /** The token to present. Distinct from `owner`, which is what the server made
+   *  of it — the two differ exactly when a token is rejected or absent. */
+  private readonly ownerToken?: string
   private readonly maxRetries: number
   private readonly readyTimeoutMs: number
   private readyTimer: number | null = null
@@ -84,10 +94,13 @@ export class NodusSocket {
   status: SocketStatus = 'idle'
   lastSeq = 0
   actions: string[] = []
+  /** What the server resolved this connection's owner to, from `ready`. */
+  owner: string | null = null
 
   constructor(opts: SocketOptions) {
     this.url = opts.url
     this.apiKey = opts.apiKey
+    this.ownerToken = opts.owner
     this.maxRetries = opts.maxRetries ?? 8
     this.readyTimeoutMs = opts.readyTimeoutMs ?? 6000
   }
@@ -105,6 +118,9 @@ export class NodusSocket {
     if (url.protocol === 'http:') url.protocol = 'ws:'
     if (url.protocol === 'https:') url.protocol = 'wss:'
     if (this.apiKey) url.searchParams.set('api_key', this.apiKey)
+    // A query parameter rather than a header: a browser cannot set headers on a
+    // WebSocket upgrade, which is the same reason the API key travels this way.
+    if (this.ownerToken) url.searchParams.set('owner', this.ownerToken)
 
     const ws = new WebSocket(url.toString())
     this.ws = ws
@@ -186,6 +202,7 @@ export class NodusSocket {
           this.readyTimer = null
         }
         this.actions = frame.actions
+        this.owner = frame.owner ?? null
         this.retries = 0
         this.setStatus('open')
         // Resume every subscription from the last seq applied, so the server

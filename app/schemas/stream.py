@@ -90,6 +90,11 @@ class ReadyFrame(BaseModel):
     heartbeat_seconds: float
     actions: list[str]
     resumed_subscriptions: list[str] = Field(default_factory=list)
+    #: Whose history this connection reads — the resolved owner key, echoed so a
+    #: client can see whether the token it sent arrived (`t:…`) or whether it is
+    #: falling back to its address (`a:…`), which is shared with anything else on
+    #: that address. Not a credential: it is the identity the caller supplied.
+    owner: str = ""
 
 
 class HeartbeatFrame(BaseModel):

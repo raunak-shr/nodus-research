@@ -4,6 +4,11 @@ Thin wrappers over `app/services/cluster_edit.py` — the same service backs the
 v2 WebSocket actions, so an edit behaves identically on either surface. Domain
 errors raised by the service are translated to status codes by the handler
 registered in `app/main.py`.
+
+Clusters are per-query, so each one is checked against the caller's own history
+before it is read or edited. Claims are not: a claim belongs to a paper, papers
+are the global cache every query shares, and a claim row says nothing about who
+asked what — see `app/services/ownership.py`.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Response
 from sqlalchemy import select
 
-from app.api.v1.deps import DBSession, EditRateLimit, PageParams
+from app.api.v1.deps import AdminCaller, DBSession, EditRateLimit, Owner, PageParams
 from app.models.claim import Claim
 from app.schemas.claim import ClaimRead, ClaimSourceRead
 from app.schemas.cluster import (
@@ -23,7 +28,7 @@ from app.schemas.cluster import (
     ClusterClaimUpdate,
     ClusterUpdate,
 )
-from app.services import cluster_edit, provenance
+from app.services import cluster_edit, ownership, provenance
 
 router = APIRouter(prefix="/claims", tags=["claims"])
 
@@ -53,15 +58,21 @@ async def get_claim_source(claim_id: UUID, db: DBSession) -> ClaimSourceRead:
 
 
 @router.get("/clusters/queries/{query_id}", response_model=list[ClaimClusterRead])
-async def list_clusters_for_query(query_id: UUID, db: DBSession) -> list[ClaimClusterRead]:
+async def list_clusters_for_query(
+    query_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller
+) -> list[ClaimClusterRead]:
     """List claim clusters produced for a query, best evidence first."""
+    await ownership.require_query(query_id, db, owner=owner, is_admin=admin)
     clusters = await cluster_edit.list_for_query(query_id, db)
     return [ClaimClusterRead.model_validate(c) for c in clusters]
 
 
 @router.get("/clusters/{cluster_id}", response_model=ClaimClusterDetail)
-async def get_cluster(cluster_id: UUID, db: DBSession) -> ClaimClusterDetail:
+async def get_cluster(
+    cluster_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller
+) -> ClaimClusterDetail:
     """A cluster with its member claims, stances and similarity scores."""
+    await ownership.require_cluster(cluster_id, db, owner=owner, is_admin=admin)
     return await cluster_edit.get_detail(cluster_id, db)
 
 
@@ -69,12 +80,13 @@ async def get_cluster(cluster_id: UUID, db: DBSession) -> ClaimClusterDetail:
     "/clusters/{cluster_id}", response_model=ClaimClusterDetail, dependencies=[EditRateLimit]
 )
 async def update_cluster(
-    cluster_id: UUID, body: ClusterUpdate, db: DBSession
+    cluster_id: UUID, body: ClusterUpdate, db: DBSession, owner: Owner, admin: AdminCaller
 ) -> ClaimClusterDetail:
     """Phase 9 — override theme, summary, quality tier or disagreement drivers.
 
     Edited clusters are pinned: a later re-analysis of the query keeps them.
     """
+    await ownership.require_cluster(cluster_id, db, owner=owner, is_admin=admin)
     return await cluster_edit.update_cluster(cluster_id, body, db)
 
 
@@ -84,9 +96,15 @@ async def update_cluster(
     dependencies=[EditRateLimit],
 )
 async def update_cluster_claim(
-    cluster_id: UUID, claim_id: UUID, body: ClusterClaimUpdate, db: DBSession
+    cluster_id: UUID,
+    claim_id: UUID,
+    body: ClusterClaimUpdate,
+    db: DBSession,
+    owner: Owner,
+    admin: AdminCaller,
 ) -> ClaimClusterDetail:
     """Phase 9 — correct a claim's stance within a cluster."""
+    await ownership.require_cluster(cluster_id, db, owner=owner, is_admin=admin)
     return await cluster_edit.set_stance(cluster_id, claim_id, body.stance, db)
 
 
@@ -97,16 +115,20 @@ async def update_cluster_claim(
     dependencies=[EditRateLimit],
 )
 async def add_claim_to_cluster(
-    cluster_id: UUID, body: ClusterClaimAdd, db: DBSession
+    cluster_id: UUID, body: ClusterClaimAdd, db: DBSession, owner: Owner, admin: AdminCaller
 ) -> ClaimClusterDetail:
     """Phase 9 — move a claim the clusterer missed into this cluster."""
+    await ownership.require_cluster(cluster_id, db, owner=owner, is_admin=admin)
     return await cluster_edit.add_claim(cluster_id, body.claim_id, body.stance, db)
 
 
 @router.delete(
     "/clusters/{cluster_id}/claims/{claim_id}", status_code=204, dependencies=[EditRateLimit]
 )
-async def remove_claim_from_cluster(cluster_id: UUID, claim_id: UUID, db: DBSession) -> Response:
+async def remove_claim_from_cluster(
+    cluster_id: UUID, claim_id: UUID, db: DBSession, owner: Owner, admin: AdminCaller
+) -> Response:
     """Phase 9 — drop a claim that does not belong in this cluster."""
+    await ownership.require_cluster(cluster_id, db, owner=owner, is_admin=admin)
     await cluster_edit.remove_claim(cluster_id, claim_id, db)
     return Response(status_code=204)

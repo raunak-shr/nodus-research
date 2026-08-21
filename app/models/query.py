@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Integer, Text, func
+from sqlalchemy import Enum, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +32,11 @@ class Query(Base):
     )
     paper_count: Mapped[int] = mapped_column(Integer, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
+    # Who submitted this run — a client-kept token, or its address standing in
+    # for one. Listings filter on it and anything reached through a query id is
+    # refused to anyone else; see `app/services/ownership.py`. NULL means the
+    # row predates ownership and is admin-only, not that it belongs to everyone.
+    owner_key: Mapped[str | None] = mapped_column(String(128))
     # Phase 10: follow-up queries hang off the query they refine.
     parent_query_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("queries.id", ondelete="SET NULL")

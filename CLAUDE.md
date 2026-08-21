@@ -89,7 +89,9 @@ nodus/
 - **Quality weighting is deterministic, not LLM-judged**, and every input is exposed in `quality_rationale` so a user can see and override the tier.
 - **One LLM call per cluster** produces theme, stances, and disagreement drivers together — they are the same judgement.
 - **A section heading names its cluster, not the report's topic.** Sections are narrated concurrently, so each call is given its siblings' central themes and is told a heading that would fit any of them is wrong. Concurrency means two can still collide, so `_disambiguate_headings` retitles the later ones (heading only — re-narrating would rewrite prose nobody complained about) and publishes `section_retitled`, which the live panel applies over the row it already showed. A failed or still-duplicate retitle leaves the original: an indistinguishable heading is a blemish, not a reason to withhold a report.
-- **User edits are pinned.** Clusters with `user_edited=true` survive re-analysis.
+- **The chat over a report answers from the report, or says it cannot.** `chat.ask` assembles its own material — front matter, one block per report section, plus any cluster `max_clusters_per_query` dropped — labels each block, ranks them against the question, trims to `report_chat_context_chars`, and tells the model that is the whole world. Nothing is retrieved and no paper is re-read, so an answer is always checkable against a section a reader can open; a question the evidence cannot settle comes back `covered: false` with what the report does establish nearby. Answering it anyway would put untraceable sentences beside traceable ones, which is the failure mode an evidence tool cannot afford. `queries.followup` is the remedy the answer offers, because that question needs a run. Stateless: the thread is the client's and rides along as `history`, so there is no chat table and no session to lose on a reconnect.
+- **A history belongs to a reader, not to the deployment.** There are no accounts: `API_KEY` is one shared value that gates the deployment, not a person. So a run is stamped with an `owner_key` — `t:<token>` from the owner token a client keeps (the frontend mints one per browser and stores it locally), or `a:<address>` when none was presented, which is what keeps `curl` and the scripts able to read back what they just created. Listings filter on it, and everything addressed by a query or a cluster id is refused to anyone else as `not_found` — `forbidden` would confirm the id exists. Papers and claims are deliberately **not** scoped: they are the global cache every query shares, and a paper row cannot reveal which question someone asked about it. `owner_key IS NULL` means the row predates ownership and is admin-only, not that it belongs to everyone — backfilling those would be a guess. This is privacy between readers, not a security boundary: a token is a bearer secret in local storage, and clearing site data makes that history unreachable rather than deleted. See `app/services/ownership.py`.
+ Clusters with `user_edited=true` survive re-analysis.
 - **Failures are isolated.** A dead PDF, an unparseable paper, or a failed cluster analysis degrades that unit only; the run continues.
 - **Async everywhere.** The bottleneck is I/O wait on LLM calls. `asyncio.Semaphore` caps concurrent processing (default 10).
 - **v2 is WebSocket-only; v1 REST stays.** One socket carries every action plus the live stream, so a frontend opens one connection and never polls. Actions are registered with a Pydantic params model, and `meta.describe` publishes their JSON Schema — the socket has no OpenAPI document.
@@ -152,13 +154,17 @@ docker run --rm -p 8080:8080 -v "$(pwd)/.env:/app/.env:ro" nodus-api:local
 
 PostgreSQL with pgvector. Core tables: queries, papers, query_papers, normalized_papers, claims, claim_embeddings (vector(768), HNSW), claim_clusters, cluster_claims, reports.
 
-Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster analysis columns, reports table, follow-up query linkage), `003_claim_provenance` (source text and match quality per claim), `004_arxiv_fallback` (`papers.arxiv_id`, `normalized_papers.full_text_source`).
+Nothing is stored for the chat over a report: `chat.ask` reads the report and clusters and returns an answer, and the thread lives in the client.
+
+Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster analysis columns, reports table, follow-up query linkage), `003_claim_provenance` (source text and match quality per claim), `004_arxiv_fallback` (`papers.arxiv_id`, `normalized_papers.full_text_source`), `005_query_owner` (`queries.owner_key` plus the `(owner_key, created_at DESC)` index a history reads).
+
+**005 has to run before the code that reads it, and that is the opposite of the environment-variable rule below.** Every query read selects `owner_key`, so the API answers `UndefinedColumnError` on nearly every route until the migration lands — `alembic upgrade head` first, then deploy.
 
 ## Status
 
 MVP (Phases 0–5) and post-MVP (Phases 6–10) are complete: retrieval, extraction, three-axis analysis, synthesis and export, human-in-the-loop editing, and follow-up queries. See the README for the phase table and known limitations.
 
-**v2 (frontend surface)** is complete: `/api/v2/ws` with 35 actions, fine-grained pipeline events, the rendered report document, and PDF export. Locally that needs `uv run playwright install chromium` once, and a single API worker; the deployed image carries Chromium and runs one worker by construction.
+**v2 (frontend surface)** is complete: `/api/v2/ws` with 36 actions, fine-grained pipeline events, the rendered report document, and PDF export. Locally that needs `uv run playwright install chromium` once, and a single API worker; the deployed image carries Chromium and runs one worker by construction.
 
 ## Conventions
 

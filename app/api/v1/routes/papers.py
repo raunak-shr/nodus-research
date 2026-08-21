@@ -1,4 +1,10 @@
-"""Paper endpoints: ranked results per query, paper detail, normalization."""
+"""Paper endpoints: ranked results per query, paper detail, normalization.
+
+`/queries/{id}` is a read of one caller's run, so it is scoped to that run's
+owner. The two paper routes are not: papers are the global cache every query
+shares, so they have no owner — and a paper row cannot reveal which question
+someone asked about it, which is what the scoping protects.
+"""
 
 from __future__ import annotations
 
@@ -8,18 +14,20 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.v1.deps import DBSession, PageParams
+from app.api.v1.deps import AdminCaller, DBSession, Owner, PageParams
 from app.models.paper import NormalizedPaper, Paper, QueryPaper
 from app.schemas.paper import NormalizedPaperRead, PaperRead, QueryPaperRead
+from app.services import ownership
 
 router = APIRouter(prefix="/papers", tags=["papers"])
 
 
 @router.get("/queries/{query_id}", response_model=list[QueryPaperRead])
 async def list_papers_for_query(
-    query_id: UUID, db: DBSession, page: PageParams
+    query_id: UUID, db: DBSession, page: PageParams, owner: Owner, admin: AdminCaller
 ) -> list[QueryPaperRead]:
     """List ranked papers retrieved for a query."""
+    await ownership.require_query(query_id, db, owner=owner, is_admin=admin)
     result = await db.execute(
         select(QueryPaper)
         .where(QueryPaper.query_id == query_id)

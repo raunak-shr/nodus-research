@@ -18,6 +18,9 @@ Design points that matter:
   services the REST routes do, so without this it would be a way around every
   per-caller limit those routes enforce. The bucket is chosen by the action's
   declared `cost`, and keyed on the peer address for the life of the connection.
+* **The connection carries whose history it is.** The owner is resolved once, on
+  the handshake, and every query-scoped action is checked against it — see
+  `app/services/ownership.py`.
 """
 
 from __future__ import annotations
@@ -37,7 +40,7 @@ from app.api.v2.actions import REGISTRY, ActionContext
 from app.core.config import settings
 from app.core.events import hub
 from app.schemas import stream as frames
-from app.services import limits
+from app.services import limits, ownership
 from app.services.errors import BadRequest, NodusError, TooManyRequests
 
 logger = logging.getLogger(__name__)
@@ -65,13 +68,19 @@ class Subscription:
 
 
 class Connection:
-    def __init__(self, websocket: WebSocket, *, is_admin: bool = False) -> None:
+    def __init__(
+        self, websocket: WebSocket, *, is_admin: bool = False, owner_token: str | None = None
+    ) -> None:
         self.websocket = websocket
         self.is_admin = is_admin
-        # Resolved once: the peer cannot change for the life of the socket.
-        self._client_key = limits.client_key(
-            client_host=websocket.client.host if websocket.client else None,
-            forwarded_for=websocket.headers.get("x-forwarded-for"),
+        # Both resolved once: the peer cannot change for the life of the socket,
+        # and neither can whose history it is reading — a token presented mid
+        # session would let one connection walk between owners.
+        client_host = websocket.client.host if websocket.client else None
+        forwarded_for = websocket.headers.get("x-forwarded-for")
+        self._client_key = limits.client_key(client_host=client_host, forwarded_for=forwarded_for)
+        self.owner_key = ownership.resolve_owner(
+            owner_token, client_host=client_host, forwarded_for=forwarded_for
         )
         self._send_lock = asyncio.Lock()
         self._subscriptions: dict[UUID, Subscription] = {}
@@ -219,7 +228,12 @@ class Connection:
 
         try:
             data = await entry.handler(
-                ActionContext(connection=self, is_admin=self.is_admin, client_key=self._client_key),
+                ActionContext(
+                    connection=self,
+                    is_admin=self.is_admin,
+                    client_key=self._client_key,
+                    owner_key=self.owner_key,
+                ),
                 params,
             )
         except NodusError as exc:
