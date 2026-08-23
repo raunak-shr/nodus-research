@@ -123,6 +123,14 @@ class QueryRef(BaseModel):
 
 class CreateQuery(BaseModel):
     query: str = Field(min_length=3, description="The research question")
+    #: Run the question over these uploaded papers instead of retrieving any.
+    #: Every id must have come from `papers.upload`; a retrieved paper's id is
+    #: refused, because accepting it would silently build a corpus the reader
+    #: never chose. Empty or absent means the ordinary retrieval run.
+    paper_ids: list[UUID] = Field(
+        default_factory=list,
+        description="Uploaded papers to run over instead of searching the literature",
+    )
     subscribe: bool = Field(
         default=True,
         description="Stream this run's progress on this connection (recommended)",
@@ -158,6 +166,20 @@ class PapersForQuery(Page):
 
 class PaperRef(BaseModel):
     paper_id: UUID
+
+
+class UploadPaper(BaseModel):
+    """One PDF the reader handed over, base64 in a single frame.
+
+    One file per call rather than a batch: a batch would have to succeed or fail
+    whole, and the reader needs to know *which* file was refused and why while
+    they are still standing in front of the drop zone. Base64 inflates by a
+    third, so `upload_max_bytes` is set to keep a frame under the server's
+    WebSocket message cap.
+    """
+
+    filename: str = Field(min_length=1, max_length=400)
+    content_base64: str = Field(min_length=1, description="The PDF file, base64-encoded")
 
 
 class ClaimsForPaper(Page):

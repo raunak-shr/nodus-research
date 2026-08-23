@@ -26,6 +26,7 @@ import { NodusError, NodusSocket, resolveSocketUrl, type SocketGap, type SocketS
 import type {
   ChatAnswerRead,
   ChatTurn,
+  GraphRead,
   ClaimClusterDetail,
   ClaimClusterRead,
   ClaimSourceRead,
@@ -44,6 +45,7 @@ import type {
   ServerConfig,
   Stance,
   StructuredQuery,
+  UploadedPaperRead,
 } from '../lib/types'
 import { answerFromReport } from '../lib/reportChat'
 import { RunFeed } from '../lib/runFeed'
@@ -53,7 +55,9 @@ import {
   type EditEntry,
   type PaperRow,
   type RunView,
+  type UploadFile,
 } from '../lib/viewmodels'
+import { demoGraph } from '../data/demoGraph'
 import {
   DEMO_CLUSTERS,
   DEMO_FAILURES,
@@ -78,6 +82,7 @@ export type Screen =
   | 'report'
   | 'cluster'
   | 'papers'
+  | 'graph'
   | 'edits'
   | 'chat'
   | 'history'
@@ -123,6 +128,30 @@ interface Store {
   papers: PaperRow[]
   gap: SocketGap | null
 
+  /** Whether the connected server offers uploads at all.
+   *
+   *  Asked once, from the action list in the handshake, rather than discovered
+   *  one file at a time: a deployment that predates `papers.upload` refuses
+   *  every file with the same protocol error, and fourteen copies of
+   *  "unknown action" is not something a reader can act on. Null while the
+   *  socket is still connecting — not yet known is not the same as no. */
+  uploadsSupported: boolean | null
+  /** Where this query's papers come from. `search` retrieves; `upload` runs
+   *  over the files below and skips retrieval and ranking entirely. */
+  paperSource: 'search' | 'upload'
+  /** The upload queue, in the order files were dropped. Refused files stay in
+   *  it on purpose — a file that vanishes on being rejected is a file the
+   *  reader will drop again. */
+  uploads: UploadFile[]
+  /** True while any file is still being read by the server. */
+  uploading: boolean
+
+  /** The whole run as a field of nodes, or null before `graph.get` answers.
+   *  One payload behind all four views — see `src/lib/graph.ts`. */
+  graph: GraphRead | null
+  graphLoading: boolean
+  graphError: string | null
+
   source: ClaimSourceRead | null
   sourceClaimId: string | null
   sourceRef: string
@@ -152,6 +181,17 @@ interface Store {
   /** Start the run. `draft` runs that text instead of what is in the box —
    *  for a suggestion applied and run in one click. */
   startRun(draft?: string): void
+  setPaperSource(source: 'search' | 'upload'): void
+  /** Hand files to the server, one call each, and queue what it accepts.
+   *  Rejections are per file and carry the server's reason. */
+  addUploads(files: FileList | File[]): void
+  removeUpload(key: string): void
+  clearUploads(): void
+  /** Run the question in the box over the accepted uploads. Nothing is
+   *  retrieved and nothing is ranked. */
+  runUploads(): void
+  /** Fetch the graph for the active query, unless it is already in hand. */
+  loadGraph(force?: boolean): void
   cancelRun(): void
   skipToEnd(): void
   reloadRun(): void
@@ -265,6 +305,9 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const [lastError, setLastError] = useState<{ action: string; message: string } | null>(null)
   const [config, setConfig] = useState<ServerConfig | null>(null)
   const [owner, setOwner] = useState<string | null>(null)
+  /** What the connected server advertised on the handshake. The socket has no
+   *  OpenAPI document; `ready.actions` is the capability list. */
+  const [serverActions, setServerActions] = useState<string[] | null>(null)
 
   // Empty, deliberately: a question already in the box is a question somebody
   // is one click away from running by accident. The demo build is the exception
@@ -285,6 +328,21 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const [activeClusterId, setActiveClusterId] = useState<string | null>(DEMO_ENV ? 'c2' : null)
   const [papers, setPapers] = useState<PaperRow[]>(DEMO_ENV ? demoPaperRows() : [])
   const [gap, setGap] = useState<SocketGap | null>(null)
+
+  const [paperSource, setPaperSource] = useState<'search' | 'upload'>('search')
+  const [uploads, setUploads] = useState<UploadFile[]>([])
+  /** The queue as it stands *right now*.
+   *
+   *  React runs a `setState` updater when it re-renders, not when it is called,
+   *  so deciding "is this file already queued?" inside one reads state that has
+   *  not been written yet — twenty files dropped at once would all be judged
+   *  against an empty queue. Every write goes through `writeUploads`, which
+   *  updates this first and hands the same array to React. */
+  const uploadsRef = useRef<UploadFile[]>([])
+
+  const [graph, setGraph] = useState<GraphRead | null>(DEMO_ENV ? demoGraph() : null)
+  const [graphLoading, setGraphLoading] = useState(false)
+  const [graphError, setGraphError] = useState<string | null>(null)
 
   const [source, setSource] = useState<ClaimSourceRead | null>(null)
   const [sourceClaimId, setSourceClaimId] = useState<string | null>(null)
@@ -324,6 +382,14 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     setChatPending(false)
   }, [activeQueryId])
 
+  // The field describes one run. Holding the previous one while the new one
+  // loads would draw another query's clusters under this query's question.
+  useEffect(() => {
+    if (DEMO_ENV) return
+    setGraph(null)
+    setGraphError(null)
+  }, [activeQueryId])
+
   // -- demo fallback -------------------------------------------------------
 
   const fallToDemo = useCallback((note: string) => {
@@ -335,6 +401,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     setClusters(DEMO_CLUSTERS)
     setActiveClusterId((current) => current ?? 'c2')
     setPapers(demoPaperRows())
+    setGraph(demoGraph())
     // The demo corpus answers exactly one question, so falling back to it with
     // an empty box would offer screens that do not match what was asked.
     setQuestion((current) => current.trim() || DEMO_QUESTION)
@@ -374,6 +441,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         setMode('live')
         setConnectionNote(null)
         setOwner(socket.owner)
+        setServerActions(socket.actions)
         // A reconnect re-subscribes, but the instance that answers may never
         // have seen this run. Ask the database where it actually got to.
         if (reconnected) {
@@ -686,14 +754,16 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     }
   }, [])
 
-  const startRun = useCallback(
-    (draft?: string) => {
-      const asked = (draft ?? question).trim()
-      if (!asked) return
-      // A run started from one of Nodus's own suggestions passes the text
-      // directly, because the question was set in this same tick.
-      if (draft !== undefined) setQuestion(asked)
-
+  /** Start a run, whichever corpus it is over.
+   *
+   *  `paperIds` is what separates the two: empty means retrieve, and a list of
+   *  uploaded paper ids means run over those and skip retrieval and ranking.
+   *  Everything else — the feed, the subscription, the failure handling — is
+   *  the same, and duplicating it for the second entry point would leave two
+   *  copies of the reconnect logic to keep in step.
+   */
+  const beginRun = useCallback(
+    (asked: string, paperIds: string[]) => {
       setFlag(null)
       setScreen('run')
       // The quiet check measures silence since the last frame; without this the
@@ -706,13 +776,19 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         return
       }
 
-      const expected = config?.top_k_papers ?? 20
+      // An upload run's corpus is exactly the files the reader chose, so the
+      // expected count is known here rather than being the retrieval ceiling.
+      const expected = paperIds.length || config?.top_k_papers || 20
       releaseRun()
-      feedRef.current = new RunFeed(null, asked, expected)
+      feedRef.current = new RunFeed(null, asked, expected, paperIds.length > 0)
       setRun(feedRef.current.view())
 
       void socketRef.current
-        .request<{ query: QueryRead }>('queries.create', { query: asked, subscribe: true })
+        .request<{ query: QueryRead }>('queries.create', {
+          query: asked,
+          subscribe: true,
+          ...(paperIds.length ? { paper_ids: paperIds } : {}),
+        })
         .then((created) => {
           // The reply wraps the query; `subscribe: true` has already attached the
           // stream, so re-subscribing here would only duplicate it. The feed is
@@ -742,7 +818,190 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
           setFlag('failed')
         })
     },
-    [config, mode, question, runDemoClock],
+    [config, mode, runDemoClock, releaseRun],
+  )
+
+  const startRun = useCallback(
+    (draft?: string) => {
+      const asked = (draft ?? question).trim()
+      if (!asked) return
+      // A run started from one of Nodus's own suggestions passes the text
+      // directly, because the question was set in this same tick.
+      if (draft !== undefined) setQuestion(asked)
+      beginRun(asked, [])
+    },
+    [beginRun, question],
+  )
+
+  // -- uploaded corpora ----------------------------------------------------
+
+  /** Hand one file to the server and fold its answer back into the queue.
+   *
+   *  The cheap refusals happen here — not a PDF, too large, already queued —
+   *  because they need no round trip and the reader is standing in front of
+   *  the drop zone. Everything that needs the file *opened* (page count, a
+   *  corrupt or password-protected document) is the server's answer, so there
+   *  is exactly one implementation of the rule that matters.
+   */
+  /** The one place the queue is written. Ref first, then React. */
+  /** Whether this server can take a file at all.
+   *
+   *  Two ways it cannot: it predates the action, or it has `UPLOADS_ENABLED`
+   *  off. Both are the same answer to the reader, and both are known before
+   *  they choose a single file.
+   */
+  const uploadsSupported =
+    mode === 'demo'
+      ? false
+      : serverActions === null
+        ? null
+        : serverActions.includes('papers.upload') && (config?.uploads_enabled ?? true)
+
+  const writeUploads = useCallback((next: (current: UploadFile[]) => UploadFile[]) => {
+    uploadsRef.current = next(uploadsRef.current)
+    setUploads(uploadsRef.current)
+  }, [])
+
+  /** Update one queued file in place, leaving the rest alone.
+   *
+   *  Uploads resolve out of order — a small file answers while a large one is
+   *  still going — so every write has to be keyed rather than positional.
+   */
+  const patchUpload = useCallback(
+    (key: string, patch: Partial<UploadFile>) => {
+      writeUploads((current) =>
+        current.map((row) => (row.key === key ? { ...row, ...patch } : row)),
+      )
+    },
+    [writeUploads],
+  )
+
+  const addUploads = useCallback(
+    (incoming: FileList | File[]) => {
+      const files = Array.from(incoming)
+      if (!files.length) return
+
+      const socket = socketRef.current
+      const maxBytes = config?.upload_max_bytes ?? 10_000_000
+      const maxPapers = config?.upload_max_papers ?? 20
+      // Belt and braces. The screen does not offer a drop zone when this is
+      // false, so reaching here means a drop landed on a stale render.
+      if (uploadsSupported === false) return
+
+      for (const file of files) {
+        const key = `${file.name}:${file.size}`
+        const queue = uploadsRef.current
+
+        // The cheap refusals, decided here because they need no round trip and
+        // the reader is standing in front of the drop zone. Everything that
+        // needs the file *opened* — the page count, a corrupt or
+        // password-protected document — is the server's answer, so the rule
+        // that matters has exactly one implementation.
+        const refusal = queue.some((row) => row.key === key)
+          ? 'already in the queue'
+          : !/\.pdf$/i.test(file.name) && file.type !== 'application/pdf'
+            ? 'not a PDF'
+            : file.size > maxBytes
+              ? `${Math.round(file.size / 1_000_000)} MB — over the ${Math.round(maxBytes / 1_000_000)} MB limit`
+              : queue.filter((row) => row.status === 'ready').length >= maxPapers
+                ? `queue full — ${maxPapers} papers maximum`
+                : !socket
+                  ? 'not connected to a server'
+                  : ''
+
+        // A file already in the queue is not queued twice, not even as a
+        // rejection: the row that is there is the one carrying its progress.
+        if (refusal === 'already in the queue') continue
+
+        writeUploads((current) => [
+          ...current,
+          {
+            key,
+            name: file.name,
+            size: file.size,
+            pages: 0,
+            pagesRead: 0,
+            status: refusal ? 'rejected' : 'checking',
+            reason: refusal,
+            paperId: null,
+          },
+        ])
+        if (refusal || !socket) continue
+
+        void (async () => {
+          try {
+            const body = await readAsBase64(file)
+            const accepted = await socket.request<UploadedPaperRead>('papers.upload', {
+              filename: file.name,
+              content_base64: body,
+            })
+            patchUpload(key, {
+              status: 'ready',
+              pages: accepted.pages,
+              pagesRead: accepted.pages_read,
+              paperId: accepted.paper_id,
+              reason: uploadNote(accepted),
+            })
+          } catch (error: unknown) {
+            patchUpload(key, {
+              status: 'rejected',
+              reason: error instanceof Error ? error.message : String(error),
+            })
+          }
+        })()
+      }
+    },
+    [config, patchUpload, uploadsSupported, writeUploads],
+  )
+
+  const removeUpload = useCallback(
+    (key: string) => writeUploads((current) => current.filter((row) => row.key !== key)),
+    [writeUploads],
+  )
+
+  const clearUploads = useCallback(() => writeUploads(() => []), [writeUploads])
+
+  const runUploads = useCallback(() => {
+    const asked = question.trim()
+    const ids = uploadsRef.current
+      .filter((row) => row.status === 'ready' && row.paperId)
+      .map((row) => row.paperId as string)
+    if (!asked || ids.length < 2) return
+    beginRun(asked, ids)
+  }, [beginRun, question])
+
+  // -- the graph -----------------------------------------------------------
+
+  /** Fetch the whole field for the active query.
+   *
+   *  One request for all four views, and only when there is nothing in hand:
+   *  the screen calls this on mount and the graph does not change under a
+   *  finished run. `force` is for a run that has just completed.
+   */
+  const loadGraph = useCallback(
+    (force = false) => {
+      if (mode === 'demo') {
+        setGraph(demoGraph())
+        return
+      }
+      const socket = socketRef.current
+      const queryId = activeQueryId
+      if (!socket || !queryId) return
+      if (!force && graph && graph.query_id === queryId) return
+
+      setGraphLoading(true)
+      setGraphError(null)
+      socket
+        .request<GraphRead>('graph.get', { query_id: queryId })
+        .then((next) => setGraph(next))
+        .catch((error: unknown) => {
+          const described = describe('graph.get', error)
+          setGraphError(described.message)
+          setLastError(described)
+        })
+        .finally(() => setGraphLoading(false))
+    },
+    [activeQueryId, graph, mode],
   )
 
   const cancelRun = useCallback(() => {
@@ -1300,6 +1559,19 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         setInterpretation(null)
       },
       startRun,
+      uploadsSupported,
+      paperSource,
+      uploads,
+      uploading: uploads.some((row) => row.status === 'checking'),
+      setPaperSource,
+      addUploads,
+      removeUpload,
+      clearUploads,
+      runUploads,
+      graph,
+      graphLoading,
+      graphError,
+      loadGraph,
       cancelRun,
       skipToEnd,
       reloadRun,
@@ -1368,10 +1640,56 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       startRun,
       structured,
       theme,
+      uploadsSupported,
+      paperSource,
+      uploads,
+      addUploads,
+      removeUpload,
+      clearUploads,
+      runUploads,
+      graph,
+      graphLoading,
+      graphError,
+      loadGraph,
     ],
   )
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+}
+
+/** What is worth saying about a file that was *accepted*.
+ *
+ *  Three things and no others: that there is nothing in it to read, that only
+ *  its opening was read, or that it is a file already stored rather than a
+ *  second copy of it. Silence otherwise — a row with a note on every line
+ *  trains the reader to skip the notes.
+ */
+function uploadNote(accepted: UploadedPaperRead): string {
+  if (!accepted.characters) return 'no text layer — a scan; nothing can be extracted from it'
+  if (accepted.pages_read && accepted.pages_read < accepted.pages) {
+    return `${accepted.pages} pages — the first ${accepted.pages_read} will be read`
+  }
+  if (accepted.reused) return 'already stored — the same file'
+  return ''
+}
+
+/** A file as a base64 string, without the data-url prefix `FileReader` adds.
+ *
+ *  Base64 rather than a binary frame because the socket carries JSON in both
+ *  directions and already sends the report PDF back the same way — one
+ *  encoding, not two.
+ */
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error(`${file.name} could not be read`))
+    reader.onload = () => {
+      const result = String(reader.result ?? '')
+      const comma = result.indexOf(',')
+      resolve(comma >= 0 ? result.slice(comma + 1) : result)
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 // -- live paper rows --------------------------------------------------------

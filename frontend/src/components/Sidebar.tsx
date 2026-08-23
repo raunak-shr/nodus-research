@@ -12,6 +12,8 @@ const ICONS: Record<Screen, string> = {
   cluster:
     'M6 12a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M16 6a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M16 18a2.5 2.5 0 1 0 5 0 2.5 2.5 0 1 0-5 0M11.2 10.8l5-3M11.2 13.2l5 3',
   edits: 'M4 20h4L20 8l-4-4L4 16z',
+  graph:
+    'M5 5.5a2 2 0 1 0 4 0 2 2 0 1 0-4 0M15 12a2 2 0 1 0 4 0 2 2 0 1 0-4 0M7 16.5a2 2 0 1 0 4 0 2 2 0 1 0-4 0M8.6 7.2l6 3.6M14.8 13.6l-4.6 2.2M7 7.5v7',
   chat: 'M4 5h16v11H9l-5 4z',
   history: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 7v5l4 2',
   print: 'M7 8V3h10v5M7 16H5V9h14v7h-2M7 13h10v8H7z',
@@ -24,6 +26,7 @@ const ITEMS: { id: Screen; label: string }[] = [
   { id: 'report', label: 'Report' },
   { id: 'papers', label: 'Papers' },
   { id: 'cluster', label: 'Cluster detail' },
+  { id: 'graph', label: 'Graph' },
   { id: 'edits', label: 'Edits' },
   { id: 'chat', label: 'Ask the report' },
   { id: 'history', label: 'History' },
@@ -38,6 +41,9 @@ export function Sidebar(): ReactElement {
     papers: store.papers.length ? String(store.papers.length) : '',
     history: store.queries.length ? String(store.queries.length) : '',
     edits: store.edits.length ? String(store.edits.length) : '',
+    // Clusters, because they are what the field is mostly made of — and what a
+    // run has to produce before there is anything to draw.
+    graph: store.clusters.length ? String(store.clusters.length) : '',
   }
 
   const socketLabel =
@@ -109,22 +115,23 @@ export function Sidebar(): ReactElement {
         <div className="kicker" style={{ fontSize: 11 }}>
           Appearance
         </div>
-        <div style={{ display: 'flex', border: '1px solid var(--n-line2)', overflow: 'hidden' }}>
-          <button
-            type="button"
-            className={`seg-btn${store.theme === 'dark' ? ' on' : ''}`}
-            onClick={() => store.setTheme('dark')}
-          >
-            Dark
-          </button>
-          <button
-            type="button"
-            className={`seg-btn${store.theme === 'light' ? ' on' : ''}`}
-            onClick={() => store.setTheme('light')}
-          >
-            Light
-          </button>
-        </div>
+        {/* One switch rather than two buttons. With a pair, the current theme
+            is something you deduce from which one is filled; with a switch it
+            is the label, and the knob says which way it will go. */}
+        <button
+          type="button"
+          className={`theme-toggle ${store.theme}`}
+          onClick={() => store.setTheme(store.theme === 'dark' ? 'light' : 'dark')}
+          aria-pressed={store.theme === 'light'}
+          aria-label={`Appearance: ${store.theme}. Switch to ${
+            store.theme === 'dark' ? 'light' : 'dark'
+          }.`}
+        >
+          <span>{store.theme === 'dark' ? 'Dark' : 'Light'}</span>
+          <span className="track" aria-hidden="true">
+            <span className="knob" />
+          </span>
+        </button>
         <div className="num" style={{ fontSize: 11, color: 'var(--n-faint)', lineHeight: 1.5 }}>
           ws /api/v2/ws ·{' '}
           <span

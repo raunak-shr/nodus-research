@@ -50,7 +50,9 @@ from app.services import (
     report_render,
     runner,
     synthesizer,
+    uploads,
 )
+from app.services import graph as graph_service
 from app.services.errors import BadRequest, Forbidden, NotFound
 
 
@@ -194,6 +196,18 @@ async def meta_config(ctx: ActionContext, params: frames.Empty) -> dict[str, Any
         "cluster_similarity_threshold": settings.active_cluster_threshold,
         "retrieval_mode": settings.retrieval_mode,
         "pdf_enabled": settings.pdf_enabled,
+        # The upload ceilings, so the drop zone can refuse an oversized file
+        # before sending it rather than after — the numbers live in one place
+        # and the client reads them rather than hardcoding a second copy.
+        "uploads_enabled": settings.uploads_enabled,
+        # How much of any paper is read — retrieved or uploaded, the same
+        # budget. The drop zone quotes it, so it must not be a second copy of
+        # the number living in the client.
+        "max_pages_read": settings.pdf_max_pages,
+        "upload_max_bytes": settings.upload_max_bytes,
+        "upload_max_pages": settings.upload_max_pages,
+        "upload_max_papers": settings.upload_max_papers,
+        "upload_min_papers": settings.upload_min_papers,
         "admin_enabled": bool(settings.admin_api_key),
         "rate_limit_enabled": settings.rate_limit_enabled,
         "runs": limits.run_gate.snapshot(),
@@ -211,6 +225,14 @@ async def meta_config(ctx: ActionContext, params: frames.Empty) -> dict[str, Any
 )
 async def queries_create(ctx: ActionContext, params: frames.CreateQuery) -> dict[str, Any]:
     _require_admin_for_wait(params.wait, ctx.is_admin)
+
+    uploaded = [str(pid) for pid in params.paper_ids]
+    if uploaded:
+        # Checked before a slot is reserved and before the row is written: a
+        # corpus that is too small, too large, or not the caller's uploads at
+        # all is a mistake to report now, not a run to start and abandon.
+        async with AsyncSessionLocal() as db:
+            await uploads.resolve_for_run(uploaded, db)
 
     # The slot is reserved before the row is written, so a run refused for
     # capacity does not leave a `pending` query nothing will ever pick up.
@@ -235,14 +257,16 @@ async def queries_create(ctx: ActionContext, params: frames.CreateQuery) -> dict
         if params.wait:
             from app.services.pipeline import run_pipeline_safe
 
-            await run_pipeline_safe(query_id, params.query)
+            await run_pipeline_safe(query_id, params.query, uploaded_paper_ids=uploaded)
             async with AsyncSessionLocal() as db:
                 query = await _require_query(ctx, query_id, db)
                 payload = _dump(QueryRead.model_validate(query))
         else:
-            reserved.launch(query_id, params.query)
+            reserved.launch(query_id, params.query, uploaded_paper_ids=uploaded)
 
-    return {"query": payload, "subscription": subscription}
+    # Reported back rather than left to be inferred: the run screen has to know
+    # there will be no retrieval phase before the first paper event arrives.
+    return {"query": payload, "subscription": subscription, "uploaded_corpus": bool(uploaded)}
 
 
 @action(
@@ -492,6 +516,48 @@ async def papers_list(ctx: ActionContext, params: frames.PapersForQuery) -> list
         return [_dump(read) for read in await paper_listing.read_query_papers(list(rows.all()), db)]
 
 
+@action(
+    "papers.upload",
+    frames.UploadPaper,
+    "Hand over one PDF to run a query against, instead of searching",
+    cost="upload",
+)
+async def papers_upload(ctx: ActionContext, params: frames.UploadPaper) -> dict[str, Any]:
+    """Accept one PDF and store it as a paper, ready to be named in a run.
+
+    Two steps rather than one, because the reader chooses the corpus in two:
+    files are validated as they are dropped, and the run is started afterwards
+    from the ids of the ones that were accepted. A file that never gets used
+    costs a row in the global paper cache and nothing else — and re-uploading
+    it later resolves to the same row, because the id is the hash of its bytes.
+    """
+    try:
+        data = base64.b64decode(params.content_base64, validate=True)
+    except Exception as exc:  # noqa: BLE001 - a malformed body is the caller's
+        raise BadRequest("The file body is not valid base64.", filename=params.filename) from exc
+
+    async with AsyncSessionLocal() as db:
+        accepted = await uploads.accept_upload(params.filename, data, db)
+
+    return {
+        "paper_id": accepted.paper_id,
+        "fingerprint": accepted.fingerprint,
+        "filename": accepted.filename,
+        "title": accepted.title,
+        "authors": accepted.authors,
+        "year": accepted.year,
+        "pages": accepted.pages,
+        # What was declared and what was read. They differ for a paper longer
+        # than `pdf_max_pages`, and the caller says so rather than implying the
+        # whole thing was taken in.
+        "pages_read": accepted.pages_read,
+        "characters": accepted.characters,
+        # True when this exact file was already stored. The reader dropped it
+        # twice, or dropped it again after a reload; either way it is one paper.
+        "reused": accepted.reused,
+    }
+
+
 @action("papers.get", frames.PaperRef, "One paper's metadata")
 async def papers_get(ctx: ActionContext, params: frames.PaperRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
@@ -542,6 +608,20 @@ async def claims_list(ctx: ActionContext, params: frames.ClaimsForPaper) -> list
 async def claims_source(ctx: ActionContext, params: frames.ClaimRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
         return _dump(await provenance.load_claim_source(params.claim_id, db))
+
+
+@action("graph.get", frames.QueryRef, "One run as a graph: clusters, papers, authors, lineage")
+async def graph_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
+    """Everything the Graph screen draws, in one frame.
+
+    Four views over the same run, so one read rather than four — and emphatically
+    not one read per cluster: a fan-out sized by the corpus is what the paper
+    list already had to stop doing when the socket's in-flight ceiling started
+    refusing its tail.
+    """
+    async with AsyncSessionLocal() as db:
+        query = await _require_query(ctx, params.query_id, db)
+        return _dump(await graph_service.build_graph(query, db))
 
 
 @action("clusters.list", frames.QueryRef, "Clusters for a query, best evidence first")

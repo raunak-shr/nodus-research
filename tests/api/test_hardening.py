@@ -74,13 +74,13 @@ def stub_pipeline(monkeypatch):
     """
     launched: list[tuple] = []
 
-    def fake_launch(query_id, raw_query, *, slot=None):
+    def fake_launch(query_id, raw_query, *, slot=None, uploaded_paper_ids=None):
         launched.append((query_id, raw_query))
         if slot is not None:
             slot.release()
         return None
 
-    async def fake_run(query_id, raw_query):
+    async def fake_run(query_id, raw_query, **kwargs):
         launched.append((query_id, raw_query))
 
     monkeypatch.setattr(runner, "launch", fake_launch)

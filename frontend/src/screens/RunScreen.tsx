@@ -134,7 +134,7 @@ export function RunScreen(): ReactElement {
                         : 'var(--n-faint)',
                 }}
               >
-                {phase.name}
+                {phase.label}
               </div>
               <div className="faint num" style={{ fontSize: 10, height: 12 }}>
                 {phase.detail}
@@ -157,6 +157,9 @@ export function RunScreen(): ReactElement {
           >
             <div className="kicker">
               processing · {run.processedCount} of {run.paperTotal} papers
+              {/* An upload run retrieved nothing and ranked nothing, and the
+                  rows below are the reader's own files in their own order. */}
+              {run.uploadedCorpus ? ' · uploaded, not retrieved' : ''}
             </div>
             <div className="dim num" style={{ fontSize: 12 }}>
               {run.claimsExtracted} claims extracted · {run.failedCount} failed
@@ -165,9 +168,9 @@ export function RunScreen(): ReactElement {
 
           {run.papers.length === 0 ? (
             <div className="dim" style={{ fontSize: 13.5, lineHeight: 1.6, maxWidth: 520 }}>
-              Nothing to show yet. The whole shortlist appears here as soon as retrieval and ranking
-              land, and each row then moves through normalisation, extraction and embedding — the run
-              reports per paper, not in a single jump.
+              {run.uploadedCorpus
+                ? 'Nothing to show yet. Your papers appear here as soon as they are linked to the run, and each row then moves through normalisation, extraction and embedding — the run reports per paper, not in a single jump.'
+                : 'Nothing to show yet. The whole shortlist appears here as soon as retrieval and ranking land, and each row then moves through normalisation, extraction and embedding — the run reports per paper, not in a single jump.'}
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '1px 26px' }}>

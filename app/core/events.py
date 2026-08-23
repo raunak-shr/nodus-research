@@ -55,6 +55,7 @@ _PHASE_BY_EVENT = {
     "papers_retrieved": "retrieving",
     "papers_ranked": "ranking",
     "paper_shortlisted": "ranking",
+    "papers_uploaded": "storing",
     "papers_stored": "storing",
     "paper_started": "processing",
     "paper_pdf": "processing",

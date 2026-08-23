@@ -227,3 +227,9 @@ report-*.md
 report-*.html
 report-*.json
 report-*.pdf
+
+# Claude Design handoff bundles. A ~330 KB export of HTML prototypes, a design
+# system bundle and screenshots, dropped here to be read once and implemented
+# from. The implementation is the artifact worth versioning; the mockup it was
+# read from is not, and it is re-exportable from claude.ai/design at any time.
+scripts/nodus/

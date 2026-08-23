@@ -151,6 +151,28 @@ class Settings(BaseSettings):
     # fallback rather than being quietly accepted as full text.
     pdf_min_full_text_chars: int = 3000
 
+    # Uploaded corpora — a run over the reader's own PDFs instead of over
+    # retrieval. The file arrives base64-encoded in one socket frame, which
+    # inflates it by a third, so the per-file ceiling has to stay comfortably
+    # under uvicorn's 16 MB WebSocket frame cap: 10 MB of PDF is ~13.3 MB on
+    # the wire.
+    uploads_enabled: bool = True
+    upload_max_bytes: int = 10_000_000
+    # A ceiling on "is this a paper at all", NOT on how much of it is read.
+    # `pdf_max_pages` is the read budget and applies to an upload exactly as it
+    # applies to a retrieved paper — a 75-page GPT-3 paper pulled from Semantic
+    # Scholar has its first ten pages parsed, so refusing an uploaded copy of
+    # the same file would be incoherent. This was 10 for one revision, which
+    # refused ten of fourteen papers in a real arXiv folder: conference papers
+    # run 9–16 pages and surveys far longer. The truncation is reported back
+    # (`pages` and `pages_read`) rather than being silent, which was the whole
+    # reason for a page cap in the first place.
+    upload_max_pages: int = 80
+    upload_max_papers: int = 20
+    # One paper is a reading, not a body of literature: clustering across
+    # papers is the whole point, and it has nothing to do with one.
+    upload_min_papers: int = 2
+
     # arXiv fallback. When the routes above yield nothing (or nothing longer
     # than an abstract), a preprint of the same work is often on arXiv, where
     # the PDF is a file and never behind a login.
@@ -267,6 +289,13 @@ class Settings(BaseSettings):
     # cannot become the way a script spends the day's model budget.
     rate_limit_chat_per_minute: int = 12
     rate_limit_chat_burst: int = 4
+    # Uploading a corpus. One call per file, and a corpus is up to
+    # `upload_max_papers` of them chosen in a single gesture, so the burst has
+    # to clear a whole drop in one go — under the edits bucket a twenty-file
+    # drop would stall halfway and read as the upload having broken. No model
+    # call and no run slot: the cost is a parse and a row.
+    rate_limit_uploads_per_minute: int = 60
+    rate_limit_uploads_burst: int = 25
     # Only enable behind a proxy that rewrites X-Forwarded-For (Cloudflare,
     # nginx). With nothing in front, the header is caller-controlled and every
     # request can claim a fresh identity, which defeats per-IP limiting.

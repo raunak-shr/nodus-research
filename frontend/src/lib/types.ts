@@ -442,7 +442,107 @@ export interface ServerConfig {
   cluster_similarity_threshold: number
   retrieval_mode: string
   pdf_enabled: boolean
+  uploads_enabled: boolean
+  /** Pages read per paper, retrieved or uploaded alike. A longer paper is
+   *  accepted and truncated to this, and the upload row says so. */
+  max_pages_read: number
+  upload_max_bytes: number
+  upload_max_pages: number
+  upload_max_papers: number
+  upload_min_papers: number
   admin_enabled: boolean
   rate_limit_enabled: boolean
   runs: RunGate
+}
+
+// -- uploads ----------------------------------------------------------------
+
+/** One PDF the reader handed over, as `papers.upload` accepted it.
+ *
+ *  `paper_id` is an ordinary paper id: an upload is a `papers` row like any
+ *  other, keyed by the hash of its own bytes rather than by a Semantic Scholar
+ *  id. `reused` says the same file was already stored — the same paper, not a
+ *  second copy of it.
+ */
+export interface UploadedPaperRead {
+  paper_id: string
+  fingerprint: string
+  filename: string
+  title: string
+  authors: string[]
+  year: number | null
+  /** Pages the file declares. */
+  pages: number
+  /** Pages the parser actually took, bounded by the server's read budget.
+   *  Lower than `pages` for a long paper — reported rather than swallowed. */
+  pages_read: number
+  /** Characters of text the parser recovered. Zero is a scan with no text
+   *  layer: accepted, but there is nothing in it to extract claims from. */
+  characters: number
+  reused: boolean
+}
+
+// -- graph ------------------------------------------------------------------
+
+export interface GraphPaperNode {
+  id: string
+  title: string
+  authors: string[]
+  year: number | null
+  venue: string | null
+  study_type: string | null
+  citation_count: number
+  rank: number
+  claim_count: number
+  uploaded: boolean
+  /** Why this paper contributed nothing, or null when it did — or when the run
+   *  has not finished and the question is not yet answerable. */
+  dropped_reason: string | null
+}
+
+export interface GraphClaimNode {
+  id: string
+  paper_id: string
+  text: string
+  citation: string
+  stance: string
+  confidence: number
+}
+
+export interface GraphClusterNode {
+  id: string
+  theme: string
+  quality_tier: QualityTier
+  support_count: number
+  contradiction_count: number
+  neutral_count: number
+  paper_count: number
+  claims: GraphClaimNode[]
+}
+
+/** One step along a cluster's evidence lineage — not a citation.
+ *
+ *  Nodus has no citation graph (bulk search returns no citation edges), so this
+ *  is the chronology-plus-stance lineage Axis 1 already computes. `basis` on
+ *  the parent payload says so, and the screen prints it.
+ */
+export interface GraphLineageEdge {
+  cluster_id: string
+  from_paper_id: string
+  to_paper_id: string
+  relationship: string
+}
+
+export interface GraphRead {
+  query_id: string
+  question: string
+  status: string
+  uploaded_corpus: boolean
+  papers: GraphPaperNode[]
+  clusters: GraphClusterNode[]
+  lineage: GraphLineageEdge[]
+  lineage_basis: string
+  /** Claims that reached no cluster because only the largest clusters are kept.
+   *  The field on screen is not the whole run, and this is what says so. */
+  claims_unclustered: number
 }

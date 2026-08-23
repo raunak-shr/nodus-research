@@ -27,8 +27,17 @@ logger = logging.getLogger(__name__)
 _tasks: dict[UUID, asyncio.Task] = {}
 
 
-def launch(query_id: UUID, raw_query: str, *, slot: RunSlot | None = None) -> asyncio.Task:
+def launch(
+    query_id: UUID,
+    raw_query: str,
+    *,
+    slot: RunSlot | None = None,
+    uploaded_paper_ids: list[str] | None = None,
+) -> asyncio.Task:
     """Start the pipeline for a query in the background, taking over `slot`.
+
+    `uploaded_paper_ids` runs the question over the reader's own papers instead
+    of retrieving any — the pipeline branches on it, nothing here does.
 
     Ownership of the slot moves here unconditionally: it is released from the
     task's done callback, which fires on success, on failure and on cancellation
@@ -47,7 +56,10 @@ def launch(query_id: UUID, raw_query: str, *, slot: RunSlot | None = None) -> as
         # query row exists, and the phase lookup needs the id.
         slot.attach(query_id)
 
-    task = asyncio.create_task(run_pipeline_safe(query_id, raw_query), name=f"pipeline:{query_id}")
+    task = asyncio.create_task(
+        run_pipeline_safe(query_id, raw_query, uploaded_paper_ids=uploaded_paper_ids),
+        name=f"pipeline:{query_id}",
+    )
     _tasks[query_id] = task
 
     def _finished(_task: asyncio.Task, qid: UUID = query_id) -> None:
@@ -75,9 +87,15 @@ class Admission:
         self._slot = slot
         self._launched = False
 
-    def launch(self, query_id: UUID, raw_query: str) -> asyncio.Task:
+    def launch(
+        self,
+        query_id: UUID,
+        raw_query: str,
+        *,
+        uploaded_paper_ids: list[str] | None = None,
+    ) -> asyncio.Task:
         self._launched = True
-        return launch(query_id, raw_query, slot=self._slot)
+        return launch(query_id, raw_query, slot=self._slot, uploaded_paper_ids=uploaded_paper_ids)
 
     def release_if_unused(self) -> None:
         if not self._launched:

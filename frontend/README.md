@@ -1,8 +1,10 @@
 # Nodus frontend
 
-The reading surface for Nodus: submit a question, watch the pipeline run, and read
-the report it produces — one section per claim cluster, each carrying where its
-evidence came from, where the papers disagree, and how far it can be trusted.
+The reading surface for Nodus: submit a question — against the literature or
+against your own PDFs — watch the pipeline run, and read the report it produces:
+one section per claim cluster, each carrying where its evidence came from, where
+the papers disagree, and how far it can be trusted. The Graph screen draws the
+same run as a field of nodes.
 
 Built from the Claude Design project `Nodus.dc.html` (design system: Modernist).
 
@@ -63,6 +65,7 @@ src/
 │   ├── reportChat.ts   # offline answering: report passages matched, never written
 │   ├── owner.ts        # the per-browser owner token: which history this client reads
 │   ├── evidence.ts     # provenance kinds, coverage, stance/tier, quality arithmetic
+│   ├── graph.ts        # the Graph screen's four layouts: geometry only, no fetching
 │   ├── viewmodels.ts   # what screens read; both data sources produce these
 │   └── format.ts       # numbers, clocks, dates, citations
 ├── state/store.tsx     # one store: connection, run, report, clusters, edits
@@ -107,6 +110,39 @@ src/
   dropped token means sharing a history with everything on the same address.
   Clearing site data mints a new identity, so those runs stop being reachable
   from here; the screen says that too, rather than implying they are gone.
+- **The Graph is one request, laid out four ways.** `graph.get` returns the whole
+  run in one frame and `src/lib/graph.ts` turns it into nodes, edges and labels
+  for the four tabs — no fan-out per cluster, and no fetching inside the layout.
+  Positions are seeded from a hash of each node's identity, never `Math.random`,
+  so the field does not rearrange itself on every hover (it re-renders on each
+  one). Labels are placed after the geometry in a single monotone sweep: node
+  squares first as obstacles, then each label pushed one direction until it
+  clears. Monotone because it converges — nudging labels and geometry against
+  each other oscillates. Every node is finally clamped into the canvas, because
+  a node nobody can see is worse than one nudged ten pixels.
+- **The lineage tab is evidence lineage, not citations**, and it says so under
+  the view. Nodus has no citation graph; drawing invented edges under that word
+  would put untraceable structure beside traceable claims.
+- **Whether uploads work at all is asked once, from `ready.actions`.** A
+  backend older than `papers.upload` refuses every file with the same protocol
+  error, and fourteen copies of "unknown action" is not something a reader can
+  act on. The panel says so up front instead — and names the host it is
+  connected to, because a frontend run locally against the hosted deployment
+  looks exactly like a local backend until something it lacks is asked for.
+- **Uploads are refused per file, and refused files stay in the list.** A file
+  that disappears when it is rejected is a file the reader drops again. The
+  cheap checks (not a PDF, too large, already queued) happen client-side because
+  they need no round trip; anything needing the file *opened* — the page count, a
+  corrupt or password-protected document — is the server's answer, so the rule
+  that matters has one implementation.
+- **A long paper is accepted and its truncation reported, not refused.** Only
+  the first `max_pages_read` pages of any paper are read, retrieved or uploaded
+  alike, so refusing a 15-page conference paper would be refusing what the
+  pipeline already accepts from a search. The row says "15 pages — the first 10
+  will be read" rather than staying quiet about it.
+- **An upload run's phase ladder drops the steps it will not take.** Nothing is
+  retrieved and nothing is ranked, and a phase that stays pending for the whole
+  run reads as a run that stalled.
 - **Offline, answers are matched, not written.** With no socket there is no model,
   so `reportChat.ts` quotes the report's own best-matching sentences and the turn
   is labelled as matched. The demo build never implies a model answered.

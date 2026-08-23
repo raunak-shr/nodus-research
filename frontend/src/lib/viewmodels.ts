@@ -47,6 +47,9 @@ export interface PaperRow {
 
 export interface PhaseStep {
   name: Phase
+  /** What this phase is called on screen. Usually the phase name itself; an
+   *  upload run relabels `retrieving`, because nothing is being retrieved. */
+  label: string
   state: 'pending' | 'active' | 'done'
   detail: string
 }
@@ -98,6 +101,9 @@ export interface RunView {
   reportAvailable: boolean
   /** Why there is no report, when the run finished without writing one. */
   reportNote: string | null
+  /** Whether this run is over papers the reader uploaded. It changes what the
+   *  screen can honestly claim: there was no search, and no ranking. */
+  uploadedCorpus: boolean
   events: EventLine[]
   complete: boolean
   /** Set when the run stopped early; drives the failure and cancel takeovers. */
@@ -199,4 +205,31 @@ function eventDetail(frame: EventFrame): string {
     bits.push(`${key}=${String(value).slice(0, 48)}`)
   }
   return bits.join(' ')
+}
+
+/** One file in the upload queue, as the query screen shows it.
+ *
+ *  The queue is the client's — a file only becomes a paper once the server has
+ *  read it and answered — so `paperId` is null until then, and it is that id,
+ *  not the file, that a run is started from. `key` is a local identity (name
+ *  and size) so a second drop of the same file can be recognised before a byte
+ *  has been sent.
+ */
+export interface UploadFile {
+  key: string
+  name: string
+  size: number
+  /** Pages the file declares, as the server counted them. 0 until it has
+   *  answered. */
+  pages: number
+  /** Pages the server actually read, bounded by its own parse budget. Lower
+   *  than `pages` for a long paper, and the row says so — a 45-page survey
+   *  whose opening alone was read is not the same corpus the reader thinks
+   *  they handed over. */
+  pagesRead: number
+  status: 'checking' | 'ready' | 'rejected'
+  /** Why it was refused, or a caveat about a file that was accepted. Empty for
+   *  an ordinary accepted paper. */
+  reason: string
+  paperId: string | null
 }

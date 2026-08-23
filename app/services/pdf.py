@@ -231,6 +231,34 @@ def is_thin(document: PdfDocument | None) -> bool:
     return document is None or len(document.text) < settings.pdf_min_full_text_chars
 
 
+def parse_pdf_bytes(data: bytes, source: str = "upload") -> PdfDocument | None:
+    """Parse PDF bytes that arrived without being fetched.
+
+    The public door onto the same parser the download path uses, for a file the
+    reader handed us directly. Identical treatment on purpose: an uploaded paper
+    is read by the same `pdf_max_pages` budget and produces the same page
+    offsets, so a claim from an upload can be pointed at a page exactly like one
+    from a retrieved paper.
+    """
+    return _extract_document(data, source=source)
+
+
+def declared_page_count(data: bytes) -> int:
+    """How many pages the file says it has, before any parse budget applies.
+
+    `parse_pdf_bytes` stops at `pdf_max_pages`, so its `page_count` can never
+    report an over-length paper as over-length. Refusing an upload needs the
+    real number.
+    """
+    try:
+        from pypdf import PdfReader
+
+        return len(PdfReader(io.BytesIO(data)).pages)
+    except Exception as exc:  # noqa: BLE001 - an unreadable file is refused, not raised
+        logger.info("PDF page count failed: %s", exc)
+        return 0
+
+
 def _extract_document(data: bytes, source: str | None = None) -> PdfDocument | None:
     try:
         from pypdf import PdfReader

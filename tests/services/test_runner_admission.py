@@ -54,7 +54,7 @@ async def test_admission_holds_the_slot_for_an_inline_run_then_releases():
     """`wait=true` runs inside the block, so the slot spans the whole run."""
     started = asyncio.Event()
 
-    async def fake_run(query_id, raw_query):
+    async def fake_run(query_id, raw_query, **kwargs):
         started.set()
         assert _active() == 1
 
@@ -105,7 +105,7 @@ async def test_a_refused_admission_never_reaches_the_block(monkeypatch):
 async def test_slot_is_released_when_a_launched_run_succeeds(monkeypatch):
     finished = asyncio.Event()
 
-    async def fake_run(query_id, raw_query):
+    async def fake_run(query_id, raw_query, **kwargs):
         assert _active() == 1
         finished.set()
 
@@ -126,7 +126,7 @@ async def test_slot_is_released_when_a_launched_run_raises(monkeypatch):
     """`run_pipeline_safe` should swallow failures, but a slot must survive one
     that escapes anyway."""
 
-    async def fake_run(query_id, raw_query):
+    async def fake_run(query_id, raw_query, **kwargs):
         raise RuntimeError("pipeline exploded")
 
     monkeypatch.setattr(runner, "run_pipeline_safe", fake_run)
@@ -144,7 +144,7 @@ async def test_slot_is_released_when_a_launched_run_raises(monkeypatch):
 async def test_slot_is_released_when_a_launched_run_is_cancelled(monkeypatch):
     running = asyncio.Event()
 
-    async def fake_run(query_id, raw_query):
+    async def fake_run(query_id, raw_query, **kwargs):
         running.set()
         await asyncio.sleep(3600)
 
@@ -166,7 +166,7 @@ async def test_slot_is_released_when_a_launched_run_is_cancelled(monkeypatch):
 async def test_shutdown_cancellation_releases_every_slot(monkeypatch):
     monkeypatch.setattr(settings, "max_active_queries", 3)
 
-    async def fake_run(query_id, raw_query):
+    async def fake_run(query_id, raw_query, **kwargs):
         await asyncio.sleep(3600)
 
     monkeypatch.setattr(runner, "run_pipeline_safe", fake_run)
@@ -186,7 +186,7 @@ async def test_shutdown_cancellation_releases_every_slot(monkeypatch):
 async def test_relaunching_a_running_query_hands_the_slot_back(monkeypatch):
     """A duplicate submission adds no load, so it must not hold capacity."""
 
-    async def fake_run(query_id, raw_query):
+    async def fake_run(query_id, raw_query, **kwargs):
         await asyncio.sleep(3600)
 
     monkeypatch.setattr(runner, "run_pipeline_safe", fake_run)

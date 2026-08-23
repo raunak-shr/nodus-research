@@ -6,6 +6,7 @@ import { Toasts } from './components/Toasts'
 import { ChatScreen } from './screens/ChatScreen'
 import { ClusterScreen } from './screens/ClusterScreen'
 import { EditsScreen } from './screens/EditsScreen'
+import { GraphScreen } from './screens/GraphScreen'
 import { HistoryScreen } from './screens/HistoryScreen'
 import { LandingScreen } from './screens/LandingScreen'
 import { PapersScreen } from './screens/PapersScreen'
@@ -31,6 +32,7 @@ export function App(): ReactElement {
         {store.screen === 'report' ? <ReportScreen /> : null}
         {store.screen === 'cluster' ? <ClusterScreen /> : null}
         {store.screen === 'papers' ? <PapersScreen /> : null}
+        {store.screen === 'graph' ? <GraphScreen /> : null}
         {store.screen === 'edits' ? <EditsScreen /> : null}
         {store.screen === 'chat' ? <ChatScreen /> : null}
         {store.screen === 'history' ? <HistoryScreen /> : null}

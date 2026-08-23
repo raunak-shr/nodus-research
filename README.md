@@ -429,9 +429,10 @@ Heartbeats continue for as long as the connection is open, including after a run
 | meta | `meta.describe`, `meta.health`, `meta.config` |
 | queries | `queries.interpret`, `queries.create`, `queries.list`, `queries.get`, `queries.stats`, `queries.delete`, `queries.cancel`, `queries.followup`, `queries.followups` |
 | stream | `queries.subscribe`, `queries.unsubscribe`, `queries.events` |
-| papers | `papers.list`, `papers.get`, `papers.normalized` |
+| papers | `papers.list`, `papers.get`, `papers.normalized`, `papers.upload` |
 | claims | `claims.list`, `clusters.list`, `clusters.get`, `clusters.update`, `clusters.set_stance`, `clusters.add_claim`, `clusters.remove_claim` |
 | report | `report.get`, `report.regenerate`, `report.update`, `report.section.update`, `report.render`, `report.export`, `report.pdf` |
+| graph | `graph.get` |
 | chat | `chat.ask` |
 
 ```js
@@ -461,6 +462,33 @@ Every event carries `seq` (monotonic per query), `phase`, and — where the deno
 Per-paper sub-stages matter because normalize + extract + embed is ~30s per paper: a single completion event leaves the UI blank for all of it. `paper_failed` and `extraction_complete.failed_papers` surface degradation that v1 only wrote to the server log.
 
 ### Report rendering and PDF
+
+### Running over your own PDFs
+
+A run does not have to start from a search. `papers.upload` takes one PDF at a time, base64-encoded, and `queries.create` accepts the resulting `paper_ids` instead of retrieving anything:
+
+```js
+// one call per file, so a refusal names the file it refuses
+const paper = await call("papers.upload", { filename: "trial.pdf", content_base64: b64 })
+// → {paper_id, title, authors, year, pages, characters, reused}
+
+await call("queries.create", {
+  query: "Does aerobic exercise reduce depression severity?",
+  paper_ids: [paper.paper_id, ...],             // 2–20 of them
+})
+```
+
+The pipeline branches after the question is structured: no retrieval, no ranking, straight into normalisation and extraction. Everything downstream is unchanged, so an upload run produces the same clusters, the same three-axis report, the same chat and the same PDF export.
+
+An uploaded paper is an ordinary `papers` row keyed by the sha-256 of its own bytes, so uploading the same file twice is one paper and reuses the claims already extracted from it (`reused: true` says so). Its text is parsed and stored when it arrives, which is why nothing is ever fetched for it — no DOI resolution and no arXiv fallback, because for an upload the file *is* the paper. Files are refused with a reason a person can act on: not a PDF, over `UPLOAD_MAX_BYTES`, longer than `UPLOAD_MAX_PAGES` (80 — a ceiling on "is this a paper", not on how much is read), or unopenable. Two things are reported rather than refused, because both are real papers: `pages_read < pages` means only the opening was parsed, under the same `PDF_MAX_PAGES` budget a retrieved paper gets; `characters: 0` means a scan with no text layer — accepted, but there is nothing in it to extract from, and the caller is told at upload rather than at the end of a run.
+
+### The graph
+
+`graph.get` returns one whole run as a field of nodes — papers, clusters with their member claims, and lineage edges — in a single frame. The frontend's Graph screen draws four views over that one payload (clusters, papers, authors, lineage); authors are derived client-side from the author lists the papers already carry.
+
+The lineage view is **not** a citation graph. Bulk search returns no citation edges, so Nodus has never had them; what it draws is the evidence lineage Axis 1 already computes per cluster — which paper stated a claim first, and how each later one supports, contradicts or extends it — laid out by publication year. `lineage_basis` carries the tree's own account of how it was derived, and the screen prints it.
+
+`claims_unclustered` counts the claims that reached no cluster because only the largest clusters are kept. The field draws what clustered; that number is what stops it reading as the whole run.
 
 `report.render` returns the same HTML document the frontend displays — the ranked cluster rail, quality-tier chips, lineage timelines, claim tables — theme-aware for light and dark. `report.pdf` renders the *print* variant of that same HTML in headless Chromium, so the PDF cannot drift from the screen: single column, forced light palette, `@page` rules, and every disclosure expanded (nothing may be hidden in a PDF).
 

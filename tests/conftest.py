@@ -43,3 +43,39 @@ def owns_queries():
 
     with patch.object(ownership, "require_query", AsyncMock(side_effect=_owned)):
         yield
+
+
+class StubSession:
+    """A database session that answers nothing.
+
+    For socket tests whose reads are all patched: the action still opens a
+    session and writes through it, so there has to be *something* there, and a
+    real one would make the test need a database. `refresh` fills in the server
+    defaults, because the read models will not validate without them.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    def add(self, obj) -> None:
+        from uuid import uuid4
+
+        if getattr(obj, "id", None) is None:
+            obj.id = uuid4()
+
+    async def commit(self) -> None:
+        pass
+
+    async def refresh(self, obj, *args, **kwargs) -> None:
+        from datetime import UTC, datetime
+
+        now = datetime.now(UTC)
+        obj.paper_count = obj.paper_count or 0
+        obj.created_at = obj.created_at or now
+        obj.updated_at = obj.updated_at or now

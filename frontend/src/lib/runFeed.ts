@@ -74,6 +74,11 @@ export class RunFeed {
     private readonly question: string,
     /** Used only until the server reports a real total. */
     private readonly expectedPapers: number,
+    /** True when the corpus was uploaded rather than retrieved. The pipeline
+     *  branches past retrieval and ranking for one of these, so the ladder must
+     *  not show a `ranking` step that will never happen — a phase that stays
+     *  pending forever reads as a run that stalled. */
+    private readonly uploaded: boolean = false,
   ) {}
 
   /** Name the run once `queries.create` answers.
@@ -351,10 +356,13 @@ export class RunFeed {
       status: this.phase === 'completed' ? 'completed' : this.phase === 'failed' ? 'failed' : 'processing',
       phase: this.phase,
       phaseIndex,
-      phases: PHASE_ORDER.filter((name) => name !== 'failed').map((name) => {
+      phases: PHASE_ORDER.filter(
+        (name) => name !== 'failed' && !(this.uploaded && name === 'ranking'),
+      ).map((name) => {
         const index = PHASE_ORDER.indexOf(name)
         return {
           name,
+          label: this.uploaded && name === 'retrieving' ? 'reading uploads' : name,
           state: index < phaseIndex ? 'done' : index === phaseIndex ? 'active' : 'pending',
           // Only for phases the run has reached. The shortlist is known at
           // ranking, so a count under 'storing' would otherwise be filled in
@@ -372,6 +380,7 @@ export class RunFeed {
       sectionTotal: slotCount,
       reportAvailable: this.reportAvailable,
       reportNote: this.reportNote,
+      uploadedCorpus: this.uploaded,
       events: this.events,
       complete: this.phase === 'completed',
       outcome:
@@ -382,6 +391,8 @@ export class RunFeed {
 
   private phaseDetail(name: Phase, total: number): string {
     switch (name) {
+      case 'retrieving':
+        return this.uploaded && total ? `${total} files` : ''
       case 'ranking':
         return this.papers.size ? `top ${this.papers.size}` : ''
       case 'storing':

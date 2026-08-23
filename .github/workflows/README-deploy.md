@@ -133,7 +133,8 @@ your local `.env`.
 
 ```bash
 for NAME in DATABASE_URL GEMINI_API_KEY CLOUDFLARE_ACCOUNT_ID \
-            CLOUDFLARE_API_TOKEN SEMANTIC_SCHOLAR_API_KEY ADMIN_API_KEY; do
+            CLOUDFLARE_API_TOKEN SEMANTIC_SCHOLAR_API_KEY ADMIN_API_KEY \
+            MAX_ACTIVE_QUERIES MAX_DAILY_RUNS; do
   gcloud secrets describe "$NAME" >/dev/null 2>&1 \
     || gcloud secrets create "$NAME" --replication-policy=automatic
   gcloud secrets add-iam-policy-binding "$NAME" \
@@ -154,6 +155,27 @@ read -rs -p "DATABASE_URL: " V && printf '%s' "$V" \
 Repeat for `GEMINI_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`,
 `SEMANTIC_SCHOLAR_API_KEY`, `ADMIN_API_KEY`.
 
+`MAX_ACTIVE_QUERIES` and `MAX_DAILY_RUNS` are the two entries here that are not
+credentials. They are held as secrets so the admission ceilings can be moved
+without rewriting the service's environment block, but nothing about them is
+hidden — treat both values as public, and skip the `read -s` prompt, since there
+is nothing to keep off the screen:
+
+```bash
+printf '2' | gcloud secrets versions add MAX_ACTIVE_QUERIES --data-file=-
+printf '0' | gcloud secrets versions add MAX_DAILY_RUNS --data-file=-
+```
+
+Both reach `Settings()` as a string to parse as an int. Surrounding whitespace is
+tolerated (`"2\n"` and `" 3 "` both parse), so a stray newline is harmless — but
+an *empty* version is a `ValidationError` at import, which fails the container
+rather than falling back to the default.
+
+The two zeroes are not the same zero. `MAX_DAILY_RUNS=0` **disables** the daily
+ceiling, which is the shipped default and what the `0` above preserves;
+`MAX_ACTIVE_QUERIES=0` disables nothing, because that gate clamps to
+`max(1, …)`.
+
 `API_KEY` is optional and currently unset, which leaves the API open
 (`auth_enabled: false`). Add it as a secret only if you want to close it — every
 caller must then present it, including the frontend via `VITE_NODUS_API_KEY`.
@@ -167,7 +189,8 @@ order avoids needing a bootstrap image.
 ```bash
 SECRETS="DATABASE_URL=DATABASE_URL:latest"
 for NAME in GEMINI_API_KEY CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN \
-            SEMANTIC_SCHOLAR_API_KEY API_KEY ADMIN_API_KEY; do
+            SEMANTIC_SCHOLAR_API_KEY API_KEY ADMIN_API_KEY \
+            MAX_ACTIVE_QUERIES MAX_DAILY_RUNS; do
   gcloud secrets describe "$NAME" >/dev/null 2>&1 || continue
   SECRETS="${SECRETS},${NAME}=${NAME}:latest"
 done
@@ -184,12 +207,19 @@ quotes matter too: `config.py` parses this with a bare `json.loads`, so
 `[https://…]` fails at import and takes every route down with it.
 
 Only four environment variables, because those are the only ones whose deployed
-value differs from the `config.py` default. `DATABASE_SSL` (auto),
-`GEMINI_RPM_LIMIT` (14), `GEMINI_MAX_CONCURRENCY` (4), `GEMINI_THINKING_LEVEL`
-(low), `MAX_ACTIVE_QUERIES` (2), `MAX_CONCURRENT_PAPERS` (10), `DB_POOL_SIZE`
-(5), `DB_MAX_OVERFLOW` (5) and `USE_SYSTEM_CA` (true) are already correct from
-the code. Setting one anyway would pin it, so a later change to the default
-would not reach production and nothing would show the two had diverged.
+value differs from the `config.py` default *and* does not arrive as a secret.
+`DATABASE_SSL` (auto), `GEMINI_RPM_LIMIT` (14), `GEMINI_MAX_CONCURRENCY` (4),
+`GEMINI_THINKING_LEVEL` (low), `MAX_CONCURRENT_PAPERS` (10), `DB_POOL_SIZE` (5),
+`DB_MAX_OVERFLOW` (5) and `USE_SYSTEM_CA` (true) are already correct from the
+code. Setting one anyway would pin it, so a later change to the default would
+not reach production and nothing would show the two had diverged.
+
+`MAX_ACTIVE_QUERIES` and `MAX_DAILY_RUNS` are pinned on purpose, and pay exactly
+that cost: they arrive from Secret Manager, so `config.py`'s defaults of 2 and 0
+are dead in production and editing them there reaches local runs and CI only.
+`/health/config` exposes what the process resolved as `runs.limit` and
+`runs.daily_limit`, which is the only place code and deployment can be seen to
+agree or not.
 
 Then confirm it took, rather than assuming:
 
@@ -230,6 +260,42 @@ rather than in the service's history.
   this every caller presents as the load balancer and one user's burst throttles
   everyone. The container also runs uvicorn with `--proxy-headers`; the two agree
   rather than conflict, because both take the client-most entry.
+
+## Changing the admission ceilings
+
+Adding a secret version does **not** change a running service. `latest` is
+resolved when a container instance starts, and this service holds one always-warm
+instance (`--min-instances=1 --max-instances=1 --no-cpu-throttling`), so it will
+not restart on its own to notice a new version. `Settings()` is also built at
+import, and `limits.py` reads both numbers through lambdas over that one
+instance, so nothing re-reads them mid-process either. Roll a revision:
+
+```bash
+printf '3' | gcloud secrets versions add MAX_ACTIVE_QUERIES --data-file=-
+printf '50' | gcloud secrets versions add MAX_DAILY_RUNS --data-file=-
+# Roll a revision so the new versions are actually picked up.
+gcloud run services update "$SERVICE" --region="$REGION" --quiet
+curl -fsS "$(gcloud run services describe "$SERVICE" --region="$REGION" \
+              --format='value(status.url)')/health/config"
+```
+
+Three ways this bites, all worth knowing before you touch either one:
+
+- **Each secret is now a hard dependency.** Delete it, revoke the runtime service
+  account's `secretAccessor` binding, or leave the value unparseable as an int,
+  and the revision fails to start — Cloud Run keeps serving the previous one, so
+  the symptom is a deploy that reports failure while the old code stays live.
+  A plain environment variable degrades to the code default instead.
+- **`--set-secrets` replaces the whole set**, so the command in *First deploy*
+  must always list every secret. To add or change one in isolation use
+  `--update-secrets=MAX_DAILY_RUNS=MAX_DAILY_RUNS:latest`, which leaves the
+  others alone.
+- **Rolling a revision resets the day's count.** `runs_today` lives in the
+  process, like everything else in `limits.py`, so the restart that applies a new
+  `MAX_DAILY_RUNS` also zeroes what has been spent against it. Lowering the
+  ceiling mid-day therefore hands out a fresh allowance rather than tightening
+  the current one — which is the wrong direction if the reason for lowering it
+  was a day that had already run away.
 
 ## Environment on deploy
 
@@ -298,7 +364,7 @@ foreach ($ROLE in @("roles/run.admin", "roles/artifactregistry.writer")) {
   gcloud projects add-iam-policy-binding $PROJECT_ID --member="serviceAccount:${DEPLOYER}" --role=$ROLE
 }
 
-foreach ($NAME in @("DATABASE_URL","GEMINI_API_KEY","CLOUDFLARE_ACCOUNT_ID","CLOUDFLARE_API_TOKEN","SEMANTIC_SCHOLAR_API_KEY","ADMIN_API_KEY")) {
+foreach ($NAME in @("DATABASE_URL","GEMINI_API_KEY","CLOUDFLARE_ACCOUNT_ID","CLOUDFLARE_API_TOKEN","SEMANTIC_SCHOLAR_API_KEY","ADMIN_API_KEY","MAX_ACTIVE_QUERIES","MAX_DAILY_RUNS")) {
   gcloud secrets describe $NAME 2>$null
   if (-not $?) { gcloud secrets create $NAME --replication-policy=automatic }
   gcloud secrets add-iam-policy-binding $NAME --member="serviceAccount:${RUNTIME}" --role=roles/secretmanager.secretAccessor --quiet
@@ -316,6 +382,20 @@ $T = New-TemporaryFile
 gcloud secrets versions add DATABASE_URL --data-file=$T
 Remove-Item $T -Force
 [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($P)
+```
+
+`MAX_ACTIVE_QUERIES` and `MAX_DAILY_RUNS` need none of that ceremony — neither is
+a secret value, so write it straight to the file. `WriteAllText` rather than
+`Set-Content` only because the latter appends a newline and there is no reason to
+store one:
+
+```powershell
+$T = New-TemporaryFile
+[System.IO.File]::WriteAllText($T, "2")
+gcloud secrets versions add MAX_ACTIVE_QUERIES --data-file=$T
+[System.IO.File]::WriteAllText($T, "0")
+gcloud secrets versions add MAX_DAILY_RUNS --data-file=$T
+Remove-Item $T -Force
 ```
 
 The env-vars string keeps its single quotes — PowerShell does not expand inside

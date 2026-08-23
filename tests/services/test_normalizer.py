@@ -199,3 +199,73 @@ async def test_a_paper_that_reaches_full_text_normally_costs_no_arxiv_call():
 
     fallback.assert_not_awaited()
     assert record.full_text_source == "open_access"
+
+
+# -- uploaded papers --------------------------------------------------------
+
+
+async def test_an_uploaded_paper_is_never_fetched():
+    """The file the reader handed over *is* the paper.
+
+    Its text was parsed and stored when it arrived, so there is no url, no DOI
+    and nothing to resolve — and an arXiv title search here could only ever
+    substitute a different paper for the one that was uploaded.
+    """
+    from app.models.paper import NormalizedPaper
+
+    stored = NormalizedPaper(
+        paper_id="paper-1",
+        full_text=BODY,
+        page_offsets=OFFSETS,
+        full_text_source="upload",
+        processing_status=ProcessingStatus.pending,
+    )
+    db = _StubDb(existing=stored)
+    agent = AsyncMock()
+    agent.ainvoke.return_value = OUTPUT
+    fetch = AsyncMock(return_value=None)
+    from_arxiv = AsyncMock(return_value=None)
+
+    with (
+        patch.object(pdf, "fetch_pdf_document", fetch),
+        patch.object(arxiv, "fetch_document", from_arxiv),
+        patch.object(normalizer, "get_structured_llm", return_value=agent),
+        patch.object(normalizer, "get_llm_name", return_value="stub-model"),
+    ):
+        record = await normalizer.normalize_paper(_paper(), db)
+
+    fetch.assert_not_awaited()
+    from_arxiv.assert_not_awaited()
+    assert record.full_text == BODY
+    assert record.full_text_source == "upload"
+    assert record.study_type == StudyType.rct
+
+
+async def test_an_uploaded_scan_with_no_text_still_stays_off_the_network():
+    """A scan parses to nothing, which is `is_thin` — the trigger for arXiv.
+
+    Following it would attribute some other paper's evidence to this one, so
+    the upload marker has to win over the thinness check.
+    """
+    from app.models.paper import NormalizedPaper
+
+    stored = NormalizedPaper(
+        paper_id="paper-1",
+        full_text=None,
+        full_text_source="upload",
+        processing_status=ProcessingStatus.pending,
+    )
+    agent = AsyncMock()
+    agent.ainvoke.return_value = OUTPUT
+    from_arxiv = AsyncMock(return_value=pdf.PdfDocument(text="A DIFFERENT PAPER" * 300))
+
+    with (
+        patch.object(pdf, "fetch_pdf_document", AsyncMock(return_value=None)),
+        patch.object(arxiv, "fetch_document", from_arxiv),
+        patch.object(normalizer, "get_structured_llm", return_value=agent),
+        patch.object(normalizer, "get_llm_name", return_value="stub-model"),
+    ):
+        record = await normalizer.normalize_paper(_paper(), _StubDb(existing=stored))
+
+    from_arxiv.assert_not_awaited()
+    assert "DIFFERENT" not in (record.full_text or "")
