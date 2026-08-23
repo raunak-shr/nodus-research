@@ -26,6 +26,7 @@ import { NodusError, NodusSocket, resolveSocketUrl, type SocketGap, type SocketS
 import type {
   ChatAnswerRead,
   ChatTurn,
+  GraphRead,
   ClaimClusterDetail,
   ClaimClusterRead,
   ClaimSourceRead,
@@ -56,6 +57,7 @@ import {
   type RunView,
   type UploadFile,
 } from '../lib/viewmodels'
+import { demoGraph } from '../data/demoGraph'
 import {
   DEMO_CLUSTERS,
   DEMO_FAILURES,
@@ -80,6 +82,7 @@ export type Screen =
   | 'report'
   | 'cluster'
   | 'papers'
+  | 'graph'
   | 'edits'
   | 'chat'
   | 'history'
@@ -143,6 +146,12 @@ interface Store {
   /** True while any file is still being read by the server. */
   uploading: boolean
 
+  /** The whole run as a field of nodes, or null before `graph.get` answers.
+   *  One payload behind all four views — see `src/lib/graph.ts`. */
+  graph: GraphRead | null
+  graphLoading: boolean
+  graphError: string | null
+
   source: ClaimSourceRead | null
   sourceClaimId: string | null
   sourceRef: string
@@ -181,6 +190,8 @@ interface Store {
   /** Run the question in the box over the accepted uploads. Nothing is
    *  retrieved and nothing is ranked. */
   runUploads(): void
+  /** Fetch the graph for the active query, unless it is already in hand. */
+  loadGraph(force?: boolean): void
   cancelRun(): void
   skipToEnd(): void
   reloadRun(): void
@@ -329,6 +340,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
    *  updates this first and hands the same array to React. */
   const uploadsRef = useRef<UploadFile[]>([])
 
+  const [graph, setGraph] = useState<GraphRead | null>(DEMO_ENV ? demoGraph() : null)
+  const [graphLoading, setGraphLoading] = useState(false)
+  const [graphError, setGraphError] = useState<string | null>(null)
+
   const [source, setSource] = useState<ClaimSourceRead | null>(null)
   const [sourceClaimId, setSourceClaimId] = useState<string | null>(null)
   const [sourceRef, setSourceRef] = useState('')
@@ -367,6 +382,14 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     setChatPending(false)
   }, [activeQueryId])
 
+  // The field describes one run. Holding the previous one while the new one
+  // loads would draw another query's clusters under this query's question.
+  useEffect(() => {
+    if (DEMO_ENV) return
+    setGraph(null)
+    setGraphError(null)
+  }, [activeQueryId])
+
   // -- demo fallback -------------------------------------------------------
 
   const fallToDemo = useCallback((note: string) => {
@@ -378,6 +401,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     setClusters(DEMO_CLUSTERS)
     setActiveClusterId((current) => current ?? 'c2')
     setPapers(demoPaperRows())
+    setGraph(demoGraph())
     // The demo corpus answers exactly one question, so falling back to it with
     // an empty box would offer screens that do not match what was asked.
     setQuestion((current) => current.trim() || DEMO_QUESTION)
@@ -946,6 +970,40 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     beginRun(asked, ids)
   }, [beginRun, question])
 
+  // -- the graph -----------------------------------------------------------
+
+  /** Fetch the whole field for the active query.
+   *
+   *  One request for all four views, and only when there is nothing in hand:
+   *  the screen calls this on mount and the graph does not change under a
+   *  finished run. `force` is for a run that has just completed.
+   */
+  const loadGraph = useCallback(
+    (force = false) => {
+      if (mode === 'demo') {
+        setGraph(demoGraph())
+        return
+      }
+      const socket = socketRef.current
+      const queryId = activeQueryId
+      if (!socket || !queryId) return
+      if (!force && graph && graph.query_id === queryId) return
+
+      setGraphLoading(true)
+      setGraphError(null)
+      socket
+        .request<GraphRead>('graph.get', { query_id: queryId })
+        .then((next) => setGraph(next))
+        .catch((error: unknown) => {
+          const described = describe('graph.get', error)
+          setGraphError(described.message)
+          setLastError(described)
+        })
+        .finally(() => setGraphLoading(false))
+    },
+    [activeQueryId, graph, mode],
+  )
+
   const cancelRun = useCallback(() => {
     stopClock()
     // Cancelling ends the run without a terminal phase — the stream just stops —
@@ -1510,6 +1568,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       removeUpload,
       clearUploads,
       runUploads,
+      graph,
+      graphLoading,
+      graphError,
+      loadGraph,
       cancelRun,
       skipToEnd,
       reloadRun,
@@ -1585,6 +1647,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       removeUpload,
       clearUploads,
       runUploads,
+      graph,
+      graphLoading,
+      graphError,
+      loadGraph,
     ],
   )
 

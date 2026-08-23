@@ -61,6 +61,7 @@ nodus/
 │   ├── schemas/                # Pydantic request/response + LLM output schemas
 │   ├── services/               # all business logic (see README for the map)
 │   │                               # incl. uploads.py (the reader's own PDFs)
+│   │                               # and graph.py (one run as a field of nodes)
 │   ├── eval/harness.py         # Phase 5 evaluation harness
 │   └── db/
 │       ├── session.py          # async engine (TLS by host) + session factory
@@ -97,6 +98,8 @@ nodus/
  Clusters with `user_edited=true` survive re-analysis.
 - **An uploaded paper is an ordinary paper, keyed by its own bytes.** `papers.semantic_scholar_id` is the deduplication key and cannot be null, so an upload gets `upload:<sha-256[:32]>` — 39 characters, inside the `String(40)` column. The same file uploaded twice is one paper and reuses the normalisation and claims the first upload paid for, which is the global cache working as designed rather than an exception to it. The prefix is what tells every other reader of that column that the id addresses nothing at Semantic Scholar. Uploads are **not** owner-scoped, for the same reason papers never are: a paper row cannot reveal which question someone asked about it.
 - **An uploaded paper's text arrives with the file, and nothing is ever fetched for it.** `uploads.accept_upload` parses the PDF and writes the `normalized_papers` row up front with `full_text_source="upload"`; `normalizer.normalize_paper` reads that back instead of going to the network. The arXiv fallback is skipped **even when the text is thin** — a scan with no text layer parses to nothing, which is exactly `is_thin`, and following it would attribute a different paper's evidence to this one. For an upload the file *is* the paper. `UPLOAD_MAX_PAGES` (80) asks "is this a paper at all", **not** "how much of it is read": `pdf_max_pages` is the read budget and applies to an upload exactly as it does to a retrieved paper, so refusing a 15-page conference paper the pipeline would happily take from Semantic Scholar would be incoherent. It was 10 for one revision, which refused ten of fourteen papers in a real arXiv folder. The truncation is *reported* — `pages` against `pages_read` — which is the only thing a page cap was ever protecting against.
+- **The Graph screen is one request, not one per cluster.** `graph.get` returns the whole run — papers, clusters with their member claims, and lineage edges — and the four views (clusters, papers, authors, lineage) are that one payload seen from different sides. Authors are derived client-side from the author lists already on the papers; a second payload for them would be a second thing that can disagree with the first. Inside `build_graph` the member claims are one read keyed by cluster, not a read per cluster, for the same reason `paper_listing` stopped fanning out. `app/services/graph.py` joins; `frontend/src/lib/graph.ts` lays out. Positions are seeded from a hash of each node's identity, never `Math.random`, so the field does not rearrange itself on every hover.
+- **The Graph's "lineage" is evidence lineage, not citations.** Semantic Scholar's bulk search returns no citation edges, so Nodus has never had them. The lineage view draws the `lineage_tree` Axis 1 already computes per cluster — chronology plus the stance the cross-paper agent assigned — as consecutive links along each chain, and `lineage_basis` is carried through so the screen can print how it was derived. Drawing invented citation edges under that word would put untraceable structure beside traceable claims, which is the failure mode an evidence tool cannot afford.
 - **Failures are isolated.** A dead PDF, an unparseable paper, or a failed cluster analysis degrades that unit only; the run continues.
 - **Async everywhere.** The bottleneck is I/O wait on LLM calls. `asyncio.Semaphore` caps concurrent processing (default 10).
 - **v2 is WebSocket-only; v1 REST stays.** One socket carries every action plus the live stream, so a frontend opens one connection and never polls. Actions are registered with a Pydantic params model, and `meta.describe` publishes their JSON Schema — the socket has no OpenAPI document.
@@ -162,7 +165,7 @@ PostgreSQL with pgvector. Core tables: queries, papers, query_papers, normalized
 
 Nothing is stored for the chat over a report: `chat.ask` reads the report and clusters and returns an answer, and the thread lives in the client.
 
-Uploaded papers needed no migration either: an upload is a `papers` row with a synthesized `semantic_scholar_id` and a `normalized_papers` row written at upload time — see the design note above.
+Uploaded papers needed no migration either: an upload is a `papers` row with a synthesized `semantic_scholar_id` and a `normalized_papers` row written at upload time — see the design note above. Nor did the Graph screen: `graph.get` is a join over tables that already exist.
 
 Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster analysis columns, reports table, follow-up query linkage), `003_claim_provenance` (source text and match quality per claim), `004_arxiv_fallback` (`papers.arxiv_id`, `normalized_papers.full_text_source`), `005_query_owner` (`queries.owner_key` plus the `(owner_key, created_at DESC)` index a history reads).
 
@@ -172,9 +175,9 @@ Migrations: `001_initial_schema` (base schema), `002_reports_and_axes` (cluster 
 
 MVP (Phases 0–5) and post-MVP (Phases 6–10) are complete: retrieval, extraction, three-axis analysis, synthesis and export, human-in-the-loop editing, and follow-up queries. See the README for the phase table and known limitations.
 
-**v2 (frontend surface)** is complete: `/api/v2/ws` with 37 actions, fine-grained pipeline events, the rendered report document, and PDF export. Locally that needs `uv run playwright install chromium` once, and a single API worker; the deployed image carries Chromium and runs one worker by construction.
+**v2 (frontend surface)** is complete: `/api/v2/ws` with 38 actions, fine-grained pipeline events, the rendered report document, and PDF export. Locally that needs `uv run playwright install chromium` once, and a single API worker; the deployed image carries Chromium and runs one worker by construction.
 
-**Uploaded corpora** are the newest surface. `papers.upload` takes one base64 PDF per call (one per file, so a refusal names the file it refuses) and `queries.create` accepts `paper_ids` to run over them. No migration was needed.
+**Uploaded corpora and the Graph screen** are the two newest surfaces. `papers.upload` takes one base64 PDF per call (one per file, so a refusal names the file it refuses) and `queries.create` accepts `paper_ids` to run over them. `graph.get` returns one run as a field of nodes for the Graph screen's four views. Neither needed a migration.
 
 ## Conventions
 

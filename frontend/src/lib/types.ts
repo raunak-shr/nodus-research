@@ -481,3 +481,68 @@ export interface UploadedPaperRead {
   characters: number
   reused: boolean
 }
+
+// -- graph ------------------------------------------------------------------
+
+export interface GraphPaperNode {
+  id: string
+  title: string
+  authors: string[]
+  year: number | null
+  venue: string | null
+  study_type: string | null
+  citation_count: number
+  rank: number
+  claim_count: number
+  uploaded: boolean
+  /** Why this paper contributed nothing, or null when it did — or when the run
+   *  has not finished and the question is not yet answerable. */
+  dropped_reason: string | null
+}
+
+export interface GraphClaimNode {
+  id: string
+  paper_id: string
+  text: string
+  citation: string
+  stance: string
+  confidence: number
+}
+
+export interface GraphClusterNode {
+  id: string
+  theme: string
+  quality_tier: QualityTier
+  support_count: number
+  contradiction_count: number
+  neutral_count: number
+  paper_count: number
+  claims: GraphClaimNode[]
+}
+
+/** One step along a cluster's evidence lineage — not a citation.
+ *
+ *  Nodus has no citation graph (bulk search returns no citation edges), so this
+ *  is the chronology-plus-stance lineage Axis 1 already computes. `basis` on
+ *  the parent payload says so, and the screen prints it.
+ */
+export interface GraphLineageEdge {
+  cluster_id: string
+  from_paper_id: string
+  to_paper_id: string
+  relationship: string
+}
+
+export interface GraphRead {
+  query_id: string
+  question: string
+  status: string
+  uploaded_corpus: boolean
+  papers: GraphPaperNode[]
+  clusters: GraphClusterNode[]
+  lineage: GraphLineageEdge[]
+  lineage_basis: string
+  /** Claims that reached no cluster because only the largest clusters are kept.
+   *  The field on screen is not the whole run, and this is what says so. */
+  claims_unclustered: number
+}

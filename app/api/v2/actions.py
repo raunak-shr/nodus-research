@@ -52,6 +52,7 @@ from app.services import (
     synthesizer,
     uploads,
 )
+from app.services import graph as graph_service
 from app.services.errors import BadRequest, Forbidden, NotFound
 
 
@@ -607,6 +608,20 @@ async def claims_list(ctx: ActionContext, params: frames.ClaimsForPaper) -> list
 async def claims_source(ctx: ActionContext, params: frames.ClaimRef) -> dict[str, Any]:
     async with AsyncSessionLocal() as db:
         return _dump(await provenance.load_claim_source(params.claim_id, db))
+
+
+@action("graph.get", frames.QueryRef, "One run as a graph: clusters, papers, authors, lineage")
+async def graph_get(ctx: ActionContext, params: frames.QueryRef) -> dict[str, Any]:
+    """Everything the Graph screen draws, in one frame.
+
+    Four views over the same run, so one read rather than four — and emphatically
+    not one read per cluster: a fan-out sized by the corpus is what the paper
+    list already had to stop doing when the socket's in-flight ceiling started
+    refusing its tail.
+    """
+    async with AsyncSessionLocal() as db:
+        query = await _require_query(ctx, params.query_id, db)
+        return _dump(await graph_service.build_graph(query, db))
 
 
 @action("clusters.list", frames.QueryRef, "Clusters for a query, best evidence first")
