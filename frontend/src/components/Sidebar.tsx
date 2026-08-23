@@ -109,22 +109,23 @@ export function Sidebar(): ReactElement {
         <div className="kicker" style={{ fontSize: 11 }}>
           Appearance
         </div>
-        <div style={{ display: 'flex', border: '1px solid var(--n-line2)', overflow: 'hidden' }}>
-          <button
-            type="button"
-            className={`seg-btn${store.theme === 'dark' ? ' on' : ''}`}
-            onClick={() => store.setTheme('dark')}
-          >
-            Dark
-          </button>
-          <button
-            type="button"
-            className={`seg-btn${store.theme === 'light' ? ' on' : ''}`}
-            onClick={() => store.setTheme('light')}
-          >
-            Light
-          </button>
-        </div>
+        {/* One switch rather than two buttons. With a pair, the current theme
+            is something you deduce from which one is filled; with a switch it
+            is the label, and the knob says which way it will go. */}
+        <button
+          type="button"
+          className={`theme-toggle ${store.theme}`}
+          onClick={() => store.setTheme(store.theme === 'dark' ? 'light' : 'dark')}
+          aria-pressed={store.theme === 'light'}
+          aria-label={`Appearance: ${store.theme}. Switch to ${
+            store.theme === 'dark' ? 'light' : 'dark'
+          }.`}
+        >
+          <span>{store.theme === 'dark' ? 'Dark' : 'Light'}</span>
+          <span className="track" aria-hidden="true">
+            <span className="knob" />
+          </span>
+        </button>
         <div className="num" style={{ fontSize: 11, color: 'var(--n-faint)', lineHeight: 1.5 }}>
           ws /api/v2/ws ·{' '}
           <span
