@@ -843,6 +843,14 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
    *  corrupt or password-protected document) is the server's answer, so there
    *  is exactly one implementation of the rule that matters.
    */
+  /** Files waiting to be sent, and how many sends are in flight.
+   *
+   *  Refs rather than state because both are read and written inside the send
+   *  loop, where a value one render old would let two workers take the same
+   *  file. Nothing renders off them. */
+  const uploadQueueRef = useRef<{ file: File; key: string; attempt: number }[]>([])
+  const uploadWorkersRef = useRef(0)
+
   /** The one place the queue is written. Ref first, then React. */
   /** Whether this server can take a file at all.
    *
@@ -875,6 +883,68 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     },
     [writeUploads],
   )
+
+  /** Send the queued files, never more than `UPLOAD_CONCURRENCY` at once.
+   *
+   *  The socket refuses anything past its eighth in-flight request, and a drop
+   *  is sized by however many papers the reader picked — twenty of them against
+   *  a ceiling of eight is twelve files refused for a reason that has nothing to
+   *  do with the files. This is the same mistake the paper list made and the
+   *  same fix: stop fanning out rather than raise the ceiling. Three, not seven,
+   *  because the ceiling is shared with everything else the app asks for — a
+   *  run's artifacts load three at a time on their own.
+   *
+   *  Re-entrant on purpose: dropping more files while a send is running adds to
+   *  the queue the existing workers are already draining.
+   */
+  const pumpUploads = useCallback(() => {
+    const socket = socketRef.current
+    if (!socket) return
+
+    const work = async (): Promise<void> => {
+      for (;;) {
+        const next = uploadQueueRef.current.shift()
+        if (!next) return
+        const { file, key, attempt } = next
+        try {
+          const body = await readAsBase64(file)
+          const accepted = await socket.request<UploadedPaperRead>('papers.upload', {
+            filename: file.name,
+            content_base64: body,
+          })
+          patchUpload(key, {
+            status: 'ready',
+            pages: accepted.pages,
+            pagesRead: accepted.pages_read,
+            paperId: accepted.paper_id,
+            reason: uploadNote(accepted),
+          })
+        } catch (error: unknown) {
+          // Backpressure is not a verdict on the file. The server says how long
+          // to wait; the attempt count is what stops a permanently busy socket
+          // turning into an infinite queue.
+          const retryAfter = retryDelay(error)
+          if (retryAfter !== null && attempt < UPLOAD_MAX_ATTEMPTS) {
+            patchUpload(key, { status: 'checking', reason: 'waiting for the server…' })
+            uploadQueueRef.current.push({ file, key, attempt: attempt + 1 })
+            await new Promise((resolve) => window.setTimeout(resolve, retryAfter))
+            continue
+          }
+          patchUpload(key, {
+            status: 'rejected',
+            reason: error instanceof Error ? error.message : String(error),
+          })
+        }
+      }
+    }
+
+    while (uploadWorkersRef.current < UPLOAD_CONCURRENCY && uploadQueueRef.current.length) {
+      uploadWorkersRef.current += 1
+      void work().finally(() => {
+        uploadWorkersRef.current -= 1
+      })
+    }
+  }, [patchUpload])
 
   const addUploads = useCallback(
     (incoming: FileList | File[]) => {
@@ -928,30 +998,12 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         ])
         if (refusal || !socket) continue
 
-        void (async () => {
-          try {
-            const body = await readAsBase64(file)
-            const accepted = await socket.request<UploadedPaperRead>('papers.upload', {
-              filename: file.name,
-              content_base64: body,
-            })
-            patchUpload(key, {
-              status: 'ready',
-              pages: accepted.pages,
-              pagesRead: accepted.pages_read,
-              paperId: accepted.paper_id,
-              reason: uploadNote(accepted),
-            })
-          } catch (error: unknown) {
-            patchUpload(key, {
-              status: 'rejected',
-              reason: error instanceof Error ? error.message : String(error),
-            })
-          }
-        })()
+        uploadQueueRef.current.push({ file, key, attempt: 0 })
       }
+
+      pumpUploads()
     },
-    [config, patchUpload, uploadsSupported, writeUploads],
+    [config, patchUpload, pumpUploads, uploadsSupported, writeUploads],
   )
 
   const removeUpload = useCallback(
@@ -959,7 +1011,12 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     [writeUploads],
   )
 
-  const clearUploads = useCallback(() => writeUploads(() => []), [writeUploads])
+  const clearUploads = useCallback(() => {
+    // The pending queue too, or "Clear all" would leave workers sending files
+    // whose rows are gone and then patching rows that no longer exist.
+    uploadQueueRef.current = []
+    writeUploads(() => [])
+  }, [writeUploads])
 
   const runUploads = useCallback(() => {
     const asked = question.trim()
@@ -1655,6 +1712,27 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   )
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
+}
+
+/** How many uploads may be in flight, and how many times one may be re-sent.
+ *
+ *  Three of eight, leaving room for whatever else the app is asking for at the
+ *  same time. Two retries, because the only thing being waited out is another
+ *  request finishing.
+ */
+const UPLOAD_CONCURRENCY = 3
+const UPLOAD_MAX_ATTEMPTS = 2
+
+/** Milliseconds to wait before sending this file again, or null if the error
+ *  was about the file rather than the connection.
+ *
+ *  `too_many_requests` is the only retryable answer: it means the socket had no
+ *  room, not that the paper was refused. It carries `retry_after` in seconds.
+ */
+function retryDelay(error: unknown): number | null {
+  if (!(error instanceof NodusError) || error.code !== 'too_many_requests') return null
+  const after = Number(error.detail.retry_after)
+  return Number.isFinite(after) && after > 0 ? after * 1000 : 500
 }
 
 /** What is worth saying about a file that was *accepted*.
