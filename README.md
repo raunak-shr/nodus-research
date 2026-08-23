@@ -416,7 +416,9 @@ Auth is checked on the handshake — `X-API-Key` header or `?api_key=` — becau
 | ← | `{"type":"event","topic":"query:…","event":"paper_processed",…}` |
 | ← | `{"type":"heartbeat","ts":"…"}` whenever the socket has been idle |
 
-`id` is echoed so replies can be matched to requests. Requests run concurrently (up to 8 in flight), so a slow call — a PDF render, `wait: true` — never blocks the event stream or the heartbeat. Error codes are `bad_request`, `not_found`, `conflict`, `unavailable`, `internal_error`.
+`id` is echoed so replies can be matched to requests. Requests run concurrently (up to 8 in flight), so a slow call — a PDF render, `wait: true` — never blocks the event stream or the heartbeat. Error codes are `bad_request`, `not_found`, `forbidden`, `conflict`, `too_many_requests`, `unavailable`, `internal_error`.
+
+A ninth simultaneous request is refused with `too_many_requests` and a `retry_after`, which is the one refusal a client should answer by waiting rather than by giving up: it says the connection had no room, not that the request was wrong. **A caller that fans out per item has to bound itself** — the ceiling is fixed and small on purpose, and any fan-out sized by how many papers a person picked will outgrow it. Uploading a corpus is the case that has this shape, and the frontend sends at most three at a time for it.
 
 Heartbeats continue for as long as the connection is open, including after a run completes, so proxies cannot reap an idle socket. The socket is not run-scoped: finish a run, then keep using it to read, edit and export.
 

@@ -47,6 +47,12 @@ logger = logging.getLogger(__name__)
 
 _MAX_INFLIGHT_REQUESTS = 8
 
+#: What a client refused for concurrency is told to wait. Short, because the
+#: ceiling is about how many replies this connection is composing at once, not
+#: about a budget being spent — whatever is in flight is milliseconds from
+#: finishing unless it is a PDF render.
+_INFLIGHT_RETRY_AFTER = 0.5
+
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
@@ -191,9 +197,15 @@ class Connection:
             return
 
         if len(self._requests) >= _MAX_INFLIGHT_REQUESTS:
+            # Backpressure, not a malformed request — so it is `too_many_requests`
+            # and carries a `retry_after`. As a `bad_request` it was
+            # indistinguishable from a refusal the caller had earned, which left a
+            # client no way to tell "wait and send this again" from "this will
+            # never work": the upload queue rendered both as a rejected file.
             await self.send_error(
-                BadRequest(
+                TooManyRequests(
                     "Too many requests in flight on this connection",
+                    retry_after=_INFLIGHT_RETRY_AFTER,
                     limit=_MAX_INFLIGHT_REQUESTS,
                 ),
                 request_id=request.id,

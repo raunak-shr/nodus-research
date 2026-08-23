@@ -129,6 +129,15 @@ src/
   act on. The panel says so up front instead — and names the host it is
   connected to, because a frontend run locally against the hosted deployment
   looks exactly like a local backend until something it lacks is asked for.
+- **The upload queue bounds itself; it does not fan out.** The socket refuses
+  a ninth simultaneous request, and a drop is sized by however many papers the
+  reader picked — twenty against a ceiling of eight is twelve files refused for
+  a reason that has nothing to do with the files. Three workers drain a queue
+  instead, leaving room for whatever else the app is asking for. This is the
+  same mistake the paper list made and the same fix: stop fanning out rather
+  than raise the ceiling. `too_many_requests` is still retried with the
+  `retry_after` the server names, for when something else on the socket takes
+  the room anyway — backpressure is not a verdict on the file.
 - **Uploads are refused per file, and refused files stay in the list.** A file
   that disappears when it is rejected is a file the reader drops again. The
   cheap checks (not a PDF, too large, already queued) happen client-side because
