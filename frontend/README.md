@@ -1,8 +1,9 @@
 # Nodus frontend
 
-The reading surface for Nodus: submit a question, watch the pipeline run, and read
-the report it produces — one section per claim cluster, each carrying where its
-evidence came from, where the papers disagree, and how far it can be trusted.
+The reading surface for Nodus: submit a question — against the literature or
+against your own PDFs — watch the pipeline run, and read the report it produces:
+one section per claim cluster, each carrying where its evidence came from, where
+the papers disagree, and how far it can be trusted.
 
 Built from the Claude Design project `Nodus.dc.html` (design system: Modernist).
 
@@ -107,6 +108,20 @@ src/
   dropped token means sharing a history with everything on the same address.
   Clearing site data mints a new identity, so those runs stop being reachable
   from here; the screen says that too, rather than implying they are gone.
+- **Uploads are refused per file, and refused files stay in the list.** A file
+  that disappears when it is rejected is a file the reader drops again. The
+  cheap checks (not a PDF, too large, already queued) happen client-side because
+  they need no round trip; anything needing the file *opened* — the page count, a
+  corrupt or password-protected document — is the server's answer, so the rule
+  that matters has one implementation.
+- **A long paper is accepted and its truncation reported, not refused.** Only
+  the first `max_pages_read` pages of any paper are read, retrieved or uploaded
+  alike, so refusing a 15-page conference paper would be refusing what the
+  pipeline already accepts from a search. The row says "15 pages — the first 10
+  will be read" rather than staying quiet about it.
+- **An upload run's phase ladder drops the steps it will not take.** Nothing is
+  retrieved and nothing is ranked, and a phase that stays pending for the whole
+  run reads as a run that stalled.
 - **Offline, answers are matched, not written.** With no socket there is no model,
   so `reportChat.ts` quotes the report's own best-matching sentences and the turn
   is labelled as matched. The demo build never implies a model answered.

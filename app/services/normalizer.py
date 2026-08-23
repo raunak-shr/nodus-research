@@ -31,6 +31,23 @@ def _tldr_text(paper: Paper) -> str | None:
     return None
 
 
+def _uploaded_document(record: NormalizedPaper) -> pdf.PdfDocument | None:
+    """The text an uploaded PDF was parsed into at upload time, if this is one.
+
+    `uploads.accept_upload` writes the row before any run exists, so by the time
+    the pipeline reaches this paper the full text is already here. Returning it
+    is what keeps an upload out of the network path entirely — a `None` here
+    would send the normalizer looking for a paper that was never published.
+    """
+    if record.full_text_source != "upload":
+        return None
+    return pdf.PdfDocument(
+        text=record.full_text or "",
+        page_offsets=list(record.page_offsets or []),
+        source="upload",
+    )
+
+
 async def normalize_paper(
     paper: Paper,
     db: AsyncSession,
@@ -52,20 +69,29 @@ async def normalize_paper(
         db.add(record)
     await db.commit()
 
-    # The DOI is a second way in: Semantic Scholar supplies no PDF url for more
-    # than half the papers a query retrieves, and the publisher page a DOI
-    # resolves to usually advertises the file anyway.
-    document = await pdf.fetch_pdf_document(paper.open_access_pdf_url, doi=paper.doi)
-    if pdf.is_thin(document):
-        # Nothing, or a paywall's one-page "abstract only" file. Either way this
-        # paper is about to be read from its abstract, so a preprint on arXiv is
-        # worth the throttled request. Kept only if it is actually longer: the
-        # fallback exists to add full text, never to trade some away.
-        replacement = await arxiv.fetch_document(
-            arxiv_id=paper.arxiv_id, title=paper.title, authors=paper.authors
-        )
-        if replacement and (document is None or len(replacement.text) > len(document.text)):
-            document = replacement
+    stored = _uploaded_document(record)
+    if stored is not None:
+        # An uploaded paper's text arrived with the file and is the only copy
+        # there is. Nothing is fetched for it: there is no url and no DOI to
+        # resolve, and an arXiv title search could only ever substitute a
+        # different paper for the one the reader handed over.
+        document = stored
+    else:
+        # The DOI is a second way in: Semantic Scholar supplies no PDF url for
+        # more than half the papers a query retrieves, and the publisher page a
+        # DOI resolves to usually advertises the file anyway.
+        document = await pdf.fetch_pdf_document(paper.open_access_pdf_url, doi=paper.doi)
+        if pdf.is_thin(document):
+            # Nothing, or a paywall's one-page "abstract only" file. Either way
+            # this paper is about to be read from its abstract, so a preprint on
+            # arXiv is worth the throttled request. Kept only if it is actually
+            # longer: the fallback exists to add full text, never to trade some
+            # away.
+            replacement = await arxiv.fetch_document(
+                arxiv_id=paper.arxiv_id, title=paper.title, authors=paper.authors
+            )
+            if replacement and (document is None or len(replacement.text) > len(document.text)):
+                document = replacement
     full_text = document.text if document else None
     # Page starts are only knowable at parse time; nothing downstream can
     # reconstruct them without fetching the PDF again.

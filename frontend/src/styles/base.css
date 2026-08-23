@@ -386,3 +386,80 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
 @media (prefers-reduced-motion: reduce) {
   .theme-toggle .knob { transition: none; }
 }
+
+/* -- appearance toggle ---------------------------------------------------- */
+
+/* One control, not two buttons. Two buttons make the current theme a thing you
+   read off which one is filled; a switch makes it a thing you see. */
+.theme-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+  border: 1px solid var(--n-line2); background: transparent; color: var(--n-text);
+  font-family: var(--font-body); font-size: 12.5px; padding: 7px 9px; cursor: pointer;
+}
+.theme-toggle:hover { border-color: var(--color-accent); }
+.theme-toggle .track {
+  position: relative; display: block; flex: 0 0 30px; width: 30px; height: 15px;
+  border: 1px solid var(--n-line2);
+}
+.theme-toggle .knob {
+  position: absolute; top: 1px; left: 1px; width: 12px; height: 11px;
+  background: var(--color-accent); transition: left .18s ease;
+}
+.theme-toggle.light .knob { left: 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle .knob { transition: none; }
+}
+
+/* -- uploaded corpus ------------------------------------------------------ */
+
+/* Where the papers come from. A pair of tabs rather than a dropdown: the choice
+   changes the whole rest of the screen, so it should be visible without being
+   opened. */
+.src-tab {
+  display: flex; align-items: center; gap: 9px; white-space: nowrap;
+  border: 2px solid var(--n-line2); background: transparent; color: var(--n-dim);
+  font-family: var(--font-body); font-size: 14px; letter-spacing: -.005em;
+  padding: 11px 18px; cursor: pointer;
+}
+.src-tab:hover { border-color: var(--color-accent); }
+.src-tab.on {
+  border-color: var(--color-accent); background: var(--color-accent); color: #f3f2f2;
+}
+.src-tab .count { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.src-tab.on .count { color: rgba(243, 242, 242, .75); }
+.src-tab:not(.on) .count { color: var(--n-faint); }
+
+.drop-zone {
+  border: 2px dashed var(--n-line2); padding: 34px 30px;
+  display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  transition: background .15s ease, border-color .15s ease;
+}
+.drop-zone.over { border-style: solid; border-color: var(--color-accent); background: var(--n-panel2); }
+.drop-pick {
+  display: inline-flex; align-items: center; gap: 8px; position: relative;
+  border: 1px solid var(--n-text); color: var(--n-text); font-size: 13px;
+  padding: 9px 16px; cursor: pointer; white-space: nowrap;
+}
+.drop-pick:hover { border-color: var(--color-accent); color: var(--color-accent-700); }
+.drop-pick input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .drop-zone { transition: none; }
+}
+
+.upload-row {
+  display: grid; grid-template-columns: 1fr 150px 92px 24px; gap: 16px;
+  align-items: baseline; padding: 13px 0; border-bottom: 2px solid var(--n-line2);
+}
+.upload-row.rejected { opacity: .62; }
+.upload-row .status {
+  font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--n-dim);
+}
+.upload-row.rejected .status { color: var(--n-con); }
+.upload-row.checking .status { color: var(--color-accent); animation: n-pulse 1s ease-in-out infinite; }
+.upload-drop {
+  border: 0; background: transparent; color: var(--n-faint); font-family: var(--font-body);
+  font-size: 14px; cursor: pointer; padding: 0; line-height: 1;
+}
+.upload-drop:hover { color: var(--n-con); }

@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useRef, useEffect, useState, type ReactElement } from 'react'
 
 import type { QueryVerdict } from '../lib/types'
+import { resolveSocketUrl } from '../lib/ws'
 import { useStore } from '../state/store'
 
 const EXAMPLES = [
@@ -124,8 +125,9 @@ export function QueryScreen(): ReactElement {
           Ask one question that a body of literature could answer.
         </h1>
         <p className="dim" style={{ maxWidth: 560, margin: '0 0 34px' }}>
-          Nodus retrieves papers, extracts claims, clusters equivalent claims across papers, and
-          reports where they agree, where they conflict, and how far each finding can be trusted.
+          Nodus extracts claims, clusters equivalent claims across papers, and reports where they
+          agree, where they conflict, and how far each finding can be trusted. Retrieve the
+          literature, or hand it your own PDFs.
         </p>
 
         {/* The one thing this screen wants. It is drawn as the loudest element on
@@ -176,32 +178,42 @@ export function QueryScreen(): ReactElement {
               <span className="faint num" style={{ fontSize: 11 }}>
                 {question.length} / 400
               </span>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => store.interpret()}
-                disabled={question.trim().length < 3 || interpreting}
-                style={{ whiteSpace: 'nowrap', fontSize: 13, padding: '8px 16px' }}
-              >
-                {interpreting ? 'Interpreting…' : 'Interpret'}
-              </button>
+              {/* Only on the search path. Interpret judges a question against
+                  what a literature *search* can answer, and an uploaded corpus
+                  was not searched for — the verdict would be about a retrieval
+                  that is not going to happen. */}
+              {store.paperSource === 'search' ? (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => store.interpret()}
+                  disabled={question.trim().length < 3 || interpreting}
+                  style={{ whiteSpace: 'nowrap', fontSize: 13, padding: '8px 16px' }}
+                >
+                  {interpreting ? 'Interpreting…' : 'Interpret'}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
 
 
-        {interpreting ? (
+        <PaperSource />
+
+        {store.paperSource === 'upload' ? <UploadPanel /> : null}
+
+        {store.paperSource === 'search' && interpreting ? (
           <div className="dim" style={{ marginTop: 30, fontSize: 13.5 }}>
             Reading the question back and checking it against what a literature search can
             answer&hellip;
           </div>
         ) : null}
 
-        {interpretation && !interpreting ? (
+        {store.paperSource === 'search' && interpretation && !interpreting ? (
           <Verdict />
         ) : null}
 
-        {structured && !interpreting ? (
+        {store.paperSource === 'search' && structured && !interpreting ? (
           <div style={{ marginTop: 34, animation: 'n-in .3s ease both' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 16 }}>
               <span className="kicker">query_structured</span>
@@ -240,11 +252,332 @@ export function QueryScreen(): ReactElement {
           </div>
         ) : null}
 
-        {interpretation && !interpreting ? <RunControls /> : null}
+        {store.paperSource === 'search' && interpretation && !interpreting ? (
+          <RunControls />
+        ) : null}
 
       </div>
     </div>
   )
+}
+
+/** Which corpus this question gets run against.
+ *
+ *  Two tabs rather than a dropdown, because the choice changes the whole rest
+ *  of the screen: search leads to Interpret and a structured reading, upload
+ *  leads to a drop zone and no retrieval step at all.
+ */
+function PaperSource(): ReactElement {
+  const store = useStore()
+  const ready = store.uploads.filter((file) => file.status === 'ready').length
+  const max = store.config?.upload_max_papers ?? 20
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <div className="kicker" style={{ marginBottom: 12 }}>
+        Papers from
+      </div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className={`src-tab${store.paperSource === 'search' ? ' on' : ''}`}
+          onClick={() => store.setPaperSource('search')}
+        >
+          Search the literature
+        </button>
+        <button
+          type="button"
+          className={`src-tab${store.paperSource === 'upload' ? ' on' : ''}`}
+          onClick={() => store.setPaperSource('upload')}
+          // Still clickable when the server cannot take files: the panel behind
+          // it is where the reason lives, and a dead tab explains nothing.
+          title={store.uploadsSupported === false ? 'This backend does not accept uploads' : undefined}
+        >
+          <span>Use my own PDFs</span>
+          <span className="count">
+            {store.uploadsSupported === false ? 'unavailable' : `${ready} / ${max}`}
+          </span>
+        </button>
+      </div>
+
+      {store.paperSource === 'search' && !store.interpretation && !store.interpreting ? (
+        <div
+          style={{
+            marginTop: 26,
+            borderTop: '2px solid var(--n-line2)',
+            paddingTop: 18,
+            maxWidth: 640,
+            animation: 'n-in .3s ease both',
+          }}
+        >
+          <div className="dim" style={{ fontSize: 14, lineHeight: 1.5 }}>
+            Nodus will structure the question into topic, concepts, keywords and an outcome measure
+            before it retrieves anything. Press Interpret to see that structure, or edit the
+            question first.
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** The drop zone, the queue, and the one button that starts an upload run.
+ *
+ *  Every refusal keeps its file in the list with the reason attached. A file
+ *  that disappears when it is refused is a file the reader drops again — and
+ *  the reasons here are all actionable ones (too long, not a PDF, no text
+ *  layer), so they are worth reading rather than clearing away.
+ */
+function UploadPanel(): ReactElement {
+  const store = useStore()
+  const [over, setOver] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Asked once, before a single file is chosen. Finding this out per file is
+  // what turns one answerable fact — this server cannot take uploads — into a
+  // list of identical protocol errors, one per paper, with no way to act on
+  // any of them.
+  if (store.uploadsSupported === null) {
+    return (
+      <div className="dim" style={{ marginTop: 26, fontSize: 13.5 }}>
+        Waiting for the server to say what it can do&hellip;
+      </div>
+    )
+  }
+  if (store.uploadsSupported === false) return <UploadsUnavailable />
+
+  const ready = store.uploads.filter((file) => file.status === 'ready')
+  const rejected = store.uploads.filter((file) => file.status === 'rejected')
+  // Pages *read*, not pages held: that is what the run will actually see, and
+  // it is the number the note beside the button is promising.
+  const pages = ready.reduce((total, file) => total + (file.pagesRead || file.pages), 0)
+  const maxPapers = store.config?.upload_max_papers ?? 20
+  const maxPages = store.config?.upload_max_pages ?? 10
+  const minPapers = store.config?.upload_min_papers ?? 2
+  const runnable = ready.length >= minPapers && !store.uploading && asked(store).length > 0
+
+  const note = store.uploading
+    ? 'reading the files…'
+    : ready.length < minPapers
+      ? `Add at least ${minPapers} papers to run — clustering compares claims across papers.`
+      : !asked(store)
+        ? 'Write the question above, then run.'
+        : `${ready.length} papers · ${pages} pages · no retrieval step`
+
+  return (
+    <div style={{ marginTop: 26, animation: 'n-in .3s ease both' }}>
+      <div
+        className={`drop-zone${over ? ' over' : ''}`}
+        onDragOver={(event) => {
+          event.preventDefault()
+          if (!over) setOver(true)
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(event) => {
+          event.preventDefault()
+          setOver(false)
+          store.addUploads(event.dataTransfer.files)
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 17, letterSpacing: '-.01em', marginBottom: 6 }}>
+            Drop PDFs here
+          </div>
+          <div className="faint" style={{ fontSize: 12.5 }}>
+            {maxPapers} papers max · up to {maxPages} pages each · the first{' '}
+            {store.config?.max_pages_read ?? 10} pages of each are read, and a row says so when
+            that is less than the whole paper
+          </div>
+        </div>
+        <label className="drop-pick">
+          <input
+            ref={inputRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            multiple
+            onChange={(event) => {
+              if (event.target.files) store.addUploads(event.target.files)
+              // Cleared so re-picking the same file fires `change` again.
+              event.target.value = ''
+            }}
+          />
+          Choose files
+        </label>
+      </div>
+
+      {store.uploads.length ? (
+        <div style={{ marginTop: 24, border: '1px solid var(--n-line2)', background: 'var(--n-panel)' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              gap: 16,
+              padding: '12px 16px',
+              borderBottom: '2px solid var(--n-line2)',
+            }}
+          >
+            <div
+              className="faint"
+              style={{ display: 'flex', gap: 22, alignItems: 'baseline', fontSize: 12 }}
+            >
+              <span>
+                accepted{' '}
+                <span
+                  className="num"
+                  style={{
+                    color: ready.length >= maxPapers ? 'var(--color-accent)' : 'var(--n-text)',
+                  }}
+                >
+                  {ready.length} / {maxPapers}
+                </span>
+              </span>
+              <span>
+                pages read{' '}
+                <span className="num" style={{ color: 'var(--n-text)' }}>
+                  {pages}
+                </span>
+              </span>
+              <span>
+                refused{' '}
+                <span className="num" style={{ color: 'var(--n-text)' }}>{rejected.length}</span>
+              </span>
+            </div>
+            <button type="button" className="upload-drop" onClick={store.clearUploads}>
+              Clear all
+            </button>
+          </div>
+          <div className="n-scroll" style={{ maxHeight: 290, overflowY: 'auto', padding: '0 16px' }}>
+            {store.uploads.map((file) => (
+              <div key={file.key} className={`upload-row ${file.status}`}>
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {file.name}
+                  </div>
+                  {file.reason ? (
+                    <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>
+                      {file.reason}
+                    </div>
+                  ) : null}
+                </div>
+                <div className="dim num" style={{ fontSize: 12 }}>
+                  {size(file.size)}
+                  {file.pages ? ` · ${file.pages} page${file.pages === 1 ? '' : 's'}` : ''}
+                </div>
+                <div className="status">
+                  {file.status === 'checking' ? 'reading' : file.status}
+                </div>
+                <button
+                  type="button"
+                  className="upload-drop"
+                  title="Remove"
+                  onClick={() => store.removeUpload(file.key)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 24, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={store.runUploads}
+          disabled={!runnable}
+          style={{
+            whiteSpace: 'nowrap',
+            fontSize: 14,
+            padding: '10px 20px',
+            ...(runnable ? {} : { opacity: 0.45 }),
+          }}
+        >
+          Run on my papers
+        </button>
+        <span className="faint" style={{ fontSize: 12 }}>
+          {note}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+/** The server on the other end cannot take files.
+ *
+ *  Either it is older than `papers.upload` — which is what a frontend pointed
+ *  at a deployment that has not been updated yet is talking to — or uploads are
+ *  switched off on it. Both are the same fact to a reader, and the useful thing
+ *  is to name the connection, because the fix is almost always to point it
+ *  somewhere else.
+ */
+function UploadsUnavailable(): ReactElement {
+  const store = useStore()
+  const demo = store.mode === 'demo'
+
+  return (
+    <div
+      style={{
+        marginTop: 26,
+        border: '1px solid var(--n-line2)',
+        borderLeft: '2px solid var(--color-accent)',
+        background: 'var(--n-panel)',
+        padding: '22px 24px',
+        maxWidth: 720,
+        animation: 'n-in .3s ease both',
+      }}
+    >
+      <div className="kicker" style={{ color: 'var(--color-accent-400)', marginBottom: 10 }}>
+        uploads unavailable here
+      </div>
+      <div style={{ fontSize: 17, lineHeight: 1.45, marginBottom: 8 }}>
+        {demo
+          ? 'The demo corpus has no server to upload to.'
+          : 'The backend this app is connected to does not accept uploaded papers.'}
+      </div>
+      <p className="dim pretty" style={{ fontSize: 14, margin: 0, lineHeight: 1.55 }}>
+        {demo
+          ? 'Demo mode runs on a fixture corpus with no socket open, so there is nothing to hand a file to. Point the app at a backend to run over your own PDFs.'
+          : 'Either it is running a build from before uploads existed, or UPLOADS_ENABLED is off on it. Search the literature instead, or point the app at a backend that offers papers.upload.'}
+      </p>
+      {!demo ? (
+        <div className="faint num" style={{ fontSize: 11.5, marginTop: 16, lineHeight: 1.6 }}>
+          connected to {socketOrigin()}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** Where this app is actually pointed — the one thing worth printing here.
+ *
+ *  A frontend run locally against the hosted deployment looks exactly like a
+ *  local backend until something it does not have is asked for.
+ */
+function socketOrigin(): string {
+  try {
+    return new URL(resolveSocketUrl()).host
+  } catch {
+    return 'an unknown host'
+  }
+}
+
+function asked(store: ReturnType<typeof useStore>): string {
+  return store.question.trim()
+}
+
+function size(bytes: number): string {
+  return bytes > 1_048_576
+    ? `${(bytes / 1_048_576).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} kB`
 }
 
 /** The answer to the Interpret button.

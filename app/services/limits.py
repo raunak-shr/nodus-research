@@ -397,6 +397,17 @@ chat_limiter = RateLimiter(
     enabled=lambda: settings.rate_limit_enabled,
 )
 
+#: Handing over a paper — one call per file, and a corpus arrives as a burst of
+#: them from a single drop. Its own bucket for that reason alone: the edits
+#: budget is sized for one deliberate change at a time, and twenty files would
+#: exhaust it before the reader had finished choosing them.
+uploads_limiter = RateLimiter(
+    "uploads",
+    rate_per_second=lambda: max(0, settings.rate_limit_uploads_per_minute) / 60.0,
+    capacity=lambda: settings.rate_limit_uploads_burst,
+    enabled=lambda: settings.rate_limit_enabled,
+)
+
 #: Cost classes used by the v2 action registry, mapped to the bucket that
 #: governs them. Anything absent (i.e. a read) is not rate limited.
 _LIMITER_BY_COST = {
@@ -404,6 +415,7 @@ _LIMITER_BY_COST = {
     "edit": edits_limiter,
     "interpret": interprets_limiter,
     "chat": chat_limiter,
+    "upload": uploads_limiter,
 }
 
 
@@ -423,7 +435,13 @@ def budgets_for(key: str) -> dict[str, dict[str, object]]:
             "capacity": budget.capacity,
             "refill_seconds": budget.refill_seconds,
         }
-        for limiter in (runs_limiter, edits_limiter, interprets_limiter, chat_limiter)
+        for limiter in (
+            runs_limiter,
+            edits_limiter,
+            interprets_limiter,
+            chat_limiter,
+            uploads_limiter,
+        )
         for budget in (limiter.peek(key),)
     }
 

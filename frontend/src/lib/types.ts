@@ -442,7 +442,42 @@ export interface ServerConfig {
   cluster_similarity_threshold: number
   retrieval_mode: string
   pdf_enabled: boolean
+  uploads_enabled: boolean
+  /** Pages read per paper, retrieved or uploaded alike. A longer paper is
+   *  accepted and truncated to this, and the upload row says so. */
+  max_pages_read: number
+  upload_max_bytes: number
+  upload_max_pages: number
+  upload_max_papers: number
+  upload_min_papers: number
   admin_enabled: boolean
   rate_limit_enabled: boolean
   runs: RunGate
+}
+
+// -- uploads ----------------------------------------------------------------
+
+/** One PDF the reader handed over, as `papers.upload` accepted it.
+ *
+ *  `paper_id` is an ordinary paper id: an upload is a `papers` row like any
+ *  other, keyed by the hash of its own bytes rather than by a Semantic Scholar
+ *  id. `reused` says the same file was already stored — the same paper, not a
+ *  second copy of it.
+ */
+export interface UploadedPaperRead {
+  paper_id: string
+  fingerprint: string
+  filename: string
+  title: string
+  authors: string[]
+  year: number | null
+  /** Pages the file declares. */
+  pages: number
+  /** Pages the parser actually took, bounded by the server's read budget.
+   *  Lower than `pages` for a long paper — reported rather than swallowed. */
+  pages_read: number
+  /** Characters of text the parser recovered. Zero is a scan with no text
+   *  layer: accepted, but there is nothing in it to extract claims from. */
+  characters: number
+  reused: boolean
 }

@@ -219,6 +219,7 @@ export function simulateRun(tick: number, question: string, outcome: RunView['ou
 
   const phases: PhaseStep[] = PHASE_AT.map((phase, i) => ({
     name: phase.name,
+    label: phase.name,
     state: i < index ? 'done' : i === index ? 'active' : 'pending',
     detail: i <= index ? (detail[phase.name] ?? '') : '',
   }))
@@ -297,6 +298,7 @@ export function simulateRun(tick: number, question: string, outcome: RunView['ou
     sectionTotal: DEMO_SECTION_HEADINGS.length,
     reportAvailable: tick >= 106,
     reportNote: null,
+    uploadedCorpus: false,
     events: stamped,
     complete: tick >= 106,
     outcome,
@@ -313,6 +315,7 @@ export const EMPTY_RUN: RunView = {
   phaseIndex: 0,
   phases: PHASE_ORDER.filter((p) => p !== 'failed').map((name) => ({
     name,
+    label: name,
     state: 'pending' as const,
     detail: '',
   })),
@@ -326,6 +329,7 @@ export const EMPTY_RUN: RunView = {
   sectionTotal: 0,
   reportAvailable: false,
   reportNote: null,
+  uploadedCorpus: false,
   events: [],
   complete: false,
   outcome: 'running',

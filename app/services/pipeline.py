@@ -40,6 +40,7 @@ from app.services import (
     ranking,
     retriever,
     synthesizer,
+    uploads,
 )
 from app.services.errors import Unavailable
 
@@ -49,6 +50,10 @@ logger = logging.getLogger(__name__)
 class PipelineState(TypedDict):
     query_id: str
     raw_query: str
+    #: Uploaded papers this run was given instead of retrieving its own. Empty
+    #: for an ordinary run, which is what routes the graph past retrieval and
+    #: ranking — see `route_after_structure`.
+    uploaded_paper_ids: list[str]
     structured_query: dict[str, Any] | None
     raw_papers: list[dict[str, Any]]
     ranked_papers: list[dict[str, Any]]
@@ -251,6 +256,49 @@ async def store_results_node(state: PipelineState) -> dict:
     return {"paper_ids": paper_ids}
 
 
+async def store_uploads_node(state: PipelineState) -> dict:
+    """Link the reader's own papers to this query, in the order they gave them.
+
+    The upload equivalent of retrieve + rank + store, and it is this short
+    because the papers already exist: `uploads.accept_upload` wrote every row
+    when the file arrived. There is nothing to score — the reader chose the
+    corpus, so `rank` is their ordering and `ranking_score` is null, which is
+    the honest way to say that no ranking happened.
+    """
+    query_id = UUID(state["query_id"])
+    paper_ids = state["uploaded_paper_ids"]
+
+    async with AsyncSessionLocal() as db:
+        # `retrieving` is the closest thing the status enum has to "assembling
+        # the corpus", and adding an `uploading` value would cost a migration
+        # for a label the event stream already carries.
+        await _set_status(query_id, QueryStatus.retrieving, db)
+        papers = await uploads.resolve_for_run(paper_ids, db)
+
+        stored: list[dict[str, str | None]] = []
+        for rank, paper in enumerate(papers, start=1):
+            await db.execute(
+                pg_insert(QueryPaper)
+                .values(query_id=query_id, paper_id=paper.id, rank=rank, ranking_score=None)
+                .on_conflict_do_nothing()
+            )
+            stored.append(
+                {
+                    "id": str(paper.id),
+                    "semantic_scholar_id": paper.semantic_scholar_id,
+                    "title": paper.title,
+                }
+            )
+        query_obj = await db.get(Query, query_id)
+        query_obj.paper_count = len(papers)
+        await db.commit()
+
+    ids = [str(paper.id) for paper in papers]
+    hub.publish(query_id, "papers_uploaded", count=len(papers), papers=stored)
+    hub.publish(query_id, "papers_stored", count=len(papers), paper_ids=ids, papers=stored)
+    return {"paper_ids": ids}
+
+
 async def process_papers_node(state: PipelineState) -> dict:
     """Normalize, extract and embed every paper, capped by a semaphore."""
     query_id = UUID(state["query_id"])
@@ -407,21 +455,40 @@ async def synthesize_node(state: PipelineState) -> dict:
     return {"status": "completed"}
 
 
+def route_after_structure(state: PipelineState) -> str:
+    """Retrieval, or the corpus the reader supplied.
+
+    A branch rather than a second graph: everything from `process_papers`
+    onwards is identical for both, and duplicating it would leave two pipelines
+    to keep in step.
+    """
+    return "uploads" if state.get("uploaded_paper_ids") else "retrieve"
+
+
 def build_graph():
     builder: StateGraph = StateGraph(PipelineState)
     builder.add_node("structure_query", structure_query_node)
     builder.add_node("retrieve_papers", retrieve_papers_node)
     builder.add_node("rank_papers", rank_papers_node)
     builder.add_node("store_results", store_results_node)
+    builder.add_node("store_uploads", store_uploads_node)
     builder.add_node("process_papers", process_papers_node)
     builder.add_node("analyze", analyze_node)
     builder.add_node("synthesize", synthesize_node)
 
     builder.add_edge(START, "structure_query")
-    builder.add_edge("structure_query", "retrieve_papers")
+    # The question is still structured for an upload run, even though nothing is
+    # retrieved with it: it is what the cluster analysis and the report read the
+    # corpus against, and it is what the reader sees under `query_structured`.
+    builder.add_conditional_edges(
+        "structure_query",
+        route_after_structure,
+        {"retrieve": "retrieve_papers", "uploads": "store_uploads"},
+    )
     builder.add_edge("retrieve_papers", "rank_papers")
     builder.add_edge("rank_papers", "store_results")
     builder.add_edge("store_results", "process_papers")
+    builder.add_edge("store_uploads", "process_papers")
     builder.add_edge("process_papers", "analyze")
     builder.add_edge("analyze", "synthesize")
     builder.add_edge("synthesize", END)
@@ -438,8 +505,17 @@ def get_graph():
     return _graph
 
 
-async def run_pipeline(query_id: UUID, raw_query: str, db: AsyncSession | None = None) -> None:
+async def run_pipeline(
+    query_id: UUID,
+    raw_query: str,
+    db: AsyncSession | None = None,
+    *,
+    uploaded_paper_ids: list[str] | None = None,
+) -> None:
     """Run the full pipeline for a query.
+
+    `uploaded_paper_ids` runs the question over those papers instead of
+    retrieving any — see `route_after_structure`.
 
     `db` is accepted for backwards compatibility and intentionally unused —
     each node opens its own session.
@@ -447,6 +523,7 @@ async def run_pipeline(query_id: UUID, raw_query: str, db: AsyncSession | None =
     initial_state: PipelineState = {
         "query_id": str(query_id),
         "raw_query": raw_query,
+        "uploaded_paper_ids": list(uploaded_paper_ids or []),
         "structured_query": None,
         "raw_papers": [],
         "ranked_papers": [],
@@ -456,14 +533,27 @@ async def run_pipeline(query_id: UUID, raw_query: str, db: AsyncSession | None =
         "status": "pending",
         "error_message": None,
     }
-    hub.publish(query_id, "pipeline_started", raw_query=raw_query)
+    hub.publish(
+        query_id,
+        "pipeline_started",
+        raw_query=raw_query,
+        # Which of the two shapes this run has. The screen needs it before any
+        # paper has arrived, so it cannot be inferred from the papers.
+        source="upload" if initial_state["uploaded_paper_ids"] else "search",
+        uploaded_papers=len(initial_state["uploaded_paper_ids"]),
+    )
     await get_graph().ainvoke(initial_state)
 
 
-async def run_pipeline_safe(query_id: UUID, raw_query: str) -> None:
+async def run_pipeline_safe(
+    query_id: UUID,
+    raw_query: str,
+    *,
+    uploaded_paper_ids: list[str] | None = None,
+) -> None:
     """Background entry point: never raises, always leaves a terminal status."""
     try:
-        await run_pipeline(query_id, raw_query)
+        await run_pipeline(query_id, raw_query, uploaded_paper_ids=uploaded_paper_ids)
     except asyncio.CancelledError:
         logger.info("Pipeline cancelled for query %s", query_id)
         await _mark_failed(query_id, "Pipeline cancelled")
