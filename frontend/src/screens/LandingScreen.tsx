@@ -23,6 +23,17 @@
 import { Fragment, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 
 import { HeroField } from '../components/HeroField'
+import {
+  ControlIcon,
+  DeploymentArt,
+  LineageTimeline,
+  PipelineArt,
+  ProblemArt,
+  ScoreBar,
+  StanceMap,
+  type ChainPoint,
+  type ControlIconName,
+} from '../components/LandingArt'
 import { Mark } from '../components/Mark'
 import { useStore } from '../state/store'
 
@@ -33,55 +44,67 @@ const README = `${REPO}#readme`
  *  the demo run a visitor sees on opening the app without a backend. */
 const EXAMPLE_THEME = 'effect sizes shrink in trials with blinded outcome assessment'
 
-type Relationship = 'origin' | 'supports' | 'contradicts' | 'extends'
-
 /** The example's lineage as `build_lineage_tree` orders and labels it: by year,
  *  the earliest as origin, and every later paper by its own claim's stance on
- *  the cluster's assertion — neutral surfaces as `extends`. */
-const CHAIN: { rel: Relationship; year: number; cite: string; claim: string }[] = [
+ *  the cluster's assertion — neutral surfaces as `extends`. The origin's label
+ *  replaces its stance, so the stance is carried separately. */
+const CHAIN: (ChainPoint & { cite: string; claim: string })[] = [
   {
     rel: 'origin',
+    stance: 'supports',
     year: 2009,
+    short: 'Krogh 2009',
     cite: 'Krogh et al. — the DEMO trial',
     claim: 'Aerobic exercise did not lower blinded depression ratings more than relaxation did.',
   },
   {
     rel: 'supports',
+    stance: 'supports',
     year: 2012,
+    short: 'Chalder 2012',
     cite: 'Chalder et al. — the TREAD trial',
     claim: 'Facilitated physical activity did not improve blinded depression scores at four months.',
   },
   {
     rel: 'supports',
+    stance: 'supports',
     year: 2013,
+    short: 'Cooney 2013',
     cite: 'Cooney et al. — Cochrane review',
     claim: 'Restricted to trials with blinded assessment and intention-to-treat analysis, the pooled effect became small.',
   },
   {
     rel: 'contradicts',
+    stance: 'contradicts',
     year: 2016,
+    short: 'Schuch 2016',
     cite: 'Schuch et al. — meta-analysis adjusting for publication bias',
     claim: 'Correcting for publication bias left a substantial effect in place.',
   },
   {
     rel: 'extends',
+    stance: 'neutral',
     year: 2017,
+    short: 'Krogh 2017',
     cite: 'Krogh et al. — review with trial sequential analysis',
     claim: 'The blinded trials so far are too few to settle the question either way.',
   },
   {
     rel: 'contradicts',
+    stance: 'contradicts',
     year: 2024,
+    short: 'Noetel 2024',
     cite: 'Noetel et al. — network meta-analysis',
     claim: 'Pooled 218 trials and found moderate effects, with risk of bias assessed for each.',
   },
 ]
 
-/** The example's stance counts — the same six claims the chain shows. */
+/** The example's stance counts, counted off the chain rather than typed, so the
+ *  figure, the drawing and the penalty cannot disagree about them. */
 const STANCES: { key: 'sup' | 'neu' | 'con'; label: string; count: number }[] = [
-  { key: 'sup', label: 'support', count: 3 },
-  { key: 'neu', label: 'neutral', count: 1 },
-  { key: 'con', label: 'contradict', count: 2 },
+  { key: 'sup', label: 'support', count: CHAIN.filter((c) => c.stance === 'supports').length },
+  { key: 'neu', label: 'neutral', count: CHAIN.filter((c) => c.stance === 'neutral').length },
+  { key: 'con', label: 'contradict', count: CHAIN.filter((c) => c.stance === 'contradicts').length },
 ]
 
 /** `DriverType` in `app/schemas/analysis.py`, in its own order. */
@@ -120,6 +143,15 @@ const COMPONENTS: { term: string; input: string; value: string; weight: string; 
   { term: 'Extraction confidence', input: 'mean of 6 claims', value: '0.91', weight: '20%', contrib: '0.182' },
 ]
 const EXAMPLE_SCORE = '0.914'
+/** 0.15 × 2 contradicting of 5 non-neutral claims. */
+const EXAMPLE_PENALTY = '0.060'
+/** The component names, short enough to sit inside their own bar segment. */
+const SCORE_LABEL: Record<string, string> = {
+  'Study design': 'design',
+  'Sample size': 'sample',
+  Corroboration: 'corrob.',
+  'Extraction confidence': 'conf.',
+}
 
 /** `_STUDY_TYPE_WEIGHT`, best first. */
 const DESIGN_LADDER: [string, string][] = [
@@ -145,50 +177,59 @@ const PROV_MARKS: { glyph: string; text: string }[] = [
 
 /** What a reader can actually do, by when they can do it. Each entry is
  *  something a screen sends or shows — nothing the API has that no screen uses. */
-const CONTROLS: { when: string; title: string; text: string }[] = [
+const CONTROLS: { when: string; title: string; text: string; icon: ControlIconName }[] = [
   {
     when: 'Before a run',
     title: 'Check the question',
+    icon: 'interpret',
     text: 'Interpret shows how the question was read — its topic, its outcome, the concepts it will search on — and says whether it is specific enough to be worth a run, with sharper versions if not. It is advice: you can still run it as typed.',
   },
   {
     when: 'Before a run',
     title: 'Choose the papers',
+    icon: 'upload',
     text: 'Search Semantic Scholar, or upload two to twenty PDFs of your own, up to 10 MB each. An upload run reads exactly those files, in the order you gave them, and nothing is fetched to stand in for them.',
   },
   {
     when: 'While it runs',
     title: 'Watch it, or stop it',
+    icon: 'run',
     text: 'Progress arrives as each paper is read, each cluster analysed and each section written. A paper that cannot be read is marked and skipped, and the run carries on. Cancel at any point.',
   },
   {
     when: 'After it finishes',
     title: 'Check a claim at its source',
+    icon: 'source',
     text: 'Open the passage a claim was extracted from, with the quote located in it and marked by how exactly it was found — or marked as abstract-only, or not locatable, when that is the truth.',
   },
   {
     when: 'After it finishes',
     title: 'Correct the analysis',
+    icon: 'edit',
     text: "Change a claim's stance, rename a cluster (its report heading follows), set a cluster's tier by hand, or rewrite the executive summary. The Edits screen lists this session's changes, each beside what it replaced.",
   },
   {
     when: 'After it finishes',
     title: 'Ask the report',
+    icon: 'chat',
     text: 'Questions are answered from this report and its clusters alone, citing the section each answer used. When the report cannot settle a question, the answer says so and offers a follow-up run instead of guessing.',
   },
   {
     when: 'After it finishes',
     title: 'Follow up',
+    icon: 'followup',
     text: 'A follow-up starts a new run on your next question, read in the context of the first, and stays linked to it.',
   },
   {
     when: 'After it finishes',
     title: 'See it as a graph',
+    icon: 'graph',
     text: 'The same run as a field of nodes, in four views: clusters, papers, authors, and the lineage chains.',
   },
   {
     when: 'After it finishes',
     title: 'Take it with you',
+    icon: 'export',
     text: 'Export Markdown, JSON or HTML, or download a PDF that is the print layout of the report on screen, so the two cannot drift apart.',
   },
 ]
@@ -454,6 +495,9 @@ export function LandingScreen(): ReactElement {
             and each answer comes with its working, so you can check it line by line.
           </p>
         </div>
+        <figure className="lp-art lp-art-scroll" style={{ '--art-min': '760px' } as CSSProperties}>
+          <ProblemArt />
+        </figure>
       </section>
 
       {/* 03 — the three axes, one row each, all read off one example cluster.
@@ -495,6 +539,9 @@ export function LandingScreen(): ReactElement {
               <span className="lp-fig-meta">
                 {CHAIN[0].year}–{CHAIN[CHAIN.length - 1].year} · {CHAIN.length} papers
               </span>
+            </div>
+            <div className="lp-art-scroll" style={{ '--art-min': '440px' } as CSSProperties}>
+              <LineageTimeline chain={CHAIN} />
             </div>
             <ol className="lp-chain">
               {CHAIN.map((link) => (
@@ -553,10 +600,8 @@ export function LandingScreen(): ReactElement {
                 {total} claims · {DRIVERS.length} drivers
               </span>
             </div>
-            <div className="lp-tally" aria-hidden="true">
-              {STANCES.map((stance) => (
-                <i key={stance.key} className={`t-${stance.key}`} style={{ flexGrow: stance.count }} />
-              ))}
+            <div className="lp-art-scroll" style={{ '--art-min': '440px' } as CSSProperties}>
+              <StanceMap chain={CHAIN} assertion={['effect sizes shrink when', 'assessment is blinded']} />
             </div>
             <p className="lp-mono" style={{ fontSize: 12.5, color: 'var(--n-dim)', margin: '10px 0 22px' }}>
               {STANCES.map((stance) => `${stance.count} ${stance.label}`).join(' · ')}
@@ -607,6 +652,16 @@ export function LandingScreen(): ReactElement {
                 {CHAIN.length} papers · {total} claims
               </span>
             </div>
+            <div className="lp-art-scroll" style={{ '--art-min': '440px' } as CSSProperties}>
+              <ScoreBar
+                parts={COMPONENTS.map((row) => ({
+                  label: SCORE_LABEL[row.term] ?? row.term,
+                  value: Number(row.contrib),
+                }))}
+                penalty={Number(EXAMPLE_PENALTY)}
+                score={Number(EXAMPLE_SCORE)}
+              />
+            </div>
             <div className="lp-calc" style={{ marginTop: 18 }}>
               <span className="h lp-label-sm">Component</span>
               <span className="h n lp-label-sm">Value</span>
@@ -638,7 +693,7 @@ export function LandingScreen(): ReactElement {
               <span className="c last" />
               <span className="c last" />
               <span className="c n last" style={{ color: 'var(--l-accent-ink)' }}>
-                −0.060
+                −{EXAMPLE_PENALTY}
               </span>
             </div>
             <div className="lp-total">
@@ -769,6 +824,7 @@ export function LandingScreen(): ReactElement {
           <div className="lp-controls">
             {CONTROLS.map((control) => (
               <div key={control.title}>
+                <ControlIcon name={control.icon} />
                 <span className="lp-label-sm">{control.when}</span>
                 <h4 className="lp-h4">{control.title}</h4>
                 <p className="lp-body-sm pretty">{control.text}</p>
@@ -790,6 +846,12 @@ export function LandingScreen(): ReactElement {
             analysed, each section as it is written. It is fetching and reading real papers, so
             expect minutes rather than seconds.
           </p>
+          <figure
+            className="lp-art-scroll"
+            style={{ '--art-min': '860px', margin: '0 0 clamp(40px, 5vw, 64px)' } as CSSProperties}
+          >
+            <PipelineArt />
+          </figure>
           <div className="lp-stages">
             <div>
               <p className="lp-label" style={{ fontFamily: 'var(--font-heading)', fontSize: 13, letterSpacing: '.1em', margin: '0 0 12px', paddingBottom: 12, borderBottom: '2px solid var(--l-rule)' }}>
@@ -889,62 +951,67 @@ export function LandingScreen(): ReactElement {
 
       {/* 06 — this deployment, and running your own. */}
       <section id="deploy" className="lp-band-top">
-        <div className="lp-wrap lp-sec lp-row">
-          <div className="txt">
-            <p className="lp-eyebrow">06 — Use it here, or run your own</p>
-            <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
-              A working deployment, and the code behind it
-            </h2>
-            <p className="lp-body pretty" style={{ maxWidth: '52ch', marginBottom: 12 }}>
-              This site is a working deployment: open the app and run a question, no account needed.
-              It is shared, so it limits how many runs it takes at once, and may cap them per day.
-            </p>
-            <p className="lp-body pretty" style={{ maxWidth: '52ch', marginBottom: 12 }}>
-              The source is public. Run it yourself and papers, claims, clusters and reports live in
-              your own Postgres, with the models you choose: Gemini, Anthropic or Ollama for the
-              language model; Cloudflare Workers AI, Gemini, Ollama or a local lexical fallback for
-              the embeddings.
-            </p>
-            <p className="lp-body pretty" style={{ maxWidth: '52ch' }}>
-              With Ollama for both and a set of uploaded PDFs, a run calls nothing outside your own
-              machine and database — the configuration for unpublished or embargoed work.
-            </p>
+        <div className="lp-wrap lp-sec">
+          <div className="lp-row">
+            <div className="txt">
+              <p className="lp-eyebrow">06 — Use it here, or run your own</p>
+              <h2 className="lp-h2" style={{ maxWidth: '22ch' }}>
+                A working deployment, and the code behind it
+              </h2>
+              <p className="lp-body pretty" style={{ maxWidth: '52ch', marginBottom: 12 }}>
+                This site is a working deployment: open the app and run a question, no account needed.
+                It is shared, so it limits how many runs it takes at once, and may cap them per day.
+              </p>
+              <p className="lp-body pretty" style={{ maxWidth: '52ch', marginBottom: 12 }}>
+                The source is public. Run it yourself and papers, claims, clusters and reports live in
+                your own Postgres, with the models you choose: Gemini, Anthropic or Ollama for the
+                language model; Cloudflare Workers AI, Gemini, Ollama or a local lexical fallback for
+                the embeddings.
+              </p>
+              <p className="lp-body pretty" style={{ maxWidth: '52ch' }}>
+                With Ollama for both and a set of uploaded PDFs, a run calls nothing outside your own
+                machine and database — the configuration for unpublished or embargoed work.
+              </p>
+            </div>
+            <figure id="quickstart" className="art lp-shell">
+              <div className="lp-shell-head">
+                <span className="lp-label">Quickstart</span>
+                <span className="lp-fig-meta">Python 3.11 · Postgres 15 + pgvector · Node</span>
+              </div>
+              <div className="lp-shell-body">
+                <div className="cm"># clone and install</div>
+                <div>
+                  <span className="pr">$</span> git clone {REPO}.git
+                </div>
+                <div>
+                  <span className="pr">$</span> cd nodus-research {'&&'} uv sync
+                </div>
+                <div>
+                  <span className="pr">$</span> uv run playwright install chromium
+                </div>
+                <div className="cm cm-gap"># configure the models and the database</div>
+                <div>
+                  <span className="pr">$</span> cp .env.example .env
+                </div>
+                <div className="env">LLM_PROVIDER=gemini</div>
+                <div className="env">EMBEDDING_PROVIDER=cloudflare</div>
+                <div className="env">DATABASE_URL=postgresql+asyncpg://…</div>
+                <div className="cm cm-gap"># once, on the database: create extension if not exists vector;</div>
+                <div>
+                  <span className="pr">$</span> uv run alembic upgrade head
+                </div>
+                <div>
+                  <span className="pr">$</span> uv run uvicorn app.main:app
+                </div>
+                <div className="cm cm-gap"># the reading surface</div>
+                <div>
+                  <span className="pr">$</span> cd frontend {'&&'} npm install {'&&'} npm run dev
+                </div>
+              </div>
+            </figure>
           </div>
-          <figure id="quickstart" className="art lp-shell">
-            <div className="lp-shell-head">
-              <span className="lp-label">Quickstart</span>
-              <span className="lp-fig-meta">Python 3.11 · Postgres 15 + pgvector · Node</span>
-            </div>
-            <div className="lp-shell-body">
-              <div className="cm"># clone and install</div>
-              <div>
-                <span className="pr">$</span> git clone {REPO}.git
-              </div>
-              <div>
-                <span className="pr">$</span> cd nodus-research {'&&'} uv sync
-              </div>
-              <div>
-                <span className="pr">$</span> uv run playwright install chromium
-              </div>
-              <div className="cm cm-gap"># configure the models and the database</div>
-              <div>
-                <span className="pr">$</span> cp .env.example .env
-              </div>
-              <div className="env">LLM_PROVIDER=gemini</div>
-              <div className="env">EMBEDDING_PROVIDER=cloudflare</div>
-              <div className="env">DATABASE_URL=postgresql+asyncpg://…</div>
-              <div className="cm cm-gap"># once, on the database: create extension if not exists vector;</div>
-              <div>
-                <span className="pr">$</span> uv run alembic upgrade head
-              </div>
-              <div>
-                <span className="pr">$</span> uv run uvicorn app.main:app
-              </div>
-              <div className="cm cm-gap"># the reading surface</div>
-              <div>
-                <span className="pr">$</span> cd frontend {'&&'} npm install {'&&'} npm run dev
-              </div>
-            </div>
+          <figure className="lp-art lp-art-scroll" style={{ '--art-min': '860px' } as CSSProperties}>
+            <DeploymentArt />
           </figure>
         </div>
       </section>

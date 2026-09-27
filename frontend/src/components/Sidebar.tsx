@@ -3,7 +3,9 @@ import type { ReactElement } from 'react'
 import { Mark } from './Mark'
 import { useStore, type Screen } from '../state/store'
 
-const ICONS: Record<Screen, string> = {
+/** One 24-unit stroke path per screen. Exported so the landing page draws its
+ *  controls with the same marks the sidebar uses for the screens they live on. */
+export const SCREEN_ICONS: Record<Screen, string> = {
   landing: 'M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6',
   query: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 8v8M8 12h8',
   run: 'M3 12h4l3-8 4 16 3-8h4',
@@ -95,7 +97,7 @@ export function Sidebar(): ReactElement {
               style={{ flex: '0 0 16px', opacity: 0.9 }}
               aria-hidden="true"
             >
-              <path d={ICONS[item.id]} />
+              <path d={SCREEN_ICONS[item.id]} />
             </svg>
             <span style={{ whiteSpace: 'nowrap', flex: '1 1 auto' }}>{item.label}</span>
             <span className="badge">{badges[item.id] ?? ''}</span>

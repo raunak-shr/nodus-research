@@ -336,14 +336,6 @@
   color: var(--l-accent-ink);
 }
 
-/* The stance split, in the app's own stance colours so it reads the same here
-   as on the cluster screen. Segment widths are the counts, via flex-grow. */
-.lp-tally { display: flex; gap: 3px; height: 10px; margin-top: 20px; }
-.lp-tally > i { display: block; flex-basis: 0; }
-.lp-tally .t-sup { background: var(--n-sup); }
-.lp-tally .t-neu { background: var(--n-neu); }
-.lp-tally .t-con { background: var(--n-con); }
-
 /* -- thresholds ----------------------------------------------------------- */
 
 .lp-tiers {
@@ -461,6 +453,48 @@
 .lp-slab .btn-off-accent { background: transparent; color: var(--l-on-accent); border: 1px solid var(--l-on-accent); }
 .lp-slab .btn-off-accent:hover { background: color-mix(in srgb, var(--l-on-accent) 14%, transparent); }
 .lp-slab :focus-visible { outline-color: var(--l-on-accent); }
+
+/* -- drawings ------------------------------------------------------------- */
+
+/* Every drawing is inline SVG coloured from the app's ramp by class, so it
+   follows the theme like the text around it. Text is set in the same mono and
+   body faces as the page, at sizes that hold because a drawing never scales up
+   past its own width and scrolls rather than shrinking below a minimum. */
+.lp-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.lp-svg text { font-family: var(--l-mono); font-size: 11px; fill: var(--n-dim); font-variant-numeric: tabular-nums; }
+.lp-svg .t-ink { fill: var(--n-text); }
+.lp-svg .t-dim { fill: var(--n-dim); }
+.lp-svg .t-faint { fill: var(--n-faint); }
+.lp-svg .t-acc { fill: var(--l-accent-ink); }
+.lp-svg .t-con { fill: var(--n-con); }
+.lp-svg .t-strong { font-weight: 700; }
+.lp-svg .t-on-ink { fill: var(--n-bg); font-size: 10.5px; }
+.lp-svg .t-node { font-family: var(--font-body); font-size: 13px; font-weight: 600; fill: var(--n-text); }
+.lp-svg .t-node-sm { font-family: var(--font-body); font-size: 12px; font-weight: 600; fill: var(--n-text); }
+/* A label that crosses a rule gets a ground of its own. */
+.lp-svg .halo { paint-order: stroke; stroke: var(--n-panel); stroke-width: 6px; stroke-linejoin: round; }
+.lp-svg .f-ink { fill: var(--n-text); }
+.lp-svg .f-dim { fill: var(--n-dim); }
+.lp-svg .f-neu { fill: var(--n-neu); }
+.lp-svg .f-con { fill: var(--n-con); }
+.lp-svg .f-acc { fill: var(--color-accent); }
+.lp-svg .f-acc-soft { fill: color-mix(in srgb, var(--color-accent) 22%, transparent); }
+.lp-svg .f-line { fill: var(--n-line2); }
+.lp-svg .f-panel { fill: var(--n-panel); }
+.lp-svg .f-none { fill: none; }
+.lp-svg .s-ink { stroke: var(--n-text); }
+.lp-svg .s-line { stroke: var(--n-line2); }
+.lp-svg .s-faint { stroke: var(--n-faint); }
+.lp-svg .s-acc { stroke: var(--color-accent); }
+.lp-svg .s-con { stroke: var(--n-con); }
+
+/* A drawing wider than a phone keeps its minimum and scrolls sideways, the way
+   the comparison table does: shrunk to fit, its labels would be unreadable. */
+.lp-art-scroll { overflow-x: auto; overflow-y: hidden; }
+.lp-art-scroll > .lp-svg { min-width: var(--art-min, 0px); }
+.lp-art { margin: clamp(36px, 4vw, 56px) 0 0; }
+.lp-fig .lp-art-scroll { margin: 20px 0 4px; }
+.lp-icon { display: block; color: var(--n-text); margin-bottom: 12px; }
 
 /* -- footer --------------------------------------------------------------- */
 
