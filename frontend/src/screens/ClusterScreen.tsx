@@ -103,6 +103,15 @@ export function ClusterScreen(): ReactElement {
           rows={1}
           value={cluster.central_theme}
           onChange={(event) => store.renameCluster(cluster.id, event.target.value)}
+          // Saved once, on leaving the field — not per keystroke. Enter leaves
+          // it: a title is one line, so a newline is never what was meant.
+          onBlur={() => store.commitClusterName(cluster.id)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              event.currentTarget.blur()
+            }
+          }}
           ref={(node) => {
             // A theme runs to a full sentence, so the field grows to fit rather
             // than scrolling a one-line input the reader cannot see the end of.

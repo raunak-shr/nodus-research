@@ -199,7 +199,10 @@ interface Store {
   openCluster(clusterId: string): void
   openSource(claim: ClusterClaimRead, ref: string): void
   closeSource(): void
+  /** Retitle a cluster on screen as the reader types. Nothing is sent. */
   renameCluster(clusterId: string, title: string): void
+  /** Save a retitle once the reader is done with the field. */
+  commitClusterName(clusterId: string): void
   overrideTier(clusterId: string, tier: QualityTier): void
   clearTierOverride(clusterId: string): void
   flipStance(clusterId: string, claimId: string, next: Stance): void
@@ -349,6 +352,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const [sourceRef, setSourceRef] = useState('')
 
   const [edits, setEdits] = useState<EditEntry[]>([])
+  /** A cluster's title as it stood before the reader started typing over it,
+   *  kept until the edit is committed — that is the "computed" side of the
+   *  Edits row, and the value to fall back to if the field is left empty. */
+  const renameOriginRef = useRef<Record<string, string>>({})
   const [chat, setChat] = useState<ChatMessage[]>([])
   const [chatDraft, setChatDraft] = useState('')
   const [chatPending, setChatPending] = useState(false)
@@ -1194,30 +1201,75 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
 
   const nowLabel = () => new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 
+  /** The cluster's title and its report section's heading move together: on
+   *  screen the section is headed by the cluster, so retitling one retitles
+   *  both. */
+  const applyClusterName = useCallback((clusterId: string, title: string, edited: boolean) => {
+    setClusters((current) =>
+      current.map((cluster) =>
+        cluster.id === clusterId
+          ? { ...cluster, central_theme: title, user_edited: cluster.user_edited || edited }
+          : cluster,
+      ),
+    )
+    setReport((current) =>
+      current?.sections
+        ? {
+            ...current,
+            sections: current.sections.map((section) =>
+              section.cluster_id === clusterId ? { ...section, heading: title } : section,
+            ),
+          }
+        : current,
+    )
+  }, [])
+
+  // Local only, once per keystroke. Saving on every keystroke used to send one
+  // `clusters.update` per character: past the edits bucket's burst of ten the
+  // rest were refused, the refusal was swallowed, and a long retitle was saved
+  // as whatever its tenth keystroke had typed — with a row in Edits for each.
   const renameCluster = useCallback(
     (clusterId: string, title: string) => {
-      let previous = ''
-      setClusters((current) =>
-        current.map((cluster) => {
-          if (cluster.id !== clusterId) return cluster
-          previous = cluster.central_theme
-          return { ...cluster, central_theme: title, user_edited: true }
-        }),
-      )
-      setReport((current) =>
-        current?.sections
-          ? {
-              ...current,
-              sections: current.sections.map((section) =>
-                section.cluster_id === clusterId ? { ...section, heading: title } : section,
-              ),
-            }
-          : current,
-      )
+      if (!(clusterId in renameOriginRef.current)) {
+        const cluster = clusters.find((c) => c.id === clusterId)
+        if (cluster) renameOriginRef.current[clusterId] = cluster.central_theme
+      }
+      applyClusterName(clusterId, title, true)
+    },
+    [applyClusterName, clusters],
+  )
+
+  const commitClusterName = useCallback(
+    (clusterId: string) => {
+      const previous = renameOriginRef.current[clusterId]
+      if (previous === undefined) return
+      delete renameOriginRef.current[clusterId]
+
+      const title = (clusters.find((c) => c.id === clusterId)?.central_theme ?? '').trim()
+      // An emptied field is an abandoned edit, not a request for a nameless
+      // cluster: put the old title back and send nothing.
+      if (!title) {
+        applyClusterName(clusterId, previous, false)
+        return
+      }
+      if (title === previous) return
+      applyClusterName(clusterId, title, true)
+
       if (mode === 'live' && socketRef.current) {
         void socketRef.current
           .request('clusters.update', { cluster_id: clusterId, patch: { central_theme: title } })
           .catch(() => undefined)
+        // The heading is the report's own field, stored in the report rather
+        // than read from the cluster, so without this a reload shows the old one.
+        if (activeQueryId && report?.sections?.some((s) => s.cluster_id === clusterId)) {
+          void socketRef.current
+            .request('report.section.update', {
+              query_id: activeQueryId,
+              cluster_id: clusterId,
+              patch: { heading: title },
+            })
+            .catch(() => undefined)
+        }
       }
       recordEdit({
         field: 'cluster.central_theme',
@@ -1227,7 +1279,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
         at: nowLabel(),
       })
     },
-    [mode, recordEdit],
+    [activeQueryId, applyClusterName, clusters, mode, recordEdit, report],
   )
 
   const overrideTier = useCallback(
@@ -1637,6 +1689,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       openSource,
       closeSource,
       renameCluster,
+      commitClusterName,
       overrideTier,
       clearTierOverride,
       flipStance,
@@ -1681,6 +1734,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       queries,
       question,
       renameCluster,
+      commitClusterName,
       overrideTier,
       report,
       reloadRun,
