@@ -95,6 +95,14 @@
   font-variant-numeric: tabular-nums;
 }
 .landing .pretty { text-wrap: pretty; }
+/* The question an axis answers, under its heading. */
+.lp-axis-q {
+  font-family: var(--l-mono);
+  font-size: 12px;
+  letter-spacing: .04em;
+  color: var(--l-accent-ink);
+  margin: 0 0 14px;
+}
 .landing em.lp-term { font-style: normal; font-weight: 600; color: var(--n-text); }
 
 /* -- header --------------------------------------------------------------- */
@@ -226,6 +234,11 @@
 .lp-calc > .n { text-align: right; padding-left: 16px; }
 .lp-calc > .term { font-family: var(--font-body); font-size: 14px; }
 .lp-calc > .last { border-bottom: 0; }
+/* What a component was computed from, under its name. The second line makes
+   the name cell taller than the numbers beside it, so the row has to stretch —
+   aligned on baseline, each cell draws its rule at its own height. */
+.lp-calc:has(.in) { align-items: stretch; }
+.lp-calc .in { display: block; margin-top: 3px; font-family: var(--l-mono); font-size: 11px; color: var(--n-faint); }
 .lp-total {
   display: flex;
   align-items: baseline;
@@ -300,6 +313,15 @@
 .lp-chain .rel-extends { color: var(--n-dim); }
 .lp-chain .yr { font-family: var(--l-mono); font-size: 12px; color: var(--n-faint); }
 .lp-chain .cite { font-size: 14.5px; line-height: 1.45; margin: 0; }
+/* The claim that put the paper in the chain — its label is that claim's stance. */
+.lp-chain .claim { font-size: 13.5px; line-height: 1.5; color: var(--n-dim); margin: 4px 0 0; }
+
+/* -- provenance marks ----------------------------------------------------- */
+
+.lp-marks { display: flex; flex-direction: column; margin-top: 8px; font-size: 13px; color: var(--n-dim); }
+.lp-marks > div { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--l-hair); }
+.lp-marks > div:last-child { border-bottom: 0; }
+.lp-marks .g { flex: 0 0 2ch; text-align: center; font-family: var(--l-mono); font-weight: 700; color: var(--n-text); }
 
 /* -- drivers -------------------------------------------------------------- */
 
@@ -313,7 +335,14 @@
   text-transform: uppercase;
   color: var(--l-accent-ink);
 }
-.lp-driver .pair { font-family: var(--l-mono); font-size: 11.5px; color: var(--n-faint); margin-left: auto; }
+
+/* The stance split, in the app's own stance colours so it reads the same here
+   as on the cluster screen. Segment widths are the counts, via flex-grow. */
+.lp-tally { display: flex; gap: 3px; height: 10px; margin-top: 20px; }
+.lp-tally > i { display: block; flex-basis: 0; }
+.lp-tally .t-sup { background: var(--n-sup); }
+.lp-tally .t-neu { background: var(--n-neu); }
+.lp-tally .t-con { background: var(--n-con); }
 
 /* -- thresholds ----------------------------------------------------------- */
 
@@ -341,6 +370,21 @@
   border-bottom: 0;
 }
 .lp-tiers .k { width: 8ch; }
+
+/* The study-type weights, as chips: each type keeps its weight on the same
+   line, which a run of dot-separated text cannot promise once it wraps. */
+.lp-ladder {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-family: var(--l-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--n-dim);
+  font-variant-numeric: tabular-nums;
+}
+.lp-ladder > span { white-space: nowrap; }
+.lp-ladder b { color: var(--n-text); font-weight: 700; }
 
 /* -- ledger rows (ranking weights, throughput) ---------------------------- */
 
@@ -437,11 +481,23 @@
 /* -- two-column splits --------------------------------------------------- */
 
 /* The design splits at 400px per column; below that the grid collapses to one
-   column on its own, which is what auto-fit is for. */
-.lp-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); }
+   column on its own, which is what auto-fit is for. The min() is what lets that
+   one column shrink: a bare 400px floor holds it wider than a phone, clipping
+   the copy at the right edge and eating the gutter. */
+.lp-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr)); }
 .lp-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: clamp(24px, 4vw, 56px); }
 .lp-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: clamp(20px, 3vw, 36px); }
 .lp-faq { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: clamp(24px, 4vw, 48px); }
+/* Nine controls: 300px keeps it to three columns at full width, so the grid
+   closes square instead of leaving one card alone on the last row. */
+.lp-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: clamp(28px, 3vw, 40px) clamp(24px, 4vw, 48px);
+}
+.lp-controls > div { border-top: 2px solid var(--l-rule); padding-top: 14px; }
+.lp-controls .lp-label-sm { display: block; margin-bottom: 10px; }
+.lp-controls .lp-h4 { font-size: 20px; line-height: 1.15; }
 .lp-row {
   display: flex;
   flex-wrap: wrap;
