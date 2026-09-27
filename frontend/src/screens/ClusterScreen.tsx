@@ -228,9 +228,11 @@ export function ClusterScreen(): ReactElement {
                 }}
               >
                 <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-                  The model said {cluster.quality_rationale?.tier}
+                  {/* The formula, not a model: a tier is arithmetic over the inputs
+                      below, and saying otherwise undoes the reason it is shown. */}
+                  The formula gave {cluster.quality_rationale?.tier}
                   {typeof breakdown.score === 'number' ? ` (${breakdown.score.toFixed(2)})` : ''}. You
-                  said {cluster.quality_tier}.
+                  set {cluster.quality_tier}.
                   <br />
                   <span className="faint">
                     The computed value is kept beside yours; nothing is overwritten. user_edited ·
