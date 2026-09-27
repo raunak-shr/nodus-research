@@ -4,6 +4,14 @@
  *  be read without a backend, and so the UI is developed against the same types
  *  the socket delivers. Nothing here is inferred at render time; the fixtures
  *  carry the provenance, quality arithmetic and lineage the pipeline would.
+ *
+ *  Each cluster's lineage, stance counts and quality were produced by running
+ *  `build_lineage_tree` and `assess_cluster` over that cluster's own claims, with
+ *  each paper's `type` filed as the normaliser would (an RCT follow-up as a
+ *  cohort, an umbrella review as a systematic review). They were hand-written
+ *  once and disagreed with the code — a 9/1/1 split over five claims, a "high"
+ *  bar of 0.75, lineage labels that were not the claims' stances. Edit a claim
+ *  here and those three have to be recomputed, not adjusted by eye.
  */
 
 import type {
@@ -11,7 +19,9 @@ import type {
   ClaimSourceFields,
   ClaimSourceRead,
   ClusterClaimRead,
+  QualityInputs,
   QualityRationale,
+  QualityTier,
 } from '../lib/types'
 
 export const DEMO_QUERY_ID = '8f2c4100-0000-4000-8000-000000000001'
@@ -56,8 +66,8 @@ export const DEMO_PAPERS: DemoPaper[] = [
 
 /** Papers the run could not read. The report is built on the rest and says so. */
 export const DEMO_FAILURES: Record<string, string> = {
-  p05: 'PDF unreachable — publisher returned 403 twice',
-  p12: 'Two-column scan; text layer unparseable',
+  p10: 'PDF unreachable — publisher returned 403 twice',
+  p17: 'Two-column scan; text layer unparseable',
   p18: 'Paywalled: abstract only, below claim threshold',
 }
 
@@ -302,25 +312,33 @@ function claims(seeds: DemoClaimSeed[]): ClusterClaimRead[] {
   }))
 }
 
+/** A rationale in the shape `assess_cluster` writes. The score, tier, components
+ *  and inputs are per cluster and are passed in exactly as the pipeline computed
+ *  them; the weights and thresholds are constants of `services/quality.py`.
+ *
+ *  Nothing is computed here. An earlier version did the arithmetic itself, with
+ *  its own weight names and a 0.75 bar for "high" where the code uses 0.70 — so
+ *  the demo taught a formula the product does not run. */
 function rationale(
+  score: number,
+  tier: QualityTier,
   components: Record<string, number>,
-  penalty: number,
-  inputs: Partial<QualityRationale>,
+  inputs: QualityInputs,
 ): QualityRationale {
-  const weights = { design: 0.4, sample: 0.2, corroboration: 0.2, extraction: 0.2 }
-  const weightedSum = Object.entries(components).reduce(
-    (total, [key, value]) => total + value * (weights[key as keyof typeof weights] ?? 0),
-    0,
-  )
-  const score = Math.max(0, weightedSum - penalty)
   return {
-    components,
-    weights,
-    weighted_sum: weightedSum,
-    conflict_penalty: penalty,
     score,
-    tier: score >= 0.75 ? 'high' : score >= 0.45 ? 'medium' : 'low',
-    ...inputs,
+    tier,
+    components,
+    inputs,
+    weights: {
+      design: 0.4,
+      sample_size: 0.2,
+      corroboration: 0.2,
+      extraction_confidence: 0.2,
+      conflict_penalty_max: 0.15,
+    },
+    thresholds: { high: 0.7, medium: 0.45 },
+    overridable: true,
   }
 }
 
@@ -330,30 +348,30 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
     query_id: DEMO_QUERY_ID,
     central_theme: 'Aerobic exercise produces a moderate reduction in depression severity',
     consensus_summary:
-      'Eleven papers estimate the effect of supervised aerobic exercise against non-exercise control conditions in adults meeting diagnostic criteria for depression. Pooled standardised mean differences cluster between −0.62 and −0.79, a moderate effect comparable in magnitude to that reported for first-line pharmacotherapy in the same populations. The estimate is stable across pooling method: trim-and-fill adjustment moves it to −0.62, and the network meta-analysis with the largest sample recovers −0.79 for the walking and jogging node.',
+      'Five papers estimate the effect of supervised aerobic exercise against non-exercise control conditions in adults meeting diagnostic criteria for depression. Pooled standardised mean differences cluster between −0.62 and −0.79, a moderate effect comparable in magnitude to that reported for first-line pharmacotherapy in the same populations. The estimate is stable across pooling method: trim-and-fill adjustment moves it to −0.62, and the network meta-analysis with the largest sample recovers −0.79 for the walking and jogging node.',
     lineage_tree: {
-      root_paper_id: 'p01', root_year: 2007, span_years: 17, paper_count: 5,
+      root_paper_id: 'p01', root_year: 2007, span_years: 17, paper_count: 5, basis: 'chronological+stance',
       chain: [
         { paper_id: 'p01', claim_id: 'cl_1042', title: 'Exercise and Pharmacotherapy in the Treatment of Major Depressive Disorder', year: 2007, citation_count: 1204, relationship: 'origin' },
         { paper_id: 'p09', claim_id: 'cl_1188', title: 'The antidepressive effects of exercise: a meta-analysis of randomized trials', year: 2009, citation_count: 1052, relationship: 'supports' },
-        { paper_id: 'p02', claim_id: 'cl_1301', title: 'Exercise for depression (Cochrane)', year: 2013, citation_count: 2410, relationship: 'extends' },
+        { paper_id: 'p02', claim_id: 'cl_1301', title: 'Exercise for depression', year: 2013, citation_count: 2410, relationship: 'supports' },
         { paper_id: 'p03', claim_id: 'cl_1466', title: 'Exercise as a treatment for depression: a meta-analysis adjusting for publication bias', year: 2016, citation_count: 1866, relationship: 'supports' },
-        { paper_id: 'p07', claim_id: 'cl_1902', title: 'Effect of exercise for depression: network meta-analysis', year: 2024, citation_count: 389, relationship: 'extends' },
+        { paper_id: 'p07', claim_id: 'cl_1902', title: 'Effect of exercise for depression: systematic review and network meta-analysis of randomised controlled trials', year: 2024, citation_count: 389, relationship: 'supports' },
       ],
     },
-    support_count: 9,
-    neutral_count: 1,
-    contradiction_count: 1,
+    support_count: 5,
+    neutral_count: 0,
+    contradiction_count: 0,
     disagreement_drivers: [
-      { driver_type: 'methodology', description: 'Waitlist controls produce effects roughly 0.25 SMD larger than active-control comparisons, and the two are pooled together in five of the eleven papers.' },
+      { driver_type: 'methodology', description: 'Waitlist controls produce effects roughly 0.25 SMD larger than active-control comparisons, and the four pooled analyses in this cluster mix the two.' },
       { driver_type: 'analysis', description: 'Random-effects pooling with high heterogeneity (I² = 63–81%) widens intervals that the narrative summaries report as point estimates.' },
     ],
     quality_tier: 'high',
-    quality_score: 0.884,
-    quality_rationale: rationale({ design: 0.92, sample: 0.88, corroboration: 0.95, extraction: 0.9 }, 0.02, {
-      study_types: '6 meta-analyses, 1 network meta-analysis, 4 RCTs',
-      largest_sample_size: 14170, paper_count: 11, support_count: 9, contradiction_count: 1,
-    }),
+    quality_score: 0.9776,
+    quality_rationale: rationale(0.9776, 'high',
+      { design: 0.988, sample_size: 1.0, corroboration: 1.0, extraction_confidence: 0.912, conflict_penalty: 0.0 },
+      { study_types: ['rct', 'meta_analysis', 'systematic_review', 'meta_analysis', 'meta_analysis'], largest_sample_size: 14170, paper_count: 5, support_count: 5, contradiction_count: 0 },
+    ),
     user_edited: false,
     created_at: '2026-08-18T09:45:00Z',
     claims: claims([
@@ -371,14 +389,15 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
     consensus_summary:
       'Four papers report that restricting analysis to trials with blinded outcome assessors and intention-to-treat data reduces the pooled effect to a small, sometimes non-significant value. Three papers disagree, holding that the reduction is an artefact of restricting to a handful of small trials, or that bias-adjusted estimates remain clinically meaningful. The disagreement is not about the data — the same trials appear on both sides — but about which subset licenses a conclusion.',
     lineage_tree: {
-      root_paper_id: 'p15', root_year: 2009, span_years: 15, paper_count: 6,
+      root_paper_id: 'p15', root_year: 2009, span_years: 15, paper_count: 7, basis: 'chronological+stance',
       chain: [
-        { paper_id: 'p15', claim_id: 'cl_1204', title: 'The effect of exercise in clinically depressed adults (DEMO)', year: 2009, citation_count: 342, relationship: 'origin' },
-        { paper_id: 'p14', claim_id: 'cl_1288', title: 'Facilitated physical activity as a treatment for depressed adults (TREAD)', year: 2012, citation_count: 479, relationship: 'supports' },
-        { paper_id: 'p02', claim_id: 'cl_1312', title: 'Exercise for depression (Cochrane)', year: 2013, citation_count: 2410, relationship: 'supports' },
-        { paper_id: 'p03', claim_id: 'cl_1470', title: 'Exercise as a treatment for depression: adjusting for publication bias', year: 2016, citation_count: 1866, relationship: 'contradicts' },
-        { paper_id: 'p04', claim_id: 'cl_1590', title: 'Exercise for patients with major depression: trial sequential analysis', year: 2017, citation_count: 512, relationship: 'extends' },
-        { paper_id: 'p07', claim_id: 'cl_1911', title: 'Effect of exercise for depression: network meta-analysis', year: 2024, citation_count: 389, relationship: 'contradicts' },
+        { paper_id: 'p15', claim_id: 'cl_1204', title: 'The effect of exercise in clinically depressed adults (the DEMO trial)', year: 2009, citation_count: 342, relationship: 'origin' },
+        { paper_id: 'p14', claim_id: 'cl_1288', title: 'Facilitated physical activity as a treatment for depressed adults: randomised controlled trial (TREAD)', year: 2012, citation_count: 479, relationship: 'supports' },
+        { paper_id: 'p02', claim_id: 'cl_1312', title: 'Exercise for depression', year: 2013, citation_count: 2410, relationship: 'supports' },
+        { paper_id: 'p03', claim_id: 'cl_1470', title: 'Exercise as a treatment for depression: a meta-analysis adjusting for publication bias', year: 2016, citation_count: 1866, relationship: 'contradicts' },
+        { paper_id: 'p11', claim_id: 'cl_1655', title: 'Exercise as a treatment for depression: a meta-analysis', year: 2016, citation_count: 920, relationship: 'contradicts' },
+        { paper_id: 'p04', claim_id: 'cl_1590', title: 'Exercise for patients with major depression: a systematic review with meta-analysis and trial sequential analysis', year: 2017, citation_count: 512, relationship: 'supports' },
+        { paper_id: 'p07', claim_id: 'cl_1911', title: 'Effect of exercise for depression: systematic review and network meta-analysis of randomised controlled trials', year: 2024, citation_count: 389, relationship: 'contradicts' },
       ],
     },
     support_count: 4,
@@ -390,12 +409,12 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
       { driver_type: 'sample_size', description: 'Blinded-only subgroups draw on 4–8 trials (n = 391–1122) against 23–39 trials in the full pools; the sceptical estimate carries the wider interval.' },
       { driver_type: 'publication_bias', description: 'Funnel asymmetry is treated as evidence of small-study bias by three papers and as genuine heterogeneity in dose by two others.' },
     ],
-    quality_tier: 'medium',
-    quality_score: 0.5,
-    quality_rationale: rationale({ design: 0.71, sample: 0.52, corroboration: 0.44, extraction: 0.86 }, 0.15, {
-      study_types: '3 systematic reviews, 2 meta-analyses, 2 RCTs',
-      largest_sample_size: 2498, paper_count: 7, support_count: 4, contradiction_count: 3,
-    }),
+    quality_tier: 'high',
+    quality_score: 0.9074,
+    quality_rationale: rationale(0.9074, 'high',
+      { design: 0.9829, sample_size: 1.0, corroboration: 1.0, extraction_confidence: 0.8929, conflict_penalty: 0.0643 },
+      { study_types: ['rct', 'rct', 'systematic_review', 'systematic_review', 'meta_analysis', 'meta_analysis', 'meta_analysis'], largest_sample_size: 14170, paper_count: 7, support_count: 4, contradiction_count: 3 },
+    ),
     user_edited: false,
     created_at: '2026-08-18T09:45:00Z',
     claims: claims([
@@ -415,26 +434,26 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
     consensus_summary:
       'Dose is the one moderator that survives across papers. The single dedicated dose-response trial found public-health-dose exercise (17.5 kcal/kg/week) clearly superior to a low dose that performed like the placebo control, and three pooled analyses recover frequency or intensity as a moderator. Session frequency is confounded with supervision in every paper: higher-frequency arms were also the supervised ones.',
     lineage_tree: {
-      root_paper_id: 'p05', root_year: 2005, span_years: 19, paper_count: 4,
+      root_paper_id: 'p05', root_year: 2005, span_years: 19, paper_count: 4, basis: 'chronological+stance',
       chain: [
         { paper_id: 'p05', claim_id: 'cl_1001', title: 'Exercise treatment for depression: efficacy and dose response', year: 2005, citation_count: 930, relationship: 'origin' },
-        { paper_id: 'p09', claim_id: 'cl_1190', title: 'The antidepressive effects of exercise: moderator analysis', year: 2009, citation_count: 1052, relationship: 'supports' },
-        { paper_id: 'p06', claim_id: 'cl_1801', title: 'Effectiveness of physical activity interventions (umbrella review)', year: 2023, citation_count: 704, relationship: 'extends' },
-        { paper_id: 'p07', claim_id: 'cl_1920', title: 'Effect of exercise for depression: dose nodes in the network model', year: 2024, citation_count: 389, relationship: 'supports' },
+        { paper_id: 'p09', claim_id: 'cl_1190', title: 'The antidepressive effects of exercise: a meta-analysis of randomized trials', year: 2009, citation_count: 1052, relationship: 'supports' },
+        { paper_id: 'p06', claim_id: 'cl_1801', title: 'Effectiveness of physical activity interventions for improving depression, anxiety and distress', year: 2023, citation_count: 704, relationship: 'supports' },
+        { paper_id: 'p07', claim_id: 'cl_1920', title: 'Effect of exercise for depression: systematic review and network meta-analysis of randomised controlled trials', year: 2024, citation_count: 389, relationship: 'extends' },
       ],
     },
-    support_count: 4,
+    support_count: 3,
     neutral_count: 1,
     contradiction_count: 0,
     disagreement_drivers: [
       { driver_type: 'population', description: 'The dose trial recruited mild-to-moderate outpatients; pooled moderator analyses include inpatient samples where baseline severity limits achievable dose.' },
     ],
-    quality_tier: 'medium',
-    quality_score: 0.648,
-    quality_rationale: rationale({ design: 0.68, sample: 0.48, corroboration: 0.72, extraction: 0.88 }, 0.0, {
-      study_types: '1 dose-response RCT, 3 meta-analyses, 1 umbrella review',
-      largest_sample_size: 128119, paper_count: 5, support_count: 4, contradiction_count: 0,
-    }),
+    quality_tier: 'high',
+    quality_score: 0.913,
+    quality_rationale: rationale(0.913, 'high',
+      { design: 0.985, sample_size: 1.0, corroboration: 0.75, extraction_confidence: 0.845, conflict_penalty: 0.0 },
+      { study_types: ['rct', 'meta_analysis', 'systematic_review', 'meta_analysis'], largest_sample_size: 128119, paper_count: 4, support_count: 3, contradiction_count: 0 },
+    ),
     user_edited: false,
     created_at: '2026-08-18T09:45:00Z',
     claims: claims([
@@ -451,23 +470,23 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
     consensus_summary:
       'Three papers touch late-life depression. One randomised trial of sertraline plus progressive aerobic exercise in adults 65 and older reports larger remission in the exercise arm, and two pooled analyses report age as a non-significant moderator. Age-stratified estimates are not reported separately in either pooled paper, so “comparable” rests on the absence of a moderator effect rather than on a measured one.',
     lineage_tree: {
-      root_paper_id: 'p12', root_year: 2015, span_years: 9, paper_count: 3,
+      root_paper_id: 'p12', root_year: 2015, span_years: 9, paper_count: 3, basis: 'chronological+stance',
       chain: [
         { paper_id: 'p12', claim_id: 'cl_1401', title: 'Physical exercise for late-life major depression', year: 2015, citation_count: 266, relationship: 'origin' },
         { paper_id: 'p11', claim_id: 'cl_1489', title: 'Exercise as a treatment for depression: a meta-analysis', year: 2016, citation_count: 920, relationship: 'supports' },
-        { paper_id: 'p07', claim_id: 'cl_1930', title: 'Effect of exercise for depression: age as a moderator', year: 2024, citation_count: 389, relationship: 'supports' },
+        { paper_id: 'p07', claim_id: 'cl_1930', title: 'Effect of exercise for depression: systematic review and network meta-analysis of randomised controlled trials', year: 2024, citation_count: 389, relationship: 'extends' },
       ],
     },
     support_count: 2,
     neutral_count: 1,
     contradiction_count: 0,
     disagreement_drivers: [],
-    quality_tier: 'low',
-    quality_score: 0.406,
-    quality_rationale: rationale({ design: 0.44, sample: 0.22, corroboration: 0.3, extraction: 0.71 }, 0.0, {
-      study_types: '1 RCT, 2 meta-analyses',
-      largest_sample_size: 2325, paper_count: 3, support_count: 2, contradiction_count: 0,
-    }),
+    quality_tier: 'high',
+    quality_score: 0.8527,
+    quality_rationale: rationale(0.8527, 'high',
+      { design: 0.9867, sample_size: 1.0, corroboration: 0.5, extraction_confidence: 0.79, conflict_penalty: 0.0 },
+      { study_types: ['rct', 'meta_analysis', 'meta_analysis'], largest_sample_size: 14170, paper_count: 3, support_count: 2, contradiction_count: 0 },
+    ),
     user_edited: false,
     created_at: '2026-08-18T09:45:00Z',
     claims: claims([
@@ -481,15 +500,23 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
     query_id: DEMO_QUERY_ID,
     central_theme: 'Exercise as an adjunct in treatment-resistant depression',
     consensus_summary:
-      'One small trial addresses treatment-resistant depression directly: 33 patients on stable pharmacotherapy, half assigned to 30–45 minutes of walking five days a week. The exercise arm improved on HAM-D, BDI and GAF where the control arm did not. Nothing in the retrieved set replicates or contests it, so the cluster has no corroboration term to score and Nodus leaves the tier unrated rather than inferring one.',
-    lineage_tree: null,
+      'One small trial addresses treatment-resistant depression directly: 33 patients on stable pharmacotherapy, half assigned to 30–45 minutes of walking five days a week. The exercise arm improved on HAM-D, BDI and GAF where the control arm did not. Nothing in the retrieved set replicates or contests it.',
+    lineage_tree: {
+      root_paper_id: 'p13', root_year: 2011, span_years: null, paper_count: 1, basis: 'chronological+stance',
+      chain: [
+        { paper_id: 'p13', claim_id: 'cl_1233', title: 'Moderate exercise improves depression parameters in treatment-resistant patients with major depressive disorder', year: 2011, citation_count: 298, relationship: 'origin' },
+      ],
+    },
     support_count: 1,
     neutral_count: 0,
     contradiction_count: 0,
     disagreement_drivers: [],
-    quality_tier: 'unrated',
-    quality_score: null,
-    quality_rationale: { paper_count: 1, corroboration_note: 'not computable — no second paper' },
+    quality_tier: 'medium',
+    quality_score: 0.5606,
+    quality_rationale: rationale(0.5606, 'medium',
+      { design: 0.9, sample_size: 0.1728, corroboration: 0.0, extraction_confidence: 0.83, conflict_penalty: 0.0 },
+      { study_types: ['rct'], largest_sample_size: 33, paper_count: 1, support_count: 1, contradiction_count: 0 },
+    ),
     user_edited: false,
     created_at: '2026-08-18T09:45:00Z',
     claims: claims([
@@ -503,12 +530,12 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
     consensus_summary:
       'Whether the benefit persists past the intervention period is the least settled question in the retrieved set. The one-year SMILE follow-up reports continued advantage for those who kept exercising, which two papers read as selection rather than effect: adherence at twelve months was self-reported and unrandomised. A fourth paper finds no maintenance signal at all.',
     lineage_tree: {
-      root_paper_id: 'p08', root_year: 2011, span_years: 13, paper_count: 4,
+      root_paper_id: 'p08', root_year: 2011, span_years: 13, paper_count: 4, basis: 'chronological+stance',
       chain: [
-        { paper_id: 'p08', claim_id: 'cl_1250', title: 'One-year follow-up of the SMILE study', year: 2011, citation_count: 411, relationship: 'origin' },
-        { paper_id: 'p02', claim_id: 'cl_1330', title: 'Exercise for depression (Cochrane) — long-term outcomes', year: 2013, citation_count: 2410, relationship: 'contradicts' },
-        { paper_id: 'p16', claim_id: 'cl_1444', title: 'Physical exercise and internet-based CBT in the treatment of depression', year: 2015, citation_count: 301, relationship: 'contradicts' },
-        { paper_id: 'p07', claim_id: 'cl_1940', title: 'Effect of exercise for depression: durability of effect', year: 2024, citation_count: 389, relationship: 'extends' },
+        { paper_id: 'p08', claim_id: 'cl_1250', title: 'Exercise and pharmacotherapy in patients with major depression: one-year follow-up of the SMILE study', year: 2011, citation_count: 411, relationship: 'origin' },
+        { paper_id: 'p02', claim_id: 'cl_1330', title: 'Exercise for depression', year: 2013, citation_count: 2410, relationship: 'contradicts' },
+        { paper_id: 'p16', claim_id: 'cl_1444', title: 'Physical exercise and internet-based cognitive–behavioural therapy in the treatment of depression', year: 2015, citation_count: 301, relationship: 'contradicts' },
+        { paper_id: 'p07', claim_id: 'cl_1940', title: 'Effect of exercise for depression: systematic review and network meta-analysis of randomised controlled trials', year: 2024, citation_count: 389, relationship: 'extends' },
       ],
     },
     support_count: 1,
@@ -518,12 +545,12 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
       { driver_type: 'temporal', description: 'Follow-up windows are 4, 6, 12 and 24 months; the longest window carries the largest attrition and the strongest reported effect.' },
       { driver_type: 'analysis', description: 'The follow-up advantage is a post-hoc comparison of self-selected adherers, not a randomised contrast.' },
     ],
-    quality_tier: 'medium',
-    quality_score: 0.51,
-    quality_rationale: rationale({ design: 0.55, sample: 0.61, corroboration: 0.4, extraction: 0.79 }, 0.09, {
-      study_types: '1 RCT follow-up, 2 meta-analyses, 1 RCT',
-      largest_sample_size: 2326, paper_count: 4, support_count: 1, contradiction_count: 2,
-    }),
+    quality_tier: 'high',
+    quality_score: 0.801,
+    quality_rationale: rationale(0.801, 'high',
+      { design: 0.955, sample_size: 1.0, corroboration: 0.75, extraction_confidence: 0.845, conflict_penalty: 0.1 },
+      { study_types: ['cohort', 'systematic_review', 'rct', 'meta_analysis'], largest_sample_size: 14170, paper_count: 4, support_count: 1, contradiction_count: 2 },
+    ),
     user_edited: false,
     created_at: '2026-08-18T09:45:00Z',
     claims: claims([
@@ -537,7 +564,7 @@ export const DEMO_CLUSTERS: ClaimClusterDetail[] = [
 
 export const DEMO_CAVEATS: Record<string, string[]> = {
   c1: [
-    'Nine of eleven papers pool trials that also appear in each other, so the papers are not independent evidence.',
+    'Four of the five papers are pooled analyses drawing on overlapping trials, so they are not independent evidence.',
     'Control conditions range from waitlist to active stretching; the larger effects come from waitlist comparisons.',
   ],
   c2: [

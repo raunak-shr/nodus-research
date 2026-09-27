@@ -103,6 +103,15 @@ export function ClusterScreen(): ReactElement {
           rows={1}
           value={cluster.central_theme}
           onChange={(event) => store.renameCluster(cluster.id, event.target.value)}
+          // Saved once, on leaving the field — not per keystroke. Enter leaves
+          // it: a title is one line, so a newline is never what was meant.
+          onBlur={() => store.commitClusterName(cluster.id)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              event.currentTarget.blur()
+            }
+          }}
           ref={(node) => {
             // A theme runs to a full sentence, so the field grows to fit rather
             // than scrolling a one-line input the reader cannot see the end of.
@@ -219,9 +228,11 @@ export function ClusterScreen(): ReactElement {
                 }}
               >
                 <div style={{ fontSize: 12.5, lineHeight: 1.5 }}>
-                  The model said {cluster.quality_rationale?.tier}
+                  {/* The formula, not a model: a tier is arithmetic over the inputs
+                      below, and saying otherwise undoes the reason it is shown. */}
+                  The formula gave {cluster.quality_rationale?.tier}
                   {typeof breakdown.score === 'number' ? ` (${breakdown.score.toFixed(2)})` : ''}. You
-                  said {cluster.quality_tier}.
+                  set {cluster.quality_tier}.
                   <br />
                   <span className="faint">
                     The computed value is kept beside yours; nothing is overwritten. user_edited ·

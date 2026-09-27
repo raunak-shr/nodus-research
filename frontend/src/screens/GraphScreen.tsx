@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } 
 
 import {
   GH,
+  GRAPH_LEGEND,
   GRAPH_TABS,
   GW,
   TAB_HINTS,
@@ -51,9 +52,12 @@ function edgeStyle(edge: SceneEdge, motion: boolean): React.CSSProperties {
         ...flow,
       }
     case 'dashed':
+      // Weighted where a weight came with it, so thickness always means the same
+      // thing — papers behind the link — and the dash is free to mean the one
+      // thing it means anywhere on the field: the two sides disagree.
       return {
         stroke: 'var(--n-line2)',
-        strokeWidth: 1.25,
+        strokeWidth: edge.weight === undefined ? 1.25 : 1 + edge.weight * 0.16,
         fill: 'none',
         strokeDasharray: '4 4',
         ...flow,
@@ -423,12 +427,55 @@ export function GraphScreen(): ReactElement {
                         fontSize: node.labelSize,
                         justifyContent: node.labelAlign,
                         color: node.active ? 'var(--n-text)' : 'var(--n-dim)',
+                        ...(node.labelLines > 1 ? { whiteSpace: 'normal' as const } : {}),
                       }}
                     >
-                      {node.label}
+                      {node.labelLines > 1 ? (
+                        // A sentence, clamped to the lines the box was sized for
+                        // — the clamp is what puts the ellipsis on, so the text
+                        // itself is never cut mid-word by the layout.
+                        <span
+                          className="graph-clamp"
+                          style={{
+                            WebkitLineClamp: node.labelLines,
+                            textAlign: node.labelAlign === 'flex-end' ? 'right' : 'left',
+                          }}
+                        >
+                          {node.label}
+                        </span>
+                      ) : (
+                        node.label
+                      )}
                     </div>
                   ))}
               </div>
+            </div>
+          ) : null}
+
+          {scene && !blank ? (
+            <div className="graph-legend">
+              <span className="kicker">key</span>
+              {GRAPH_LEGEND[tab].map((row) => (
+                <span key={row.text} className="graph-legend-row">
+                  <svg width="26" height="12" aria-hidden="true">
+                    {row.role ? (
+                      <rect x={7} y={0.5} width={11} height={11} style={ROLE_STYLE[row.role]} />
+                    ) : (
+                      <line
+                        x1={0}
+                        y1={6}
+                        x2={26}
+                        y2={6}
+                        style={edgeStyle(
+                          { x1: 0, y1: 6, x2: 26, y2: 6, tone: row.tone ?? 'base', weight: row.weight },
+                          motion,
+                        )}
+                      />
+                    )}
+                  </svg>
+                  {row.text}
+                </span>
+              ))}
             </div>
           ) : null}
         </div>

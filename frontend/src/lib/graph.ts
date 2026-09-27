@@ -61,6 +61,10 @@ export interface SceneNode extends NodeRef {
   labelH: number
   labelSize: number
   labelAlign: 'flex-start' | 'flex-end' | 'center'
+  /** How many lines the label may take. One for everything that names a node —
+   *  a paper is "Hallgren 2015" and that fits. A claim label is a sentence, so
+   *  it wraps, and is clamped at whatever the column had room for. */
+  labelLines: number
 }
 
 export type EdgeTone = 'base' | 'faint' | 'accent' | 'thin' | 'dashed' | 'weighted'
@@ -211,9 +215,15 @@ function labelBox(
   side: LabelSide,
   size: number,
   text: string,
+  lines = 1,
+  fixedWidth?: number,
 ): { labelX: number; labelY: number; labelW: number; labelH: number; labelAlign: SceneNode['labelAlign'] } {
-  const h = 15
-  const w = Math.min(210, text.length * size * 0.58 + 10)
+  const h = lines > 1 ? lines * 13 : 15
+  // A wrapping label is given its width rather than fitted to its text: the
+  // width is what the space beside the node allows, and the text is clamped to
+  // it. Fitting it the other way round would put a two-line box wherever the
+  // sentence happened to be long.
+  const w = fixedWidth ?? Math.min(210, text.length * size * 0.58 + 10)
   return {
     labelX: side === 'right' ? cx + half + 6 : side === 'left' ? cx - half - 6 - w : cx - w / 2,
     labelY: side === 'below' ? cy + half + 4 : side === 'above' ? cy - half - 4 - h : cy - h / 2,
@@ -331,6 +341,8 @@ export function buildScene(graph: GraphRead, options: SceneOptions): Scene {
     label: string,
     side: LabelSide,
     still = false,
+    lines = 1,
+    width?: number,
   ): void => {
     // The last word on where a node may sit. Each layout keeps its own nodes in
     // frame, but a ring scaled for twenty-five clusters can still push a paper
@@ -357,14 +369,16 @@ export function buildScene(graph: GraphRead, options: SceneOptions): Scene {
       driftDelay: -((h % 71) / 10),
       label: text,
       labelSize: fontSize,
+      labelLines: lines,
       side,
-      ...labelBox(cx, cy, size / 2, side, fontSize, text),
+      ...labelBox(cx, cy, size / 2, side, fontSize, text, lines, width),
     }
     nodes.push(node)
     pendingSides.push(node)
   }
 
-  if (tab === 'clusters') buildClusters(graph, { hover, add, edges })
+  if (tab === 'clusters')
+    buildClusters(graph, { expanded: expandedCluster(graph, hover, pin), add, edges, captions })
   if (tab === 'papers') buildPapers(graph, { add, edges, frames, captions })
   if (tab === 'authors') buildAuthors(graph, { isActive, add, edges })
   if (tab === 'lineage') buildLineage(graph, { isActive, add, edges, axis, captions })
@@ -386,8 +400,50 @@ interface Sink {
     label: string,
     side: LabelSide,
     still?: boolean,
+    lines?: number,
+    width?: number,
   ) => void
   edges: SceneEdge[]
+}
+
+/** How wide a claim label may be, and how many of a cluster's claims the column
+ *  shows. Both are geometry, not policy: 160px is the widest a label can be and
+ *  still stand clear of the ring wherever its cluster sits, and fourteen rows is
+ *  what fits between the top and bottom of the canvas. */
+const CLAIM_LABEL_W = 160
+const CLAIM_COLUMN_MAX = 14
+/** At or below this many claims the column spends the vertical room it is not
+ *  using on a third line of preview, rather than leaving it blank. */
+const CLAIM_COLUMN_WIDE = 9
+
+/** Which cluster is expanded into its claims.
+ *
+ *  Not simply "the hovered cluster". The claims are nodes too, so the moment the
+ *  pointer reaches one of them the hover *is* a claim — and the cluster that
+ *  drew it would collapse out from under the cursor, taking the claim with it. A
+ *  claim therefore holds its own cluster open, and so does a pin, so a click
+ *  keeps the column up while the pointer leaves the field entirely.
+ */
+function expandedCluster(
+  graph: GraphRead,
+  hover: NodeRef | null,
+  pin: NodeRef | null,
+): string | null {
+  return clusterBehind(graph, hover) ?? clusterBehind(graph, pin)
+}
+
+function clusterBehind(graph: GraphRead, ref: NodeRef | null): string | null {
+  if (!ref) return null
+  if (ref.kind === 'cluster' || ref.kind === 'hub') {
+    return graph.clusters.some((cluster) => cluster.id === ref.id) ? ref.id : null
+  }
+  if (ref.kind === 'claim') {
+    const owner = graph.clusters.find((cluster) =>
+      cluster.claims.some((claim) => claim.id === ref.id),
+    )
+    return owner?.id ?? null
+  }
+  return null
 }
 
 /** Clusters on a ring around the run, expanding into their claims on hover.
@@ -400,7 +456,12 @@ interface Sink {
  */
 function buildClusters(
   graph: GraphRead,
-  { hover, add, edges }: Sink & { hover: NodeRef | null },
+  {
+    expanded,
+    add,
+    edges,
+    captions,
+  }: Sink & { expanded: string | null; captions: SceneCaption[] },
 ): void {
   const clusters = graph.clusters
   if (!clusters.length) return
@@ -415,6 +476,11 @@ function buildClusters(
     const x = cx0 + Math.cos(angle) * rx
     const y = cy0 + Math.sin(angle) * ry
     const conflicted = cluster.contradiction_count >= 2
+    /** Which side the expanded claim column went, so the cluster's own heading
+     *  can be anchored opposite it. Left where it is, the heading lands in the
+     *  column's labels and the label pass pushes *them* aside — which slides
+     *  claims out of line with the squares they belong to. */
+    let column: number | null = null
 
     edges.push({
       x1: cx0,
@@ -425,27 +491,68 @@ function buildClusters(
       weight: cluster.paper_count,
     })
 
-    if (hover && hover.kind === 'cluster' && hover.id === cluster.id) {
+    if (expanded === cluster.id) {
       // Claims stack as a column beside their cluster at one fixed pitch, so
       // member labels cannot crowd each other however the cluster sits on the
-      // ring. Clusters at the top and bottom share their x with the ring's left
+      // ring. Each row is labelled with the claim itself — the assertion is what
+      // a reader is scanning for; which paper said it is a line in the panel.
+      const roomy = cluster.claims.length <= CLAIM_COLUMN_WIDE
+      const lines = roomy ? 3 : 2
+      const pitch = roomy ? 46 : 34
+      const shown = cluster.claims.slice(0, roomy ? CLAIM_COLUMN_WIDE : CLAIM_COLUMN_MAX)
+      // Clusters at the top and bottom of the ring share their x with its left
       // side, so their column reaches further out to clear the ring entirely.
-      const shown = cluster.claims.slice(0, 18)
-      const direction = x <= 450 ? -1 : 1
-      const pitch = 30
-      const reach = Math.abs(Math.cos(angle)) < 0.3 ? 250 : 96
-      const top = Math.max(40, Math.min(GH - 40 - (shown.length - 1) * pitch, y - ((shown.length - 1) * pitch) / 2))
+      const clear = Math.abs(Math.cos(angle)) < 0.3 ? 250 : 96
+      // The column sits as far out as the labels allow and no further: what is
+      // left over after a label is the only room the squares have. A cluster too
+      // close to an edge for that sends its column inward instead — crossing the
+      // ring is ugly, and a label sliced off the canvas is unreadable.
+      const spare = (dir: number): number =>
+        (dir < 0 ? x - 8 : GW - 8 - x) - CLAIM_LABEL_W - 24
+      const outward = x <= cx0 ? -1 : 1
+      const direction = spare(outward) >= 56 ? outward : -outward
+      column = direction
+      const reach = Math.max(48, Math.min(clear, spare(direction)))
+      const px = x + direction * reach
+      const span = (shown.length - 1) * pitch
+      const top = Math.max(40, Math.min(GH - 40 - span, y - span / 2))
       shown.forEach((claim, at) => {
-        const px = x + direction * reach
         const py = top + at * pitch
         edges.push({ x1: x, y1: y, x2: px, y2: py, tone: 'thin' })
-        add('claim', claim.id, px, py, 11, 'claim', cut(claim.citation || claim.id, 22), direction < 0 ? 'left' : 'right')
+        add(
+          'claim',
+          claim.id,
+          px,
+          py,
+          11,
+          'claim',
+          cut(claim.text, 180),
+          direction < 0 ? 'left' : 'right',
+          true,
+          lines,
+          CLAIM_LABEL_W,
+        )
       })
+      // The column is capped by the canvas, so say what the cap hid rather than
+      // letting the field read as the whole cluster.
+      const hidden = cluster.claims.length - shown.length
+      if (hidden > 0) {
+        captions.push({
+          text: `+${hidden} more — pin to list all`,
+          x: direction < 0 ? px - 11 - CLAIM_LABEL_W : px + 11,
+          y: top + span + 18,
+          w: CLAIM_LABEL_W,
+          h: 15,
+          size: 9.5,
+          align: direction < 0 ? 'flex-end' : 'flex-start',
+          uppercase: false,
+        })
+      }
     }
 
     // While one cluster is expanded the others drop to their number, so their
     // headings do not crowd the claim column.
-    const dimmed = hover !== null && hover.kind === 'cluster' && hover.id !== cluster.id
+    const dimmed = expanded !== null && expanded !== cluster.id
     add(
       'cluster',
       cluster.id,
@@ -454,7 +561,13 @@ function buildClusters(
       Math.min(48, 17 + cluster.paper_count * 1.9),
       'cluster',
       dimmed ? `c${index + 1}` : `c${index + 1} · ${cut(cluster.theme, 30)}`,
-      Math.sin(angle) < -0.3 ? 'above' : 'below',
+      column === null
+        ? Math.sin(angle) < -0.3
+          ? 'above'
+          : 'below'
+        : column < 0
+          ? 'right'
+          : 'left',
     )
   })
 
@@ -695,10 +808,11 @@ function authorLayout(
 /** Evidence lineage, left to right by publication year.
  *
  *  Every edge here is a step in a cluster's stored lineage tree — which paper
- *  stated a claim first and how each later one relates to it. It is not a
- *  citation graph and the caption under the view says so. A contradicting step
- *  is drawn dashed, which is the one relationship a reader should be able to
- *  find without hovering.
+ *  stated a claim first, and where each later paper's claim stands on the
+ *  cluster's assertion. A step's label is that stance, not a relation between
+ *  the two papers it joins. It is not a citation graph and the caption under the
+ *  view says so. A contradicting step is drawn dashed, which is the one
+ *  relationship a reader should be able to find without hovering.
  */
 function buildLineage(
   graph: GraphRead,
@@ -1018,9 +1132,55 @@ export function panelFor(graph: GraphRead, pin: NodeRef | null): GraphPanel | nu
   return null
 }
 
+/** What the strokes on a view mean.
+ *
+ *  Every dash on this field carries a meaning — disagreement inside a cluster, a
+ *  contradicting step in lineage, the claim spokes of the cluster that is open,
+ *  a paper that reached no cluster. None of that is legible unless the field says
+ *  so, so each tab carries the key to exactly the strokes it draws and no others.
+ *
+ *  A row names a `tone` or a `role`, never its own colours: the screen paints the
+ *  swatch from the same two tables it paints the field with, so a legend cannot
+ *  drift from the thing it describes.
+ */
+export interface LegendRow {
+  tone?: EdgeTone
+  role?: NodeRole
+  /** For `weighted` and `dashed`, whose thickness stands for a paper count. */
+  weight?: number
+  text: string
+}
+
+export const GRAPH_LEGEND: Record<GraphTab, LegendRow[]> = {
+  clusters: [
+    { tone: 'weighted', weight: 8, text: 'spoke to a cluster — thicker with more papers behind it' },
+    { tone: 'dashed', weight: 8, text: 'that cluster holds two or more contradicting claims' },
+    { tone: 'thin', text: 'the member claims of the cluster that is open' },
+  ],
+  papers: [
+    { tone: 'base', text: 'the cluster a paper gave most of its claims to' },
+    { tone: 'faint', text: 'another cluster the same paper also reached' },
+    { role: 'paperDim', text: 'paper with no claim in any cluster that was kept' },
+  ],
+  authors: [
+    { tone: 'faint', text: 'shared a paper in this run' },
+    { tone: 'accent', text: 'shared it with the author under the pointer' },
+    { role: 'cluster', text: 'appears in more than one paper' },
+  ],
+  lineage: [
+    { tone: 'base', text: 'a lineage step, earlier paper to later' },
+    // The stance is the later paper's own, on the cluster's assertion — not a
+    // verdict on the paper the step starts from.
+    { tone: 'dashed', text: "the later paper's claim contradicts the cluster's assertion" },
+    { tone: 'accent', text: 'steps touching the paper under the pointer' },
+    { role: 'paperDim', text: 'paper that yielded no clustered claims' },
+  ],
+}
+
 /** What each tab says it is showing, above the field. */
 export const TAB_HINTS: Record<GraphTab, string> = {
-  clusters: 'Hover a cluster to expand it into its member claims. Click any node to pin it.',
+  clusters:
+    'Hover a cluster to expand it into its member claims — click it to keep the column open while you read down it. Click any node to pin it.',
   papers:
     'Papers sit by the cluster they gave most of their claims to, with a faint link to every other cluster they reached.',
   authors: 'Co-authorship across this run. Filled squares appear in more than one paper.',
