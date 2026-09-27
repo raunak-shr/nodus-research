@@ -19,11 +19,11 @@ export const DEMO_QUESTION = 'Does aerobic exercise reduce depression severity?'
 // -- report -----------------------------------------------------------------
 
 const NARRATIVES: Record<string, string> = {
-  c1: 'Eleven papers estimate the effect of supervised aerobic exercise against non-exercise control conditions in adults meeting diagnostic criteria for depression. Pooled standardised mean differences cluster between −0.62 and −0.79, a moderate effect comparable in magnitude to that reported for first-line pharmacotherapy in the same populations.',
+  c1: 'Five papers estimate the effect of supervised aerobic exercise against non-exercise control conditions in adults meeting diagnostic criteria for depression. Pooled standardised mean differences cluster between −0.62 and −0.79, a moderate effect comparable in magnitude to that reported for first-line pharmacotherapy in the same populations.',
   c2: 'Four papers report that restricting analysis to trials with blinded outcome assessors and intention-to-treat data reduces the pooled effect to a small, sometimes non-significant value. Three papers disagree, holding that the reduction is an artefact of restricting to a handful of small trials. The disagreement is not about the data but about which subset licenses a conclusion.',
   c3: 'Dose is the one moderator that survives across papers. The dedicated dose-response trial found public-health-dose exercise clearly superior to a low dose that performed like the placebo control, and three pooled analyses recover frequency or intensity as a moderator — always confounded with supervision.',
   c4: 'Three papers touch late-life depression. One randomised trial reports larger remission in the exercise arm, and two pooled analyses report age as a non-significant moderator. Neither pooled paper reports an age-stratified estimate, so “comparable” rests on the absence of a moderator effect rather than on a measured one.',
-  c5: 'One small trial addresses treatment-resistant depression directly: 33 patients on stable pharmacotherapy, half assigned to walking five days a week. Nothing in the retrieved set replicates or contests it, so the cluster has no corroboration term to score.',
+  c5: 'One small trial addresses treatment-resistant depression directly: 33 patients on stable pharmacotherapy, half assigned to walking five days a week. Nothing in the retrieved set replicates or contests it.',
   c6: 'Whether the benefit persists past the intervention period is the least settled question in the retrieved set. The one-year SMILE follow-up reports continued advantage for those who kept exercising, which two papers read as selection rather than effect.',
 }
 
@@ -54,14 +54,14 @@ export const DEMO_REPORT: ReportRead = {
   executive_summary:
     'Across seventeen papers the evidence supports a moderate antidepressant effect of aerobic exercise in adults with a depressive disorder, and the papers that dispute it dispute the method rather than the direction. The pooled estimate sits near SMD −0.62 to −0.79 against non-exercise controls, comparable to first-line pharmacotherapy in the same trials. The largest single qualification is assessor blinding: restricting to blinded, intention-to-treat trials cuts the estimate to roughly −0.18, and four of seven papers in that cluster treat this as the defensible number. Dose survives as the one reproducible moderator; durability past the intervention period does not.',
   key_findings: [
-    'Seventeen papers report a moderate reduction in depression severity for aerobic exercise against non-exercise control (SMD −0.62 to −0.79).',
+    'Five papers report a moderate reduction in depression severity for aerobic exercise against non-exercise control (SMD −0.62 to −0.79).',
     'Restricting to blinded-assessor, intention-to-treat trials reduces the pooled estimate to about SMD −0.18; four papers treat this as the defensible figure and three dispute the restriction.',
     'Frequency of three or more supervised sessions per week is the only moderator recovered by more than two papers, and it is confounded with supervision in all of them.',
     'No cluster supports a claim of maintained benefit twelve months after the intervention ends.',
   ],
   open_questions: [
     'No retrieved trial randomises session frequency independently of supervision, so dose and contact time cannot be separated.',
-    'Treatment-resistant depression rests on a single 33-participant trial; the cluster is left unrated for want of corroboration.',
+    'Treatment-resistant depression rests on a single 33-participant trial that nothing else in the retrieved set replicates.',
     'Late-life effects are inferred from null moderator tests rather than age-stratified estimates.',
   ],
   sections: DEMO_SECTIONS,
