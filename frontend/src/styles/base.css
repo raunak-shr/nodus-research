@@ -505,6 +505,23 @@ h1, h2, h3, h4 { letter-spacing: -.03em; }
   font-family: var(--font-body); line-height: 1.2; white-space: nowrap;
   text-shadow: 0 0 3px var(--n-bg), 0 0 3px var(--n-bg), 0 0 3px var(--n-bg);
 }
+/* A claim label is a sentence, so it wraps — and is cut off by the clamp rather
+   than by the edge of its box, which is what puts an ellipsis on it. */
+.graph-clamp {
+  display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* The key to the strokes, under the field rather than over it: a legend that
+   floats on the canvas sits on top of whatever the field drew in that corner. */
+.graph-legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 9px 22px;
+  /* Left edge lines up with the hint above the field; the right inset keeps a
+     row from wrapping into the zoom readout in the corner. */
+  max-width: 902px; padding: 18px 130px 26px 24px;
+  font-size: 11px; line-height: 1.3; color: var(--n-faint);
+}
+.graph-legend-row { display: inline-flex; align-items: center; gap: 7px; }
+.graph-legend svg { flex: 0 0 auto; overflow: visible; }
 .graph-panel {
   border-left: 2px solid var(--n-line2); background: var(--n-panel);
   padding: 22px 22px 44px; max-height: 100vh; overflow-y: auto;
