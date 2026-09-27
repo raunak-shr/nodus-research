@@ -495,6 +495,45 @@
 .lp-art { margin: clamp(36px, 4vw, 56px) 0 0; }
 .lp-fig .lp-art-scroll { margin: 20px 0 4px; }
 .lp-icon { display: block; color: var(--n-text); margin-bottom: 12px; }
+.lp-svg .s-neu { stroke: var(--n-neu); }
+.lp-svg .t-on-acc { fill: var(--l-on-accent); }
+.lp-svg .t-score {
+  font-family: var(--font-heading); font-size: 40px; font-weight: 800;
+  letter-spacing: -.03em; fill: var(--n-text); font-variant-numeric: tabular-nums;
+}
+
+/* -- axis animations ------------------------------------------------------ */
+
+/* Each fills the room its text column leaves under the prose, and is ruled
+   off from it the way every figure on the page is. */
+.lp-anim { margin-top: 30px; padding-top: 14px; border-top: 2px solid var(--l-rule); max-width: 440px; }
+/* Inside a figure the player takes the figure's width, and the figure head has
+   already drawn the rule the text-column player opens with. */
+.lp-anim-wide { max-width: none; margin-top: 0; padding-top: 0; border-top: 0; }
+.lp-anim-head { display: flex; align-items: baseline; gap: 12px; min-height: 42px; margin-bottom: 8px; }
+.lp-anim-step { flex: 0 0 auto; font-family: var(--l-mono); font-size: 11.5px; color: var(--l-accent-ink); font-variant-numeric: tabular-nums; }
+.lp-anim-cap { flex: 1 1 auto; font-size: 14px; line-height: 1.45; color: var(--n-text); }
+.lp-anim-replay {
+  flex: 0 0 auto; background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12.5px; color: var(--n-dim); text-decoration: underline; text-underline-offset: 3px;
+}
+.lp-anim-replay:hover:not(:disabled) { color: var(--l-accent-ink); }
+.lp-anim-replay:disabled { opacity: .45; cursor: default; }
+.lp-anim-replay:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+
+/* The movement is transitions keyed off the step, so a step change is all it
+   takes to play one; reduced motion drops them and shows the end state. */
+.lp-svg .lp-move { transition: transform .8s cubic-bezier(.2, .7, .2, 1); }
+.lp-svg .lp-fade { transition: opacity .5s ease; }
+.lp-svg .lp-tint { transition: fill .4s ease, stroke .4s ease; }
+.lp-svg .lp-grow {
+  transform-box: fill-box; transform-origin: 50% 100%;
+  transition: transform .65s cubic-bezier(.2, .7, .2, 1);
+}
+.lp-svg .lp-pulse { stroke: var(--color-accent); }
+@media (prefers-reduced-motion: reduce) {
+  .lp-anim .lp-svg * { transition: none !important; }
+}
 
 /* -- footer --------------------------------------------------------------- */
 

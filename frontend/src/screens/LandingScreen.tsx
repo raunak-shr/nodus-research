@@ -29,11 +29,10 @@ import {
   LineageTimeline,
   PipelineArt,
   ProblemArt,
-  ScoreBar,
-  StanceMap,
   type ChainPoint,
   type ControlIconName,
 } from '../components/LandingArt'
+import { LineageBuild, ScoreFill, StanceSort } from '../components/LandingMotion'
 import { Mark } from '../components/Mark'
 import { useStore } from '../state/store'
 
@@ -43,6 +42,8 @@ const README = `${REPO}#readme`
 /** The cluster every axis is read against: six papers, one claim each, from
  *  the demo run a visitor sees on opening the app without a backend. */
 const EXAMPLE_THEME = 'effect sizes shrink in trials with blinded outcome assessment'
+/** The same assertion, broken to fit the box it is drawn in. */
+const ASSERTION: [string, string] = ['effect sizes shrink when', 'assessment is blinded']
 
 /** The example's lineage as `build_lineage_tree` orders and labels it: by year,
  *  the earliest as origin, and every later paper by its own claim's stance on
@@ -145,13 +146,6 @@ const COMPONENTS: { term: string; input: string; value: string; weight: string; 
 const EXAMPLE_SCORE = '0.914'
 /** 0.15 × 2 contradicting of 5 non-neutral claims. */
 const EXAMPLE_PENALTY = '0.060'
-/** The component names, short enough to sit inside their own bar segment. */
-const SCORE_LABEL: Record<string, string> = {
-  'Study design': 'design',
-  'Sample size': 'sample',
-  Corroboration: 'corrob.',
-  'Extraction confidence': 'conf.',
-}
 
 /** `_STUDY_TYPE_WEIGHT`, best first. */
 const DESIGN_LADDER: [string, string][] = [
@@ -532,6 +526,7 @@ export function LandingScreen(): ReactElement {
               the chain is rebuilt from publication dates and stances — and the report, its exports
               and the Graph's lineage view all say so.
             </p>
+            <LineageBuild chain={CHAIN} assertion={ASSERTION.join(' ')} />
           </div>
           <figure className="art lp-fig">
             <div className="lp-fig-head">
@@ -600,12 +595,13 @@ export function LandingScreen(): ReactElement {
                 {total} claims · {DRIVERS.length} drivers
               </span>
             </div>
-            <div className="lp-art-scroll" style={{ '--art-min': '440px' } as CSSProperties}>
-              <StanceMap chain={CHAIN} assertion={['effect sizes shrink when', 'assessment is blinded']} />
+            <div className="lp-art-scroll" style={{ '--art-min': '460px' } as CSSProperties}>
+              <StanceSort
+                chain={CHAIN}
+                assertion={ASSERTION}
+                drivers={DRIVERS.map((driver) => driver.cat)}
+              />
             </div>
-            <p className="lp-mono" style={{ fontSize: 12.5, color: 'var(--n-dim)', margin: '10px 0 22px' }}>
-              {STANCES.map((stance) => `${stance.count} ${stance.label}`).join(' · ')}
-            </p>
             {DRIVERS.map((driver) => (
               <div key={driver.cat} className="lp-driver">
                 <div style={{ marginBottom: 10 }}>
@@ -644,6 +640,16 @@ export function LandingScreen(): ReactElement {
               redo the sum. If you know something the formula does not, set the tier yourself — the
               computed tier stays on record beside yours.
             </p>
+            <ScoreFill
+              parts={COMPONENTS.map((row) => ({
+                name: row.term,
+                value: row.value,
+                weight: row.weight,
+                contrib: Number(row.contrib),
+              }))}
+              penalty={Number(EXAMPLE_PENALTY)}
+              score={Number(EXAMPLE_SCORE)}
+            />
           </div>
           <figure className="art lp-fig">
             <div className="lp-fig-head">
@@ -651,16 +657,6 @@ export function LandingScreen(): ReactElement {
               <span className="lp-fig-meta">
                 {CHAIN.length} papers · {total} claims
               </span>
-            </div>
-            <div className="lp-art-scroll" style={{ '--art-min': '440px' } as CSSProperties}>
-              <ScoreBar
-                parts={COMPONENTS.map((row) => ({
-                  label: SCORE_LABEL[row.term] ?? row.term,
-                  value: Number(row.contrib),
-                }))}
-                penalty={Number(EXAMPLE_PENALTY)}
-                score={Number(EXAMPLE_SCORE)}
-              />
             </div>
             <div className="lp-calc" style={{ marginTop: 18 }}>
               <span className="h lp-label-sm">Component</span>
